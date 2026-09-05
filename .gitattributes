@@ -1,0 +1,25 @@
+# ค่าเริ่มต้น: ให้ Git เดาเอง แต่เก็บใน repo เป็น LF เสมอ
+* text=auto eol=lf
+
+# ── ไฟล์ binary: ห้าม Git แตะ line ending เด็ดขาด ──────
+# (ถ้าไม่ประกาศ เครื่อง Windows จะแปลง CRLF แล้วไฟล์เสียถาวร)
+*.f3d   binary
+*.stl   binary
+*.step  binary
+*.stp   binary
+*.xlsx  binary
+*.xls   binary
+*.docx  binary
+*.doc   binary
+*.pdf   binary
+*.PDF   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.ico   binary
+*.bin   binary
+*.uf2   binary
+*.elf   binary
+
+# notebook: ให้ diff อ่านออกบ้าง
+*.ipynb text
