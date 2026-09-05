@@ -8,6 +8,18 @@
 > VSCode/PlatformIO ที่โฟลเดอร์ `10_firmware_esp32/` แทนรากโปรเจกต์ (PlatformIO ต้องการ
 > `platformio.ini` อยู่ที่รากของโฟลเดอร์ที่เปิด)
 
+## environment ที่มีอยู่ (`platformio.ini` ที่ราก repo)
+
+| env | โค้ด | ใช้ทำอะไร |
+|---|---|---|
+| `wifi_test` | `src/main.cpp` | ทดสอบต่อ Wi-Fi (commit เดิม) |
+| `motor_encoder_test` | `src/motor_encoder_test/` | **ชุดทดสอบ M1 มอเตอร์ + เอ็นโคดเดอร์** (ไดรเวอร์ L298N ชั่วคราว) |
+
+```bash
+pio run -e motor_encoder_test -t upload -t monitor
+```
+ขั้นตอนเทสเต็ม + ใบกรอกผล: [`03_ผลการทดสอบ/M1_มอเตอร์และเอ็นโคดเดอร์.md`](../03_ผลการทดสอบ/M1_มอเตอร์และเอ็นโคดเดอร์.md)
+
 ## ตั้งค่าก่อนคอมไพล์ครั้งแรก
 
 ```bash
