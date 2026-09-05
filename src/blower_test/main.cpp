@@ -33,15 +33,21 @@ static void applyOff() {
 }
 
 static void applyOn(int percent) {
+  const bool wasOn = blowerOn;
   if (pwmMode) {
     dutyPercent = constrain(percent, 0, 100);
     ledcWrite(PIN_SUCTION_EN, (dutyPercent * PWM_MAX) / 100);
   } else {
+    // โหมดเปิด-ปิด: §3.5 ตีความ 0 = ปิด · >0 = เปิด
+    if (percent <= 0) { applyOff(); return; }   // กัน applyOn(0) แล้วกลายเป็นเปิด
     dutyPercent = 100;
     digitalWrite(PIN_SUCTION_EN, HIGH);
   }
   blowerOn = dutyPercent > 0;
-  onSinceMs = millis();
+  // ⚠ ต้องจับเวลาจาก "จุดที่เริ่มเปิด" เท่านั้น
+  // ถ้ารีเซ็ตทุกครั้งที่เรียก การพิมพ์ d ซ้ำๆ จะเลื่อนตัวตัดเวลาออกไปเรื่อยๆ
+  // จน blower เปิดค้างได้ไม่จำกัด
+  if (blowerOn && !wasOn) onSinceMs = millis();
 }
 
 static void stopAll(const char* why) {
@@ -52,7 +58,11 @@ static void stopAll(const char* why) {
 // สลับระหว่างโหมด GPIO ธรรมดา กับ LEDC 25 Hz
 static bool setPwmMode(bool enable) {
   applyOff();
-  if (enable == pwmMode) return true;
+  if (enable == pwmMode) {
+    Serial.printf("[OK] อยู่โหมด%sอยู่แล้ว — ปิด blower ให้แล้ว\n",
+                  pwmMode ? "PWM" : "เปิด-ปิด");
+    return true;
+  }
   if (enable) {
     if (!ledcAttach(PIN_SUCTION_EN, pwmFreq, PWM_RES_BITS)) {
       Serial.println("[ERR] ผูก LEDC กับขาไม่สำเร็จ");
@@ -60,7 +70,11 @@ static bool setPwmMode(bool enable) {
     }
     ledcWrite(PIN_SUCTION_EN, 0);
     pwmMode = true;
-    Serial.printf("[OK] เข้าโหมด PWM %u Hz (timer T3 ตาม §3.5)\n", (unsigned)pwmFreq);
+    // หมายเหตุ: ledcAttach() เลือก channel/timer ให้เอง ระบุเป็น T3 ตาม §3.5 ไม่ได้
+    // (ต้องใช้ ledcAttachChannel() ถึงจะเลือก channel ได้) — ในเฟิร์มแวร์ทดสอบตัวเดียว
+    // โดดๆ ไม่มีผล แต่ตอนเขียนเฟิร์มแวร์จริงต้องรู้ว่าล็อก timer แบบนี้ไม่ได้
+    Serial.printf("[OK] เข้าโหมด PWM %u Hz · %u-bit\n",
+                  (unsigned)pwmFreq, (unsigned)PWM_RES_BITS);
     Serial.println("     หมายเหตุ: โหมดหลักที่เอกสารเลือกไว้คือเปิด-ปิดอย่างเดียว");
     Serial.println("     โหมดนี้มีไว้หา SUCTION_DUTY_MIN เท่านั้น (ขั้น S5)");
   } else {
@@ -86,13 +100,59 @@ static void timedRun(uint32_t ms) {
 
   const uint32_t t0 = millis();
   applyOn(100);
-  Serial.println(">>> เปิดแล้ว");
-  while (millis() - t0 < ms) delay(5);
+  Serial.println(">>> เปิดแล้ว (กดปุ่มใดก็ได้แล้ว Enter เพื่อหยุดกลางคัน)");
+  bool aborted = false;
+  while (millis() - t0 < ms) {
+    if (Serial.available()) {
+      while (Serial.available()) Serial.read();
+      aborted = true;
+      break;
+    }
+    delay(5);
+  }
   applyOff();
+  if (aborted) { Serial.println(">>> หยุดกลางคัน — รอบนี้ใช้ไม่ได้ ต้องทำใหม่"); return; }
   const uint32_t actual = millis() - t0;
   Serial.printf(">>> ปิดแล้ว · เวลาที่เปิดจริง %lu ms (คลาด %+ld ms)\n",
                 (unsigned long)actual, (long)actual - (long)ms);
   Serial.println("นับจำนวนก้อนในถังฝุ่นแล้วจดลงตาราง S4");
+}
+
+// S2 — เปิดค้างยาวเพื่อวัดอุณหภูมิ MOSFET จนนิ่ง
+// MAX_ON_MS (2 นาที) สั้นเกินกว่าจะถึงสถานะคงตัวทางความร้อน จึงต้องมีคำสั่งแยก
+// กด key ใดๆ เพื่อหยุดกลางคัน
+static void heatRun(uint32_t minutes) {
+  uint32_t ms = minutes * 60000UL;
+  if (ms == 0 || ms > MAX_HEAT_MS) ms = MAX_HEAT_MS;
+  Serial.printf("\n=== S2: เปิดค้าง %lu นาที เพื่อวัดอุณหภูมิ MOSFET ===\n",
+                (unsigned long)(ms / 60000UL));
+  Serial.println("วัดอุณหภูมิผิว MOSFET ทุก 1 นาที จนค่านิ่ง (ไม่เพิ่มเกิน 1 °C ใน 2 นาที)");
+  Serial.println("เกณฑ์ §3.5: <=60 °C ผ่าน · 60-80 °C ก้ำกึ่ง · >80 °C ต้องใส่ level shifter");
+  Serial.println("กดปุ่มใดก็ได้แล้ว Enter เพื่อหยุดก่อนกำหนด");
+  while (Serial.available()) Serial.read();
+
+  const uint32_t t0 = millis();
+  applyOn(100);
+  uint32_t nextMark = 30000;
+  while (millis() - t0 < ms) {
+    if (Serial.available()) {
+      while (Serial.available()) Serial.read();
+      applyOff();
+      Serial.printf(">>> หยุดเอง ที่ %lu s\n", (unsigned long)((millis() - t0) / 1000));
+      return;
+    }
+    if (millis() - t0 >= nextMark) {
+      Serial.printf("  ผ่านไป %3lu s — จดอุณหภูมิ ณ ตอนนี้\n",
+                    (unsigned long)(nextMark / 1000));
+      nextMark += 30000;
+    }
+    delay(20);
+  }
+  applyOff();
+  Serial.printf(">>> ครบ %lu s แล้ว ปิด blower · จดอุณหภูมิสุดท้ายและอุณหภูมิห้อง\n",
+                (unsigned long)(ms / 1000));
+  Serial.println("คำนวณต่อ: R_DS(on) โดยประมาณ = (T_ผิว - T_ห้อง) / 345.6  [ohm]");
+  Serial.println("  ดูข้อจำกัดของสูตรนี้ที่ 08_การคำนวณ/16 §16.4 ก่อนเอาไปใช้");
 }
 
 // S5 — หา duty ต่ำสุดที่ใบพัดยังออกตัวได้ (SUCTION_DUTY_MIN)
@@ -117,12 +177,25 @@ static void dutySweep() {
         applyOff();
         Serial.printf("\n>>> SUCTION_DUTY_MIN = %d %% ที่ %u Hz\n", d, (unsigned)pwmFreq);
         Serial.println("จดค่านี้ลงตาราง S5 — ต่ำกว่านี้ใบพัดจะไม่ออกตัว");
+        Serial.println("⚠ ค่านี้เป็น *ขอบบน* เพราะรวมเวลาปฏิกิริยาของคน (ปกติ 200-400 ms)");
         return;
       }
       delay(10);
     }
     applyOff();
-    delay(400);   // ให้ใบพัดหยุดสนิทก่อนลองระดับถัดไป
+    // ต้องโพลล์ Serial ต่อระหว่างพักด้วย ไม่งั้นถ้าผู้ใช้กด Enter ช้าไปนิด
+    // ตัวอักษรจะค้างในบัฟเฟอร์แล้วไปถูกอ่านในรอบถัดไป → รายงานค่าสูงเกินจริง 1 ขั้น
+    const uint32_t tRest = millis();
+    while (millis() - tRest < 400) {
+      if (Serial.available()) {
+        while (Serial.available()) Serial.read();
+        Serial.printf("\n>>> SUCTION_DUTY_MIN = %d %% ที่ %u Hz (กดหลังจบช่วงพอดี)\n",
+                      d, (unsigned)pwmFreq);
+        Serial.println("จดค่านี้ลงตาราง S5 — ค่านี้เป็น *ขอบบน* เพราะรวมเวลาปฏิกิริยาคน");
+        return;
+      }
+      delay(5);
+    }
   }
   applyOff();
   Serial.println(">>> ไล่จนถึง 100 % แล้วยังไม่ได้กด — ตรวจว่าวงจรต่อถูกไหม");
@@ -137,6 +210,7 @@ static void printHelp() {
   Serial.println("│ on          เปิดดูด (ค้างไว้)                         │");
   Serial.println("│ off / s     ปิดดูด                                   │");
   Serial.println("│ run <ms>    เปิดตามเวลาเป๊ะแล้วปิดเอง (ขั้น S4)        │");
+  Serial.println("│ heat <นาที> เปิดค้างยาววัดอุณหภูมิ (ขั้น S2 · สูงสุด 10) │");
   Serial.println("│ pwm on|off  สลับโหมด PWM 25 Hz (ขั้น S5 เท่านั้น)     │");
   Serial.println("│ d <0-100>   ตั้ง duty % (เฉพาะโหมด PWM)              │");
   Serial.println("│ sweep       หา SUCTION_DUTY_MIN (ขั้น S5)            │");
@@ -173,6 +247,7 @@ static void handleCommand(String cmd) {
   if (cmd == "sweep") { dutySweep(); return; }
 
   if (cmd.startsWith("run ")) { timedRun((uint32_t)cmd.substring(4).toInt()); return; }
+  if (cmd.startsWith("heat ")) { heatRun((uint32_t)cmd.substring(5).toInt()); return; }
 
   if (cmd == "pwm on")  { setPwmMode(true);  return; }
   if (cmd == "pwm off") { setPwmMode(false); return; }
@@ -191,13 +266,31 @@ static void handleCommand(String cmd) {
       Serial.printf("[ปฏิเสธ] %u Hz อยู่นอกช่วงที่ยอมให้ใช้ (%u-%u Hz)\n",
                     (unsigned)hz, (unsigned)PWM_FREQ_MIN_HZ, (unsigned)PWM_FREQ_MAX_HZ);
       Serial.println("  system_architecture.md §3.5 คำนวณไว้ว่าที่ 20 kHz MOSFET จะทิ้งความร้อน");
-      Serial.println("  1.066 W ทำให้ร้อนขึ้น +66 °C และ blower เป็นมอเตอร์ไร้แปรงถ่านที่มี");
+      Serial.println("  1.066 W ทำให้ร้อนขึ้น +66 °C [ประมาณการ — คำนวณจาก R_DS(on) และ R_th");
+      Serial.println("  ที่ไฟล์ 10 ข้อ P1/P2 ระบุว่าเป็นการเดา · M3 นี้เองคือการทดสอบเพื่อปิดข้อนั้น]");
+      Serial.println("  และ blower เป็นมอเตอร์ไร้แปรงถ่านที่มี");
       Serial.println("  วงจรขับในตัว การสับไฟถี่ขนาดนั้นคือการปลุก-ดับวงจรของมันเอง");
       return;
     }
-    pwmFreq = hz;
-    if (pwmMode) { ledcChangeFrequency(PIN_SUCTION_EN, pwmFreq, PWM_RES_BITS); applyOn(dutyPercent); }
-    Serial.printf("[OK] ความถี่ = %u Hz\n", (unsigned)pwmFreq);
+    if (pwmMode) {
+      // ledcChangeFrequency คืน 0 เมื่อล้มเหลว · คืนความถี่จริงหลังปัดเศษเมื่อสำเร็จ
+      // ห้ามอัปเดต pwmFreq ก่อนรู้ผล ไม่งั้นจะรายงานค่าที่ฮาร์ดแวร์ไม่ได้ใช้จริง
+      const uint32_t actual = ledcChangeFrequency(PIN_SUCTION_EN, hz, PWM_RES_BITS);
+      if (actual == 0) {
+        Serial.printf("[ERR] ตั้ง %u Hz ที่ %u บิตไม่สำเร็จ — ยังใช้ %u Hz เหมือนเดิม\n",
+                      (unsigned)hz, (unsigned)PWM_RES_BITS, (unsigned)pwmFreq);
+        Serial.println("  ดู 08_การคำนวณ/17 — ตัวหาร LEDC ต้องอยู่ในช่วง [256, 262143]");
+        applyOn(dutyPercent);
+        return;
+      }
+      pwmFreq = actual;
+      applyOn(dutyPercent);
+      Serial.printf("[OK] ความถี่จริงที่ฮาร์ดแวร์ใช้ = %u Hz (สั่งไป %u Hz)\n",
+                    (unsigned)actual, (unsigned)hz);
+    } else {
+      pwmFreq = hz;
+      Serial.printf("[OK] ตั้งไว้ %u Hz — จะมีผลเมื่อเข้าโหมด PWM\n", (unsigned)hz);
+    }
     return;
   }
 
