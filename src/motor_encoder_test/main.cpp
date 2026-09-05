@@ -59,12 +59,13 @@ static void rampTo(int permilleL, int permilleR) {
   motR.setDuty(permilleR);
 }
 
-// วิ่งที่ duty คงที่ แล้วคืน rpm ทั้งสองข้าง — ใช้ซ้ำในหลายขั้นทดสอบ
+// วิ่งที่ duty คงที่ "แยกซ้าย/ขวา" แล้วคืน rpm ทั้งสองข้าง
+// ตรวจ stall เฉพาะข้างที่ถูกสั่ง (duty != 0) — ข้างที่สั่ง 0 ไม่ต้องขยับ จึงไม่นับเป็น stall
 // คืน false ถ้าตัดเพราะสงสัยว่า stall
-static bool runAndMeasure(int permille, uint32_t holdMs, double* rpmL, double* rpmR,
-                          int64_t* cntL, int64_t* cntR) {
+static bool runAndMeasureLR(int permilleL, int permilleR, uint32_t holdMs,
+                            double* rpmL, double* rpmR, int64_t* cntL, int64_t* cntR) {
   if (holdMs > MAX_RUN_MS) holdMs = MAX_RUN_MS;
-  rampTo(permille, permille);
+  rampTo(permilleL, permilleR);
 
   encL.zero();
   encR.zero();
@@ -77,8 +78,9 @@ static bool runAndMeasure(int permille, uint32_t holdMs, double* rpmL, double* r
     delay(20);
     if (millis() - lastCheck >= STALL_CHECK_MS) {
       const int64_t cl = encL.count(), cr = encR.count();
-      if (permille != 0 &&
-          (llabs(cl - lastL) < STALL_COUNT_MIN || llabs(cr - lastR) < STALL_COUNT_MIN)) {
+      const bool stalledL = (permilleL != 0) && (llabs(cl - lastL) < STALL_COUNT_MIN);
+      const bool stalledR = (permilleR != 0) && (llabs(cr - lastR) < STALL_COUNT_MIN);
+      if (stalledL || stalledR) {
         stopAll("สงสัย stall — เอ็นโคดเดอร์แทบไม่ขยับ ตัดไฟมอเตอร์แล้ว");
         ok = false;
         break;
@@ -99,6 +101,12 @@ static bool runAndMeasure(int permille, uint32_t holdMs, double* rpmL, double* r
   motL.brake();
   motR.brake();
   return ok;
+}
+
+// เวอร์ชันเดิม: สั่งเท่ากันทั้งสองข้าง — T3/T5 และคำสั่ง r ยังเรียกตัวนี้
+static bool runAndMeasure(int permille, uint32_t holdMs, double* rpmL, double* rpmR,
+                          int64_t* cntL, int64_t* cntR) {
+  return runAndMeasureLR(permille, permille, holdMs, rpmL, rpmR, cntL, cntR);
 }
 
 // ── ขั้นทดสอบ ─────────────────────────────────────────────────
@@ -149,6 +157,26 @@ static void testDirection() {
   Serial.println("  แก้ได้ 2 ทาง: สลับสายจริง หรือ ตั้ง invert=true ตอน encX.begin()");
 }
 
+// T2 แยกข้าง — สั่งทีละล้อ อีกข้างสั่ง 0 (ไม่ถูกนับเป็น stall)
+static void testDirectionOne(bool isLeft) {
+  const char* name = isLeft ? "ซ้าย" : "ขวา";
+  Serial.println();
+  Serial.printf("=== T2 เฉพาะล้อ%s: ตรวจทิศทางการหมุนกับเครื่องหมายของ counts ===\n", name);
+  Serial.printf("จะสั่งล้อ%s เดินหน้า 25%% 2 วินาที แล้วถอยหลัง 25%% 2 วินาที (อีกข้างไม่สั่ง)\n", name);
+  Serial.println(">>> ดูด้วยตาด้วยว่าเพลาหมุนไปทางไหนจริง <<<");
+  double rl, rr;
+  int64_t cl, cr;
+
+  runAndMeasureLR(isLeft ? 250 : 0, isLeft ? 0 : 250, 2000, &rl, &rr, &cl, &cr);
+  Serial.printf("เดินหน้า 25%%: L %+lld counts (%.1f rpm) · R %+lld counts (%.1f rpm)\n",
+                cl, rl, cr, rr);
+  delay(500);
+  runAndMeasureLR(isLeft ? -250 : 0, isLeft ? 0 : -250, 2000, &rl, &rr, &cl, &cr);
+  Serial.printf("ถอยหลัง 25%%: L %+lld counts (%.1f rpm) · R %+lld counts (%.1f rpm)\n",
+                cl, rl, cr, rr);
+  Serial.printf("เกณฑ์ผ่าน (ดูเฉพาะข้าง%s): เดินหน้า = บวก · ถอยหลัง = ลบ\n", name);
+}
+
 // T3 — กวาด duty แล้ววัด rpm → ได้เส้นโค้ง duty→rpm ของ "ชุด L298N"
 // ⚠ เส้นโค้งนี้ย้ายไปใช้กับ DRV8871 ไม่ได้ ดูเหตุผลใน 08_การคำนวณ/15
 static void testDutySweep() {
@@ -195,7 +223,9 @@ static void printHelp() {
   Serial.println("│ c          อ่าน counts ปัจจุบัน                       │");
   Serial.println("│ z          รีเซ็ต counts เป็น 0                       │");
   Serial.println("│ t1         T1 หมุนมือ 1 รอบ ยืนยันอัตราทด 56:1        │");
-  Serial.println("│ t2         T2 ตรวจทิศทาง                             │");
+  Serial.println("│ t2         T2 ตรวจทิศทาง (สองล้อพร้อมกัน)            │");
+  Serial.println("│ t2l / t2r  T2 ทีละล้อ (ซ้าย / ขวา)                    │");
+  Serial.println("│ dl <‰> dr <‰>  สั่ง duty ทีละล้อ                      │");
   Serial.println("│ t3         T3 กวาด duty 20-100% วัด rpm (CSV)         │");
   Serial.println("│ t5         T5 ทดสอบกันตัวนับล้น                       │");
   Serial.println("│ d <‰>      สั่ง duty ค้างไว้ -1000..1000              │");
@@ -223,9 +253,21 @@ static void handleCommand(String cmd) {
   }
   if (cmd == "t1") { testHandTurn(); return; }
   if (cmd == "t2") { testDirection(); return; }
+  if (cmd == "t2l") { testDirectionOne(true); return; }
+  if (cmd == "t2r") { testDirectionOne(false); return; }
   if (cmd == "t3") { testDutySweep(); return; }
   if (cmd == "t5") { testOverflow(); return; }
 
+  if (cmd.startsWith("dl ") || cmd.startsWith("dr ")) {
+    const bool isLeft = cmd.startsWith("dl ");
+    const int d = cmd.substring(3).toInt();
+    rampTo(isLeft ? d : 0, isLeft ? 0 : d);
+    running = (d != 0);
+    runUntilMs = millis() + MAX_RUN_MS;
+    Serial.printf("[OK] duty %s = %d‰ (อีกข้าง 0 · จะตัดเองใน %u ms)\n",
+                  isLeft ? "ซ้าย" : "ขวา", d, (unsigned)MAX_RUN_MS);
+    return;
+  }
   if (cmd.startsWith("d ")) {
     const int d = cmd.substring(2).toInt();
     rampTo(d, d);
