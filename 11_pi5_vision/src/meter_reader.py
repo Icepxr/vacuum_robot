@@ -69,8 +69,10 @@ def iter_folder(path):
     for p in sorted(Path(path).iterdir()):
         if p.suffix.lower() in exts:
             img = cv2.imread(str(p))
-            if img is not None:
-                yield p.name, img
+            if img is None:
+                print(f"  ข้าม {p.name} — อ่านไฟล์ภาพไม่ได้")
+                continue
+            yield p.name, img
 
 
 # ─────────────────────────────────────────────────────────────
@@ -79,9 +81,7 @@ def iter_folder(path):
 # ─────────────────────────────────────────────────────────────
 
 def load_config():
-    if CONFIG_PATH.exists():
-        return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-    return {
+    defaults = {
         # กรอบที่จะตัด (สัดส่วนของภาพ 0..1) — ตั้งให้ครอบเฉพาะแถวตัวเลข
         "crop": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 1.0},
         # ถ้ากล้องมองเฉียง ใส่มุมทั้งสี่ของหน้าปัด (พิกเซล) เพื่อดัดให้ตรง
@@ -92,7 +92,12 @@ def load_config():
         "threshold": "otsu",      # "otsu" | "adaptive" | "none"
         "scale": 2.0,             # ขยายก่อน OCR ช่วยกับตัวเลขเล็ก
         "expected_digits": None,  # ใส่จำนวนหลักถ้ารู้ ช่วยกรองผลที่เพี้ยน
+        "decimal_places": None,   # ใส่ถ้ารู้รูปแบบแน่นอน แล้วเราหารเอง ไม่ให้ OCR เดาจุด
     }
+    if CONFIG_PATH.exists():
+        # merge ทับ default เพื่อให้ไฟล์ที่ขาด key บางตัวยังใช้ได้ ไม่ KeyError
+        defaults.update(json.loads(CONFIG_PATH.read_text(encoding="utf-8")))
+    return defaults
 
 
 def preprocess(img, cfg):
@@ -105,19 +110,27 @@ def preprocess(img, cfg):
 
     pts = cfg.get("perspective")
     if pts:
+        if len(pts) != 4 or any(len(q) != 2 for q in pts):
+            raise ValueError("perspective ต้องมี 4 จุด จุดละ [x, y] — ได้ " + repr(pts))
         src = np.array(pts, dtype=np.float32)          # [[x,y] × 4] ซ้ายบน→ขวาบน→ขวาล่าง→ซ้ายล่าง
         tw = int(max(np.linalg.norm(src[0] - src[1]), np.linalg.norm(src[3] - src[2])))
         th = int(max(np.linalg.norm(src[0] - src[3]), np.linalg.norm(src[1] - src[2])))
+        if tw < 2 or th < 2:
+            raise ValueError(f"จุด perspective ใกล้กันเกินไป ได้กรอบ {tw}×{th} px")
         dst = np.array([[0, 0], [tw, 0], [tw, th], [0, th]], dtype=np.float32)
         img = cv2.warpPerspective(img, cv2.getPerspectiveTransform(src, dst), (tw, th))
         h, w = img.shape[:2]
 
     c = cfg["crop"]
-    x0, y0 = int(c["x"] * w), int(c["y"] * h)
-    x1, y1 = int((c["x"] + c["w"]) * w), int((c["y"] + c["h"]) * h)
-    img = img[max(0, y0):min(h, y1), max(0, x0):min(w, x1)]
-    if img.size == 0:
-        raise ValueError("กรอบ crop ใน roi_config.json ตัดจนไม่เหลือภาพ")
+    # ต้อง clamp ทั้งสองด้าน — เดิม clamp แค่ด้านล่าง ทำให้ค่าติดลบหลุดเข้าไปเป็น
+    # index นับจากท้ายของ Python แล้วได้ภาพที่ "ไม่ว่าง แต่ผิดกรอบ" โดยไม่มี exception
+    x0 = max(0, min(w, int(c["x"] * w)))
+    x1 = max(0, min(w, int((c["x"] + c["w"]) * w)))
+    y0 = max(0, min(h, int(c["y"] * h)))
+    y1 = max(0, min(h, int((c["y"] + c["h"]) * h)))
+    if x1 <= x0 or y1 <= y0:
+        raise ValueError(f"กรอบ crop ไม่ถูกต้อง: x {x0}-{x1}, y {y0}-{y1} บนภาพ {w}×{h}")
+    img = img[y0:y1, x0:x1]
 
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     gray = cv2.bilateralFilter(gray, 7, 60, 60)        # ลด noise แต่ยังเก็บขอบตัวเลข
@@ -177,15 +190,22 @@ def ocr_tesseract(binimg):
 
 def ocr_ssocr(binimg):
     """สำหรับจอ 7-segment — ต้องติดตั้ง ssocr แยก (apt install ssocr)"""
+    DATA_DIR.mkdir(parents=True, exist_ok=True)   # ครั้งแรกบนเครื่องสะอาดโฟลเดอร์ยังไม่มี
     tmp = DATA_DIR / "_ssocr_tmp.png"
-    cv2.imwrite(str(tmp), binimg)
+    if not cv2.imwrite(str(tmp), binimg):         # imwrite คืน False เงียบๆ ไม่โยน exception
+        raise RuntimeError(f"เขียนไฟล์ชั่วคราวสำหรับ ssocr ไม่ได้: {tmp}")
     try:
-        out = subprocess.run(["ssocr", "-t", "40", "crop", "0", "0", "-1", "-1", str(tmp)],
+        # ไม่ส่ง crop เพราะ preprocess() ตัดกรอบมาให้แล้ว
+        out = subprocess.run(["ssocr", "-t", "40", str(tmp)],
                              capture_output=True, text=True, timeout=10)
+        if out.returncode != 0:
+            raise RuntimeError(f"ssocr คืนรหัส {out.returncode}: {out.stderr.strip()[:200]}")
         raw = out.stdout.strip()
-        return raw, (0.8 if raw else 0.0)      # ssocr ไม่คืนค่าความมั่นใจ ให้ค่าคงที่ไว้
+        return raw, (0.8 if raw else 0.0)   # ssocr ไม่คืนค่าความมั่นใจ ใช้ค่าคงที่แทน
     except FileNotFoundError:
         raise RuntimeError("ไม่พบคำสั่ง ssocr — ติดตั้งด้วย: sudo apt install ssocr")
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("ssocr ค้างเกิน 10 วินาที")
     finally:
         tmp.unlink(missing_ok=True)
 
@@ -193,8 +213,23 @@ def ocr_ssocr(binimg):
 OCR_ENGINES = {"tesseract": ocr_tesseract, "ssocr": ocr_ssocr}
 
 
-def parse_value(raw, expected_digits=None):
-    """ดึงตัวเลขออกจากข้อความดิบ · คืน None ถ้าไม่น่าเชื่อถือ"""
+def parse_value(raw, expected_digits=None, decimal_places=None):
+    """ดึงตัวเลขออกจากข้อความดิบ · คืน None ถ้าไม่น่าเชื่อถือ
+
+    ⚠ กับดักที่อันตรายที่สุด: ถ้า OCR อ่าน "12.34" พลาดเป็น "1234" จะได้ 1234.0
+    ซึ่ง **ผิดไป 100 เท่าโดยดูเหมือนค่าปกติทุกประการ** และ confidence อาจสูงด้วยซ้ำ
+    ทางแก้: ถ้ารู้รูปแบบมิเตอร์แน่นอน ให้ตั้ง expected_digits + decimal_places
+    แล้วอย่าให้ OCR เป็นคนตัดสินตำแหน่งจุด — เราหารเอง
+    """
+    if decimal_places is not None:
+        # โหมดรูปแบบตายตัว: สนใจเฉพาะตัวเลข ไม่สนจุดที่ OCR เดามา
+        digits = re.sub(r"\D", "", raw)
+        if not digits:
+            return None
+        if expected_digits and len(digits) != expected_digits:
+            return None
+        return int(digits) / (10 ** decimal_places)
+
     digits = re.sub(r"[^\d.]", "", raw)
     if not digits:
         return None
@@ -210,12 +245,34 @@ def parse_value(raw, expected_digits=None):
 # 4. เขียนลงเครื่อง — ทำก่อนเสมอ ไม่ยุ่งกับเครือข่าย
 # ─────────────────────────────────────────────────────────────
 
-def save_reading(img_bgr, raw, value, conf, run_id, meter_type, source_name=None):
+def save_image(img_bgr):
+    """เซฟภาพ **ต้นฉบับ** ลง SD · เรียกก่อน OCR เสมอ
+
+    เหตุผลที่ต้องเป็นต้นฉบับ ไม่ใช่ภาพที่ crop แล้ว: ถ้าจูน roi_config.json ผิด
+    ตอนแข่ง แล้วเก็บแต่ภาพที่ crop ผิดไว้ จะกลับมารันใหม่ด้วยค่าที่ถูกไม่ได้เลย
+    ต้องไปถ่ายมิเตอร์ใหม่ ซึ่งในสนามแข่งทำไม่ได้
+    """
     IMAGE_DIR.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(timezone.utc)
     rid = uuid.uuid4().hex[:12]
     img_name = f"{ts:%Y%m%d_%H%M%S}_{rid}.jpg"
-    cv2.imwrite(str(IMAGE_DIR / img_name), img_bgr, [cv2.IMWRITE_JPEG_QUALITY, 92])
+    path = IMAGE_DIR / img_name
+    if not cv2.imwrite(str(path), img_bgr, [cv2.IMWRITE_JPEG_QUALITY, 92]):
+        raise RuntimeError(f"เขียนภาพไม่สำเร็จ: {path}")   # imwrite คืน False เงียบๆ
+    return ts, rid, img_name
+
+
+def _fsync_dir(path):
+    """บังคับให้ directory entry ลง disk — ไม่งั้นไฟดับแล้วอาจได้ record ที่ชี้ไปยัง
+    ไฟล์ภาพที่ยังไม่ปรากฏใน directory"""
+    fd = os.open(str(path), os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def save_reading(ts, rid, img_name, raw, value, conf, run_id, meter_type, source_name=None):
 
     rec = {
         "local_id": rid,
@@ -234,19 +291,35 @@ def save_reading(img_bgr, raw, value, conf, run_id, meter_type, source_name=None
         f.write(json.dumps(rec, ensure_ascii=False) + "\n")
         f.flush()
         os.fsync(f.fileno())          # บังคับให้ลงแผ่นจริง กันไฟดับแล้วข้อมูลหาย
+    _fsync_dir(JSONL_PATH.parent)
+    _fsync_dir(IMAGE_DIR)
     return rec
 
 
 # ─────────────────────────────────────────────────────────────
 
 def process_one(img, cfg, engine, run_id, meter_type, name=None, debug_dir=None):
-    binimg, cropped = preprocess(img, cfg)
-    raw, conf = OCR_ENGINES[engine](binimg)
-    value = parse_value(raw, cfg.get("expected_digits"))
-    rec = save_reading(cropped, raw, value, conf, run_id, meter_type, name)
-    if debug_dir:
-        Path(debug_dir).mkdir(parents=True, exist_ok=True)
-        cv2.imwrite(str(Path(debug_dir) / f"{rec['local_id']}_bin.png"), binimg)
+    # ลำดับสำคัญ: เซฟภาพต้นฉบับ **ก่อน** ทำ OCR
+    # ถ้า OCR พัง (pytesseract ไม่พบ binary, ssocr timeout, crop ผิด) เฟรมที่เพิ่งถ่าย
+    # จะยังอยู่บน SD ไม่หายไปพร้อมกับ exception
+    ts, rid, img_name = save_image(img)
+
+    raw, conf, value, err = "", 0.0, None, None
+    try:
+        binimg, cropped = preprocess(img, cfg)
+        raw, conf = OCR_ENGINES[engine](binimg)
+        value = parse_value(raw, cfg.get("expected_digits"), cfg.get("decimal_places"))
+        if debug_dir:
+            Path(debug_dir).mkdir(parents=True, exist_ok=True)
+            cv2.imwrite(str(Path(debug_dir) / f"{rid}_bin.png"), binimg)
+            cv2.imwrite(str(Path(debug_dir) / f"{rid}_crop.png"), cropped)
+    except Exception as e:                     # noqa: BLE001 — ตั้งใจจับทุกอย่าง
+        err = f"{type(e).__name__}: {e}"
+        print(f"    ⚠ ประมวลผลไม่สำเร็จ ({err}) — ภาพถูกเซฟไว้แล้วที่ images/{img_name}")
+
+    rec = save_reading(ts, rid, img_name, raw, value, conf, run_id, meter_type, name)
+    if err:
+        rec["error"] = err
     return rec
 
 
@@ -270,8 +343,12 @@ def main():
             sys.exit("ต้องระบุ --path เมื่อใช้ --source folder")
         for name, img in iter_folder(args.path):
             total += 1
-            rec = process_one(img, cfg, args.engine, args.run_id, args.meter_type,
-                              name, args.debug_dir)
+            try:
+                rec = process_one(img, cfg, args.engine, args.run_id, args.meter_type,
+                                  name, args.debug_dir)
+            except Exception as e:             # noqa: BLE001 — รูปหนึ่งพังต้องไม่หยุดทั้งชุด
+                print(f"  ล้มเหลว {name:26s} {type(e).__name__}: {e}")
+                continue
             ok = rec["value"] is not None
             ok_count += ok
             print(f"  {'OK ' if ok else 'ไม่ได้'} {name:28s} raw={rec['raw_text']!r:16s} "

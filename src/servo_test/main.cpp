@@ -38,12 +38,16 @@ constexpr int US_CENTER = 1500;
 
 // อัตราการเคลื่อนที่สูงสุด — กันไม่ให้เซอร์โวกระชากไปสุดทางในทีเดียว
 // ถ้าฮอร์นติดกลไกอยู่ การกระชากทำให้เฟืองในตัวเซอร์โวแตกได้
-constexpr int   SLEW_US_PER_STEP = 5;
-constexpr int   SLEW_STEP_MS     = 12;      // ~417 us/s ≈ เดินเต็มช่วง 4.8 วินาที
+// datasheet MG996R ระบุ dead band 5 us → ถ้าขั้นละ 5 us เซอร์โวจะไม่ตอบสนองทีละขั้น
+// แล้วไปกระตุกทีเดียว 10 us ทุกๆ 2 ขั้น · ใช้ 10 us/24 ms แทน อัตราเฉลี่ยเท่าเดิม
+constexpr int   SLEW_US_PER_STEP = 10;
+constexpr int   SLEW_STEP_MS     = 24;      // 417 us/s ≈ เดินเต็มช่วง 4.8 วินาที
 
 static bool attached = false;
 static int  currentUs = US_CENTER;
-static uint32_t lastCommandMs = 0;
+// หลังปล่อยสัญญาณ ผู้ใช้หมุนฮอร์นด้วยมือได้ → โค้ดไม่รู้ตำแหน่งจริงอีกต่อไป
+// ถ้าผูกกลับด้วยค่าเก่า เซอร์โวจะวิ่งกลับด้วยความเร็วเต็ม = สิ่งที่ทั้งไฟล์นี้พยายามเลี่ยง
+static bool positionUnknown = false;
 
 // ── ตัวช่วย ───────────────────────────────────────────────────
 
@@ -58,13 +62,25 @@ static void servoDetach(const char* why) {
     pinMode(PIN_SERVO, OUTPUT);
     digitalWrite(PIN_SERVO, LOW);
     attached = false;
+    positionUnknown = true;
+    Serial.printf("[ปล่อย] %s — เซอร์โวไม่มีสัญญาณแล้ว หมุนด้วยมือได้\n", why);
+    Serial.println("        คำสั่งถัดไปต้องระบุตำแหน่งเอง (us <ค่า>) เพราะโค้ดไม่รู้ว่าฮอร์นอยู่ตรงไหนแล้ว");
+  } else {
+    Serial.printf("[ปล่อย] %s — ไม่ได้ผูกสัญญาณอยู่แล้ว\n", why);
   }
-  Serial.printf("[ปล่อย] %s — เซอร์โวไม่มีสัญญาณแล้ว หมุนด้วยมือได้\n", why);
 }
 
 // ผูกสัญญาณโดยเริ่มที่ตำแหน่งที่ระบุ — ไม่กระโดดจากค่าเก่า
 static bool servoAttachAt(int us) {
   us = constrain(us, US_MIN, US_MAX);
+  if (positionUnknown) {
+    Serial.printf("⚠ ไม่รู้ตำแหน่งฮอร์นจริงหลังปล่อยสัญญาณ — กำลังจะผูกที่ %d us\n", us);
+    Serial.println("  ถ้าฮอร์นอยู่ห่างจากค่านี้มาก เซอร์โวจะวิ่งเร็ว ตรวจก่อนแล้วกด Enter");
+    while (Serial.available()) Serial.read();
+    while (!Serial.available()) delay(20);
+    while (Serial.available()) Serial.read();
+    positionUnknown = false;
+  }
   if (!attached) {
     if (!ledcAttach(PIN_SERVO, SERVO_FREQ_HZ, SERVO_RES)) {
       Serial.println("[ERR] ผูก LEDC กับขาไม่สำเร็จ");
@@ -118,17 +134,28 @@ static void testRange() {
 
   Serial.printf("\nเดินไป %d us ...\n", US_MIN);
   if (!slewTo(US_MIN)) return;
-  Serial.println(">>> ถึงแล้ว — วัดมุมแล้วจดไว้เป็น A · กด Enter เพื่อไปต่อ");
+  // 🔴 สำคัญ: ปล่อยสัญญาณก่อนให้คนวัดมุม
+  // ถ้าเซอร์โวหมุนได้แค่ 120 องศาจริงตาม datasheet การสั่ง 500 us คือการดันชนสต็อป
+  // ภายในตัวเอง = stall ที่ ~2.5 A ถ้าค้างไว้ 10-30 วินาทีระหว่างคนหยิบไม้โปรแทรกเตอร์
+  // มาวัด เฟืองจะแตกและมอเตอร์จะไหม้ · MG996R เป็นเฟืองโลหะทดสูง ค้างตำแหน่งเองได้
+  servoDetach("ถึงปลายทางแล้ว ปล่อยเพื่อให้วัดมุมได้อย่างปลอดภัย");
+  Serial.println(">>> วัดมุมแล้วจดไว้เป็น A · กด Enter เพื่อไปต่อ");
+  while (Serial.available()) Serial.read();
   while (!Serial.available()) delay(20);
   while (Serial.available()) Serial.read();
 
   Serial.printf("\nเดินไป %d us ...\n", US_MAX);
+  positionUnknown = false;          // ฮอร์นยังอยู่ที่เดิม ไม่มีใครหมุน แค่ปล่อยสัญญาณ
+  currentUs = US_MIN;
+  if (!servoAttachAt(US_MIN)) return;
+  delay(300);
   if (!slewTo(US_MAX)) return;
-  Serial.println(">>> ถึงแล้ว — วัดมุมแล้วจดไว้เป็น B");
+  servoDetach("ถึงปลายทางแล้ว ปล่อยเพื่อให้วัดมุมได้อย่างปลอดภัย");
+  Serial.println(">>> วัดมุมแล้วจดไว้เป็น B");
   Serial.println();
   Serial.println("ช่วงหมุนรวม = |B − A| องศา");
-  Serial.println("  ถ้าได้ >= 171 องศา  → ทางเลือก A ของกลไกใหม่ใช้ได้");
-  Serial.println("  ถ้าได้ 120-170     → ทางเลือก A ใช้ไม่ได้ ต้องใช้ทางเลือก B (ต้องการ 46 องศา)");
+  Serial.println("  ถ้าได้ >= 175 องศา  → ทางเลือก A ใช้ได้ (กลไกต้องการ 171 องศา เผื่อ margin 4 องศา)");
+  Serial.println("  ถ้าได้ 120-174     → ทางเลือก A ใช้ไม่ได้ ต้องใช้ทางเลือก B (ต้องการ 46 องศา)");
   Serial.println("  ถ้าได้ < 120       → ต่ำกว่า datasheet เอง ให้ตรวจสายและแหล่งจ่ายก่อนสรุป");
   Serial.println("จดผลลงตาราง V1 แล้วพิมพ์ off เพื่อปล่อยเซอร์โว");
 }
@@ -139,13 +166,22 @@ static void testStepTable() {
   Serial.println("=== V2: ตารางแปลงความกว้างพัลส์เป็นองศา ===");
   Serial.println("จะหยุดทุก 250 us ให้วัดมุมแล้วกด Enter เพื่อไปขั้นถัดไป");
   Serial.println("us,องศาที่วัดได้");
-  servoAttachAt(US_MIN);
+  // ต้องผูกที่กลางก่อนแล้วค่อยเดินไปขอบ — ผูกที่ 500 us ตรงๆ คือการกระชากจากตำแหน่ง
+  // ทางกายภาพที่โค้ดไม่รู้ ไปสุดขอบด้วยความเร็วเต็มพิกัด (MG996R วิ่ง 120 องศาใน ~0.28 s)
+  if (!servoAttachAt(US_CENTER)) return;
   delay(600);
+  if (!slewTo(US_MIN)) return;
+  delay(400);
   for (int us = US_MIN; us <= US_MAX; us += 250) {
     if (!slewTo(us)) return;
+    servoDetach("หยุดให้วัดมุม");        // กัน stall ระหว่างคนวัด เหมือน V1
     Serial.printf("%d,____\n", us);
+    while (Serial.available()) Serial.read();
     while (!Serial.available()) delay(20);
     while (Serial.available()) Serial.read();
+    positionUnknown = false;             // ฮอร์นยังอยู่ที่เดิม
+    currentUs = us;
+    if (!servoAttachAt(us)) return;
   }
   Serial.println("จบ V2 — คัดลอกทั้งบล็อกไปแปะในเอกสารเทส");
 }
@@ -190,7 +226,6 @@ static void printHelp() {
 static void handleCommand(String cmd) {
   cmd.trim();
   if (!cmd.length()) return;
-  lastCommandMs = millis();
 
   if (cmd == "?" || cmd == "h") { printHelp(); return; }
   if (cmd == "off")  { servoDetach("สั่งปล่อยเอง"); return; }
@@ -246,11 +281,13 @@ void setup() {
   Serial.println("  2. เซอร์โวกินไฟจากราง 5 V แยก ไม่ใช่จากขา 5V ของบอร์ด ESP32");
   Serial.println("  3. GND ของ ESP32 · เซอร์โว · แหล่งจ่าย ต่อถึงกันหมด");
   Serial.println("  4. pull-down 10 kΩ ที่ขาสัญญาณ (§3.2)");
-  Serial.println("  5. ตั้ง current limit ของแหล่งจ่ายที่ 3.0 A (MG996R ตอน stall ถึง ~2.5 A)");
+  Serial.println("  5. 🔴 ตั้ง current limit ของแหล่งจ่ายที่ 1.0 A — ไม่ใช่ 3.0 A");
+  Serial.println("     datasheet: running 0.5 A · stall 2.5 A → ตั้ง 3.0 A จะไม่มีวันเข้าโหมด CC");
+  Serial.println("     = ไม่ได้ป้องกันอะไรเลย · ตั้ง 1.0 A = 2 เท่าของ running แต่ 0.4 เท่าของ stall");
+  Serial.println("     แหล่งจ่ายจะตัดแรงดันทันทีที่เริ่ม stall เฟืองไม่แตก");
   Serial.println();
   Serial.println("เซอร์โวยังไม่ได้รับสัญญาณตอนนี้ — พิมพ์ v1 เพื่อเริ่ม");
   printHelp();
-  lastCommandMs = millis();
 }
 
 void loop() {

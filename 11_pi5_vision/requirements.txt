@@ -1,9 +1,19 @@
+# ⚠ ใช้ Python 3.11 หรือ 3.12 เท่านั้น
+#    numpy 1.26.4 และ opencv 4.10 ไม่มี wheel สำหรับ cp313 → จะไป build จาก source แล้วล้ม
+#    (macOS/Windows เครื่องใหม่ๆ มักได้ Python 3.13 มาโดยปริยาย ตรวจด้วย python3 -V ก่อน)
+#
 # ล็อกเวอร์ชันไว้ เพราะ Pi 5 เป็น ARM64 — เครื่องที่ dev อาจได้ wheel คนละตัว
+# opencv 4.10 build กับ numpy 1.x ใช้กับ numpy 2.x ไม่ได้ ต้องปักคู่กัน
 opencv-python-headless==4.10.0.84
 numpy==1.26.4
 pytesseract==0.3.13
 requests==2.32.3
-# บน Pi 5 ติดตั้งเพิ่ม (ไม่ใช่ผ่าน pip):
+
+# ── บน Raspberry Pi 5 ต้องติดตั้งเพิ่มด้วย apt ไม่ใช่ pip ──
 #   sudo apt install -y tesseract-ocr python3-picamera2
-# ถ้ามิเตอร์เป็นจอ 7-segment:
+#
+# ⚠ picamera2 ลงใน system Python ผ่าน apt ถ้าสร้าง venv ธรรมดาจะ import ไม่เจอ
+#   ต้องสร้างแบบนี้:  python3 -m venv --system-site-packages .venv
+#
+# ── ถ้ามิเตอร์เป็นจอ 7-segment ──
 #   sudo apt install -y ssocr

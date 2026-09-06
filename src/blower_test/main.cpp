@@ -18,6 +18,7 @@
 
 static int  brushDuty = 0;            // % ของ duty เต็ม
 static bool brushReady = false;
+static uint32_t brushOnSinceMs = 0;   // จับเวลาแยกจาก blower — แปรงเปิดเดี่ยวๆ ได้
 
 static bool pwmMode = false;          // false = เปิด-ปิดด้วย GPIO ธรรมดา (โหมดหลักตาม §3.5)
 static uint32_t pwmFreq = PWM_FREQ_DEFAULT_HZ;
@@ -32,32 +33,38 @@ static uint32_t lastCommandMs = 0;
 static void brushSet(int percent) {
   if (!brushReady) { Serial.println("[ERR] ช่องแปรงยังไม่พร้อม"); return; }
   if (percent > BRUSH_DUTY_MAX_PCT) {
-    Serial.printf("[ปฏิเสธ] duty %d %% = %.2f V เฉลี่ย ซึ่งเกินพิกัดมอเตอร์ 5 V\n",
-                  percent, percent * 12.0f / 100.0f);
-    Serial.printf("  เพดานที่ยอมให้ใช้คือ %d %% (= %.2f V เฉลี่ย)\n",
-                  BRUSH_DUTY_MAX_PCT, BRUSH_DUTY_MAX_PCT * 12.0f / 100.0f);
-    Serial.println("  มอเตอร์แปรงพิกัด 3-5 V แต่รางคือ 12 V — ต่อตรงคือไหม้ทันที");
+    Serial.printf("[ปฏิเสธ] duty %d %% = %.2f V ซึ่งเกินพิกัดมอเตอร์ %.1f V\n",
+                  percent, percent * BRUSH_RAIL_V / 100.0f, BRUSH_V_MAX);
+    Serial.printf("  บนราง %.1f V เพดานที่ยอมให้ใช้คือ %d %%\n", BRUSH_RAIL_V, BRUSH_DUTY_MAX_PCT);
     return;
   }
+  const bool wasOn = brushDuty > 0;
   brushDuty = constrain(percent, 0, BRUSH_DUTY_MAX_PCT);
   ledcWrite(PIN_BRUSH_PWM, (brushDuty * BRUSH_MAX) / 100);
-  Serial.printf("[OK] แปรง duty %d %% ≈ %.2f V เฉลี่ย · เกณฑ์กระแส ≤ %.1f A\n",
-                brushDuty, brushDuty * 12.0f / 100.0f, BRUSH_I_LIMIT_A);
+  if (brushDuty > 0 && !wasOn) brushOnSinceMs = millis();
+  Serial.printf("[OK] แปรง duty %d %% ≈ %.2f V (ราง %.1f V) · เกณฑ์กระแส ≤ %.1f A\n",
+                brushDuty, brushDuty * BRUSH_RAIL_V / 100.0f, BRUSH_RAIL_V, BRUSH_I_LIMIT_A);
+  if (brushDuty > 0 && brushDuty * BRUSH_RAIL_V / 100.0f < BRUSH_V_MIN)
+    Serial.printf("     ⚠ ต่ำกว่าพิกัดล่าง %.1f V — อาจไม่ออกตัว ไม่ใช่ว่ามอเตอร์เสีย\n", BRUSH_V_MIN);
 }
 
 // ไล่ duty ขึ้นทีละ 5 % ค้างระดับละ 4 วินาที ให้จดกระแสแต่ละระดับ
 static void brushSweep() {
+  if (!brushReady) { Serial.println("[ERR] ช่องแปรงไม่พร้อม — ไม่มีสัญญาณออกขา ยกเลิก"); return; }
   Serial.println();
   Serial.println("=== B1: กวาด duty มอเตอร์แปรง ===");
-  Serial.printf("ไล่ 10 %% ถึง %d %% ค้างระดับละ 4 วินาที — จดกระแสจากจอแหล่งจ่ายทุกระดับ\n",
-                BRUSH_DUTY_MAX_PCT);
+  Serial.printf("ราง %.1f V · ไล่ 10 %% ถึง %d %% ค้างระดับละ 4 วินาที\n",
+                BRUSH_RAIL_V, BRUSH_DUTY_MAX_PCT);
+  Serial.printf("พิกัด %.1f-%.1f V → duty ที่มีความหมายคือ %d-%d %%\n",
+                BRUSH_V_MIN, BRUSH_V_MAX,
+                (int)(BRUSH_V_MIN / BRUSH_RAIL_V * 100), BRUSH_DUTY_MAX_PCT);
   Serial.println("กดปุ่มใดก็ได้แล้ว Enter เพื่อหยุด");
   Serial.println("duty_%,V_เฉลี่ย,กระแส_A,หมุนไหม");
   while (Serial.available()) Serial.read();
   for (int d = 10; d <= BRUSH_DUTY_MAX_PCT; d += 5) {
     brushDuty = d;
     ledcWrite(PIN_BRUSH_PWM, (d * BRUSH_MAX) / 100);
-    Serial.printf("%d,%.2f,____,____\n", d, d * 12.0f / 100.0f);
+    Serial.printf("%d,%.2f,____,____\n", d, d * BRUSH_RAIL_V / 100.0f);
     const uint32_t t0 = millis();
     while (millis() - t0 < 4000) {
       if (Serial.available()) {
@@ -102,7 +109,7 @@ static void applyOn(int percent) {
 }
 
 static void stopAll(const char* why) {
-  if (brushReady) { brushDuty = 0; ledcWrite(PIN_BRUSH_PWM, 0); }
+  if (brushReady && brushDuty > 0) { brushDuty = 0; ledcWrite(PIN_BRUSH_PWM, 0); }
   applyOff();
   Serial.printf("[STOP] %s\n", why);
 }
@@ -162,7 +169,7 @@ static void timedRun(uint32_t ms) {
     }
     delay(5);
   }
-  applyOff();
+  stopAll("จบรอบ run");
   if (aborted) { Serial.println(">>> หยุดกลางคัน — รอบนี้ใช้ไม่ได้ ต้องทำใหม่"); return; }
   const uint32_t actual = millis() - t0;
   Serial.printf(">>> ปิดแล้ว · เวลาที่เปิดจริง %lu ms (คลาด %+ld ms)\n",
@@ -174,8 +181,12 @@ static void timedRun(uint32_t ms) {
 // MAX_ON_MS (2 นาที) สั้นเกินกว่าจะถึงสถานะคงตัวทางความร้อน จึงต้องมีคำสั่งแยก
 // กด key ใดๆ เพื่อหยุดกลางคัน
 static void heatRun(uint32_t minutes) {
-  uint32_t ms = minutes * 60000UL;
-  if (ms == 0 || ms > MAX_HEAT_MS) ms = MAX_HEAT_MS;
+  // ห้ามให้ค่าที่พิมพ์ผิดกลายเป็นรอบยาวที่สุด — เดิม heat 0 และ heat abc ได้ 10 นาทีเต็ม
+  if (minutes == 0 || minutes > MAX_HEAT_MIN) {
+    Serial.printf("[ปฏิเสธ] ใช้: heat <นาที> ค่า 1-%lu เท่านั้น\n", (unsigned long)MAX_HEAT_MIN);
+    return;
+  }
+  const uint32_t ms = minutes * 60000UL;
   Serial.printf("\n=== S2: เปิดค้าง %lu นาที เพื่อวัดอุณหภูมิ MOSFET ===\n",
                 (unsigned long)(ms / 60000UL));
   Serial.println("วัดอุณหภูมิผิว MOSFET ทุก 1 นาที จนค่านิ่ง (ไม่เพิ่มเกิน 1 °C ใน 2 นาที)");
@@ -189,7 +200,7 @@ static void heatRun(uint32_t minutes) {
   while (millis() - t0 < ms) {
     if (Serial.available()) {
       while (Serial.available()) Serial.read();
-      applyOff();
+      stopAll("ผู้ใช้สั่งหยุด heat");
       Serial.printf(">>> หยุดเอง ที่ %lu s\n", (unsigned long)((millis() - t0) / 1000));
       return;
     }
@@ -200,7 +211,7 @@ static void heatRun(uint32_t minutes) {
     }
     delay(20);
   }
-  applyOff();
+  stopAll("จบรอบ heat");
   Serial.printf(">>> ครบ %lu s แล้ว ปิด blower · จดอุณหภูมิสุดท้ายและอุณหภูมิห้อง\n",
                 (unsigned long)(ms / 1000));
   Serial.println("คำนวณต่อ: R_DS(on) โดยประมาณ = (T_ผิว - T_ห้อง) / 345.6  [ohm]");
@@ -226,7 +237,7 @@ static void dutySweep() {
     while (millis() - t0 < 2000) {
       if (Serial.available()) {
         while (Serial.available()) Serial.read();
-        applyOff();
+        stopAll("จบ sweep");
         Serial.printf("\n>>> SUCTION_DUTY_MIN = %d %% ที่ %u Hz\n", d, (unsigned)pwmFreq);
         Serial.println("จดค่านี้ลงตาราง S5 — ต่ำกว่านี้ใบพัดจะไม่ออกตัว");
         Serial.println("⚠ ค่านี้เป็น *ขอบบน* เพราะรวมเวลาปฏิกิริยาของคน (ปกติ 200-400 ms)");
@@ -244,12 +255,13 @@ static void dutySweep() {
         Serial.printf("\n>>> SUCTION_DUTY_MIN = %d %% ที่ %u Hz (กดหลังจบช่วงพอดี)\n",
                       d, (unsigned)pwmFreq);
         Serial.println("จดค่านี้ลงตาราง S5 — ค่านี้เป็น *ขอบบน* เพราะรวมเวลาปฏิกิริยาคน");
+        stopAll("จบ sweep");
         return;
       }
       delay(5);
     }
   }
-  applyOff();
+  stopAll("จบ sweep");
   Serial.println(">>> ไล่จนถึง 100 % แล้วยังไม่ได้กด — ตรวจว่าวงจรต่อถูกไหม");
 }
 
@@ -268,7 +280,7 @@ static void printHelp() {
   Serial.println("│ sweep       หา SUCTION_DUTY_MIN (ขั้น S5)            │");
   Serial.printf ("│ f <Hz>      เปลี่ยนความถี่ (%u-%u Hz เท่านั้น)         │\n",
                  (unsigned)PWM_FREQ_MIN_HZ, (unsigned)PWM_FREQ_MAX_HZ);
-  Serial.println("│ b <0-40>    ตั้ง duty มอเตอร์แปรง (เพดาน 40 %)        │");
+  Serial.printf ("│ b <0-%-3d>   ตั้ง duty มอเตอร์แปรง                    │\n", BRUSH_DUTY_MAX_PCT);
   Serial.println("│ bs          ปิดแปรง                                  │");
   Serial.println("│ bsweep      กวาด duty แปรง 10-40 % วัดกระแส (ขั้น B1) │");
   Serial.println("│ both        เปิดดูดเต็ม + แปรง 30 % พร้อมกัน          │");
@@ -280,8 +292,8 @@ static void printStatus() {
   Serial.printf("blower: โหมด %s · %u Hz · duty %d %% · %s\n",
                 pwmMode ? "PWM" : "เปิด-ปิด (GPIO)", (unsigned)pwmFreq,
                 dutyPercent, blowerOn ? "เปิดอยู่" : "ปิด");
-  Serial.printf("แปรง : duty %d %% ≈ %.2f V เฉลี่ย (เพดาน %d %%)\n",
-                brushDuty, brushDuty * 12.0f / 100.0f, BRUSH_DUTY_MAX_PCT);
+  Serial.printf("แปรง : duty %d %% ≈ %.2f V · ราง %.1f V · เพดาน %d %%\n",
+                brushDuty, brushDuty * BRUSH_RAIL_V / 100.0f, BRUSH_RAIL_V, BRUSH_DUTY_MAX_PCT);
   if (blowerOn)
     Serial.printf("เปิดมาแล้ว %lu ms (จะตัดเองที่ %lu ms)\n",
                   (unsigned long)(millis() - onSinceMs), (unsigned long)MAX_ON_MS);
@@ -308,10 +320,8 @@ static void handleCommand(String cmd) {
   if (cmd.startsWith("b ")) { brushSet(cmd.substring(2).toInt()); return; }
   if (cmd == "both") {
     applyOn(100);
-    brushSet(30);
-    Serial.println("[OK] เปิดดูดเต็มที่ + แปรงที่ 30 % พร้อมกัน — จดกระแสรวม");
-    running = true;
-    runUntilMs = millis() + MAX_ON_MS;
+    brushSet(BRUSH_DUTY_MAX_PCT * 60 / 100);   // ~60 % ของเพดาน = ย่านกลางพิกัด
+    Serial.println("[OK] เปิดดูดเต็มที่ + แปรงพร้อมกัน — จดกระแสรวม");
     return;
   }
 
@@ -372,6 +382,8 @@ void setup() {
   // ตั้งขาให้เป็น LOW ก่อนทุกอย่าง กัน blower ออกตัวเองตอนบูต
   pinMode(PIN_SUCTION_EN, OUTPUT);
   digitalWrite(PIN_SUCTION_EN, LOW);
+  pinMode(PIN_BRUSH_PWM, OUTPUT);       // ต้องอยู่ตรงนี้ ไม่ใช่หลัง delay(2000)
+  digitalWrite(PIN_BRUSH_PWM, LOW);     // ไม่งั้นขาเกตแปรงลอยนาน ~2.3 วินาที
 
   Serial.begin(115200);
   delay(2000);   // รอ USB CDC พร้อม ไม่งั้นบรรทัดแรกๆ จะหาย
@@ -384,25 +396,26 @@ void setup() {
   Serial.printf("blower: %.1f V · พิกัด %.1f A · เกณฑ์ผ่าน ≤ %.2f A\n",
                 BLOWER_V_NOM, BLOWER_I_RATED_A, BLOWER_I_LIMIT_A);
   // ช่องแปรง — ผูก LEDC ที่ 20 kHz ตาม §3.5 T1 · เริ่มที่ duty 0 เสมอ
-  pinMode(PIN_BRUSH_PWM, OUTPUT);
-  digitalWrite(PIN_BRUSH_PWM, LOW);
   brushReady = ledcAttach(PIN_BRUSH_PWM, BRUSH_FREQ_HZ, BRUSH_RES_BITS);
   if (brushReady) {
     ledcWrite(PIN_BRUSH_PWM, 0);
-    Serial.printf("ช่องแปรง: GPIO %d · %u Hz · เพดาน duty %d %% (= %.2f V เฉลี่ย)\n",
-                  PIN_BRUSH_PWM, (unsigned)BRUSH_FREQ_HZ, BRUSH_DUTY_MAX_PCT,
-                  BRUSH_DUTY_MAX_PCT * 12.0f / 100.0f);
+    Serial.printf("ช่องแปรง: GPIO %d · %u Hz · ราง %.1f V · เพดาน duty %d %% (= %.2f V)\n",
+                  PIN_BRUSH_PWM, (unsigned)BRUSH_FREQ_HZ, BRUSH_RAIL_V, BRUSH_DUTY_MAX_PCT,
+                  BRUSH_DUTY_MAX_PCT * BRUSH_RAIL_V / 100.0f);
   } else {
     Serial.println("!!! ผูก LEDC ช่องแปรงไม่สำเร็จ — คำสั่งแปรงจะใช้ไม่ได้");
   }
 
   Serial.println();
-  Serial.println("⚠ ตรวจ 5 ข้อก่อนจ่ายไฟ 12 V (รายละเอียดในเอกสารเทส):");
+  Serial.println("⚠ ตรวจ 6 ข้อก่อนจ่ายไฟ (รายละเอียดในเอกสารเทส):");
   Serial.println("  1. MOSFET ต้องเป็น logic-level — IRF520 ใช้ไม่ได้ ต้องการ V_gs ~10 V");
   Serial.println("  2. R 100 Ω อนุกรมเข้าเกต + pull-down 10 kΩ ลงกราวด์ (§3.2)");
   Serial.println("  3. ไดโอด SS34 คร่อมโหลด ขั้วถูกด้าน");
   Serial.println("  4. GND ของ ESP32 · MOSFET · แหล่งจ่าย 12 V ต่อถึงกันหมด");
   Serial.println("  5. ตั้ง current limit ของแหล่งจ่ายที่ 4.0 A (สูงกว่าเกณฑ์ 2.76 A เผื่อ inrush)");
+  Serial.printf ("  6. 🔴 เฟิร์มแวร์สมมติว่าแปรงอยู่บนราง %.1f V ตาม §4.0 ผังราง\n", BRUSH_RAIL_V);
+  Serial.println("     ถ้าวันประกอบจริงต่อเข้าราง 12 V ต้องแก้ BRUSH_RAIL_V ใน config.h ก่อนแฟลช");
+  Serial.println("     ไม่งั้นเพดาน duty จะสูงเกินไป 2.4 เท่า และมอเตอร์จะไหม้");
   printHelp();
   lastCommandMs = millis();
 }
@@ -415,8 +428,12 @@ void loop() {
     else buf += c;
   }
 
-  if (blowerOn && millis() - onSinceMs > MAX_ON_MS) stopAll("ครบเวลาเปิดสูงสุด");
-  if (blowerOn && millis() - lastCommandMs > DEADMAN_MS) stopAll("ไม่มีคำสั่งใหม่นานเกินไป");
+  // ต้องเฝ้าแปรงด้วย ไม่ใช่แค่ blower — สั่ง b อย่างเดียวโดยไม่เปิดดูดก็เกิดขึ้นได้
+  // และแปรงคือตัวที่ต้องการการเฝ้ามากที่สุด เพราะถูกขับด้วยแรงดันชั่วขณะเต็มราง
+  const bool anyLoadOn = blowerOn || (brushDuty > 0);
+  if (blowerOn      && millis() - onSinceMs      > MAX_ON_MS)  stopAll("blower ครบเวลาเปิดสูงสุด");
+  if (brushDuty > 0 && millis() - brushOnSinceMs > MAX_ON_MS)  stopAll("แปรงครบเวลาเปิดสูงสุด");
+  if (anyLoadOn     && millis() - lastCommandMs  > DEADMAN_MS) stopAll("ไม่มีคำสั่งใหม่นานเกินไป");
 
   delay(10);
 }

@@ -30,29 +30,41 @@ BATCH = 50
 
 
 def load_records():
+    """คืน (records, bad_lines) — บรรทัดที่ parse ไม่ได้ต้องเก็บไว้เขียนกลับ
+    ไม่งั้น rewrite() จะลบมันทิ้งถาวร ทั้งที่อาจกู้ด้วยมือได้"""
     if not JSONL_PATH.exists():
-        return []
-    out = []
+        return [], []
+    out, bad = [], []
     for i, line in enumerate(JSONL_PATH.read_text(encoding="utf-8").splitlines()):
-        line = line.strip()
-        if not line:
+        stripped = line.strip()
+        if not stripped:
             continue
         try:
-            out.append((i, json.loads(line)))
+            out.append((i, json.loads(stripped)))
         except json.JSONDecodeError:
-            print(f"  ข้ามบรรทัดที่ {i+1} — JSON เสีย", file=sys.stderr)
-    return out
+            print(f"  บรรทัดที่ {i+1} JSON เสีย — เก็บไว้ไม่ลบทิ้ง", file=sys.stderr)
+            bad.append(line)
+    return out, bad
 
 
-def rewrite(records):
+def rewrite(records, bad_lines=()):
     """เขียนไฟล์ใหม่ทั้งไฟล์ผ่านไฟล์ชั่วคราว กันไฟดับกลางคันแล้วไฟล์พัง"""
     tmp = JSONL_PATH.with_suffix(".jsonl.tmp")
     with tmp.open("w", encoding="utf-8") as f:
         for _, r in records:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
+        for line in bad_lines:        # บรรทัดที่ parse ไม่ได้ ต้องอยู่ต่อ ไม่ใช่หายไป
+            f.write(line + "\n")
         f.flush()
         os.fsync(f.fileno())
     tmp.replace(JSONL_PATH)
+    # os.replace เป็น atomic แต่ตัว rename ยังค้างใน directory cache
+    # ถ้าไฟดับตรงนี้อาจได้ไฟล์เก่ากลับมา = เสีย synced_at ทั้งชุด = ส่งซ้ำ
+    fd = os.open(str(JSONL_PATH.parent), os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
 
 
 def main():
@@ -65,7 +77,7 @@ def main():
     if not args.dry_run and (not url or not key):
         sys.exit("ต้องตั้ง SUPABASE_URL และ SUPABASE_KEY ก่อน")
 
-    records = load_records()
+    records, bad_lines = load_records()
     pending = [(i, r) for i, r in records if not r.get("synced_at")]
     print(f"ทั้งหมด {len(records)} รายการ · ยังไม่ได้ส่ง {len(pending)} รายการ")
     if not pending:
@@ -73,17 +85,24 @@ def main():
 
     if args.dry_run:
         for _, r in pending[:10]:
-            print(f"  {r['captured_at']}  value={r['value']}  raw={r['raw_text']!r}")
+            print(f"  {r.get('captured_at')}  value={r.get('value')}  raw={r.get('raw_text')!r}")
         if len(pending) > 10:
             print(f"  ... และอีก {len(pending)-10} รายการ")
         return
 
-    endpoint = f"{url}/rest/v1/{TABLE}"
+    # 🔴 ต้องเป็น upsert ไม่ใช่ insert ธรรมดา
+    # local_id เป็น unique — ถ้าส่งซ้ำด้วย insert PostgREST จะมองทั้ง array เป็น
+    # INSERT statement เดียว → duplicate key ทำให้ rollback ทั้ง batch รวมรายการใหม่
+    # ที่ยังไม่เคยส่งด้วย → ได้ 409 → break → ทุกรอบต่อจากนี้ค้างที่เดิมถาวร
+    # และการส่งซ้ำเกิดได้ง่ายมาก: กด Ctrl-C, ไฟดับ, หรือ response หายกลางทาง
+    # หลังเซิร์ฟเวอร์บันทึกไปแล้ว (ซึ่งเกิดแน่ในสนามแข่ง)
+    # ด้วย merge-duplicates การส่งซ้ำกลายเป็น no-op — ระบบกู้ตัวเองได้
+    endpoint = f"{url}/rest/v1/{TABLE}?on_conflict=local_id"
     headers = {
         "apikey": key,
         "Authorization": f"Bearer {key}",
         "Content-Type": "application/json",
-        "Prefer": "return=minimal",
+        "Prefer": "return=minimal,resolution=merge-duplicates",
     }
 
     sent = 0
@@ -112,9 +131,12 @@ def main():
         for _, r in chunk:
             r["synced_at"] = now
         sent += len(chunk)
+        # บันทึกทุก chunk ไม่ใช่รอตอนจบ — ถ้าโปรเซสตายกลางคัน หน้าต่างความเสียหาย
+        # จะเหลือแค่ 1 chunk (50 แถว) แทนที่จะเป็นทั้งไฟล์
+        rewrite(records, bad_lines)
         print(f"  ส่งแล้ว {sent}/{len(pending)}")
 
-    rewrite(records)      # บันทึกสถานะ synced_at กลับลงไฟล์เสมอ แม้จะหยุดกลางคัน
+    rewrite(records, bad_lines)   # เผื่อกรณี break ออกมาก่อนส่งได้สักรายการ
     print(f"เสร็จ — ส่งสำเร็จ {sent} รายการ · เหลือ {len(pending)-sent} รายการไว้รอบหน้า")
 
 
