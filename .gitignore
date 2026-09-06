@@ -22,6 +22,11 @@ env/
 06_Scissor_Lift/*.png
 04_การวิเคราะห์โครงสร้าง/*.png
 
+# ── ข้อมูลที่หุ่นเก็บระหว่างทดสอบ (ภาพ + ค่าที่อ่านได้) ────────
+11_pi5_vision/data/
+11_pi5_vision/debug/
+11_pi5_vision/photos/
+
 # ── ความลับ (กันพลาดล่วงหน้า ตอน firmware มี WiFi cred) ─
 *.env
 secrets.h

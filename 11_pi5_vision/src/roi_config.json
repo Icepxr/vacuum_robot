@@ -1,0 +1,10 @@
+{
+  "crop": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 1.0},
+  "perspective": null,
+  "rotate_deg": 0,
+  "invert": false,
+  "clahe_clip": 2.0,
+  "threshold": "otsu",
+  "scale": 2.0,
+  "expected_digits": null
+}

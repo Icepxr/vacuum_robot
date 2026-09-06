@@ -1,0 +1,9 @@
+# ล็อกเวอร์ชันไว้ เพราะ Pi 5 เป็น ARM64 — เครื่องที่ dev อาจได้ wheel คนละตัว
+opencv-python-headless==4.10.0.84
+numpy==1.26.4
+pytesseract==0.3.13
+requests==2.32.3
+# บน Pi 5 ติดตั้งเพิ่ม (ไม่ใช่ผ่าน pip):
+#   sudo apt install -y tesseract-ocr python3-picamera2
+# ถ้ามิเตอร์เป็นจอ 7-segment:
+#   sudo apt install -y ssocr

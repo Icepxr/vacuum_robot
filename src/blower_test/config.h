@@ -52,6 +52,27 @@ constexpr uint32_t PWM_FREQ_MAX_HZ     = 50;    // เพดานแข็ง �
 constexpr uint8_t  PWM_RES_BITS        = 13;    // ≤ 14 = เพดานของ ESP32-S3
 constexpr int      PWM_MAX             = (1 << PWM_RES_BITS) - 1;   // 8191
 
+// ── มอเตอร์แปรงข้าง (Yellow Motor) ──────────────────────────
+// พิกัดจากตารางสเปก: 3–5 V · ~1 A · 2–5 W   [สเปก] test_design §1.3
+// รางหลักคือ 12 V → **เกินพิกัดเกือบ 3 เท่า ต่อตรงคือไหม้ทันที**
+constexpr int PIN_BRUSH_PWM = 16;          // §3.2 · LEDC ch5 T1
+constexpr uint32_t BRUSH_FREQ_HZ = 20000;  // §3.5 T1 · div = 1,000 ตั้งได้จริง
+constexpr uint8_t  BRUSH_RES_BITS = 10;    // §3.5 T1
+constexpr int      BRUSH_MAX = (1 << BRUSH_RES_BITS) - 1;   // 1023
+
+// เพดาน duty — คำนวณจากพิกัดแรงดันของมอเตอร์เอง
+//   V_เฉลี่ย = duty × 12 V
+//   duty 25 % → 3.00 V   (ขอบล่างของพิกัด)
+//   duty 30 % → 3.60 V
+//   duty 40 % → 4.80 V   ← เพดานที่ตั้งไว้ ต่ำกว่าพิกัดบน 5 V เล็กน้อย
+//   duty 50 % → 6.00 V   เกินพิกัด 20 %
+//   duty 70 % → 8.40 V   เกินพิกัด 68 %
+// ⚠ test_design §1.3 เสนอให้ทดสอบที่ 30/50/70 % ซึ่ง **ขัดกับคำเตือนของตัวเอง**
+//    ในย่อหน้าเดียวกันที่บอกว่าต่อ 12 V ตรงจะไหม้ · โค้ดนี้จึงปฏิเสธเกิน 40 %
+//    บันทึกความขัดแย้งไว้ที่ไฟล์ 10 ข้อ C16
+constexpr int   BRUSH_DUTY_MAX_PCT = 40;
+constexpr float BRUSH_I_LIMIT_A    = 1.0f;   // พิกัดกระแสของมอเตอร์
+
 // ── ขีดจำกัดความปลอดภัยของการทดสอบ ──────────────────────────
 constexpr uint32_t MAX_ON_MS    = 120000;  // คำสั่ง on เปิดค้างได้ไม่เกิน 2 นาที
 constexpr uint32_t DEADMAN_MS   =  60000;  // ไม่มีคำสั่งใหม่เกินนี้ = ปิดเอง
