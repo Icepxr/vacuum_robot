@@ -30,11 +30,38 @@ python src/meter_reader.py --source folder --path ./photos --debug-dir ./debug
 
 ## บน Pi 5
 
+> **Pi 5 ตัวจริง (`uchida@10.137.154.184`) เป็น Ubuntu 24.04 + กล้อง USB Logitech BRIO** — ไม่ใช่ Raspberry Pi OS + CSI ตามที่เคยเขียน (เหตุผล: ต้องใช้ ROS เทอมหน้า · ดู C22 ในไฟล์ 10) · picamera2 ใช้บน Ubuntu ไม่ได้ ให้ใช้ `--source usb` (OpenCV/V4L2) แทน
+
 ```bash
-sudo apt install -y tesseract-ocr python3-picamera2
-pip install -r requirements.txt
-python src/meter_reader.py --source picamera2
+# บนโน้ตบุ๊ก: ส่งโค้ดขึ้น Pi (~/mrc) แล้วรัน setup — ดู scripts/
+bash scripts/deploy_to_pi.sh --setup      # ครั้งแรก (ต้อง sudo บน Pi) แล้ว sudo reboot
+bash scripts/deploy_to_pi.sh --status     # ตรวจว่าอะไรพร้อม
+
+# บน Pi
+source ~/mrc/.venv/bin/activate
+python src/meter_reader.py --source usb
 ```
+
+## ขั้น C — daemon รับคำสั่งถ่ายจาก ESP32 (12 ก.ย. 2026 · C18 ปิดแล้ว)
+
+```
+ESP32 ──#E,<ms>,CAPTURE_REQ,<n>*CC──▶ capture_daemon.py ── หยิบเฟรมล่าสุด → jpg ลง SD ──▶ $K,<n>,1*CC
+                                                         └─ OCR ทีหลังใน thread → readings.jsonl
+```
+
+```bash
+# บน Pi (venv เปิดแล้ว · ต้องมี /dev/ttyAMA0 จาก setup_pi.sh base + reboot)
+python src/capture_daemon.py                        # BRIO index 0 · MJPG 1080p เปิดค้าง
+python src/capture_daemon.py --port /dev/ttyUSB0    # ทดสอบผ่าน USB-TTL ก่อนต่อสาย GPIO
+python src/capture_daemon.py --image photos/x.jpg   # ไม่มีกล้อง: ทดสอบลิงก์ล้วนๆ
+
+# ทดสอบบนโน้ตบุ๊ก ไม่ต้องมี Pi/กล้อง/cv2 (pty ปลอม + backend ปลอม) — ผ่านแล้ว 12 ก.ย.
+python -m pytest tests/ -q
+```
+
+กติกาในไฟล์: ตอบ `$K` **ทันทีที่ภาพลง SD ไม่รอ OCR** (หน้าต่าง 5 s) · กล้องเปิดค้างใน thread (แบบเปิด-ปิดต่อรูปช้า 1.66 s [วัดจริง]) · ทิ้ง boot log ของ ESP32 เงียบๆ · ไม่แตะเครือข่าย
+รูปแบบเฟรม + CRC8 อยู่ใน `src/mrc_protocol.py` (ต้องตรงกับ `src/robot/comm_codec.h`)
+**ยังไม่เคยรันบน Pi กับ ESP32 จริง** — ทำวันที่ 16 ก.ย.
 
 ## ส่งขึ้นฐานข้อมูล
 
@@ -60,5 +87,6 @@ python src/sync_supabase.py
 ## สิ่งที่ยังไม่ได้ทำ
 
 - ยังไม่เคยรันจริงสักครั้ง ทั้งบนโน้ตบุ๊กและบน Pi
-- ยังไม่ได้เลือกรุ่นกล้อง ยังไม่อยู่ใน BOM
+- กล้องที่ต่ออยู่จริงคือ Logitech BRIO (USB) — ยังไม่อยู่ใน BOM · เสียบพอร์ต USB 2.0 อยู่ (ได้สูงสุด 1080p@30 MJPG) ย้ายไป USB 3 น่าจะได้ 4K [ยังไม่ยืนยัน]
 - ลิงก์ UART ไป ESP32 (`/dev/ttyAMA0` · ดู `system_architecture.md` §3.7) ยังไม่ได้เขียน
+- **โครงสร้างเป้าหมายของโฟลเดอร์นี้ (แพ็กเกจ `mrc/` · เว็บแอป · UART · กล้อง 2 stream) อยู่ใน [`01_เอกสารโครงการ/software_architecture.md`](../01_เอกสารโครงการ/software_architecture.md) §3** — `grab_picamera2()` แบบเปิด-ปิดต่อรูปใช้ในระบบจริงไม่ได้ (เสีย 1.5 s ในหน้าต่าง 5 s · ดูไฟล์ 19 §19.4)
