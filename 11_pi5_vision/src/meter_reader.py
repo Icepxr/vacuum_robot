@@ -49,12 +49,20 @@ def grab_picamera2():
     return cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
 
-def grab_usb(index=0):
-    """กล้อง USB ผ่าน OpenCV"""
-    cap = cv2.VideoCapture(index)
+def grab_usb(index=0, size=(1920, 1080)):
+    """กล้อง USB ผ่าน OpenCV — ขอ MJPG ที่ 1920×1080 ตรงๆ
+    ค่า default ของ OpenCV/V4L2 จะได้ YUYV 640×480 · Logitech BRIO บน USB 2.0 ให้ YUYV 1080p แค่ 5 fps
+    แต่ MJPG 1080p ได้ 30 fps (วัดจริง 11 ก.ย. 2026 · C22 ไฟล์ 10)"""
+    cap = cv2.VideoCapture(index, cv2.CAP_V4L2)
     if not cap.isOpened():
         raise RuntimeError(f"เปิดกล้อง index {index} ไม่ได้")
-    for _ in range(5):                       # ทิ้งเฟรมแรกๆ ที่ exposure ยังไม่นิ่ง
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))   # ต้องตั้งก่อนขนาด
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, size[0])
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, size[1])
+    got = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
+    if got != tuple(size):
+        print(f"⚠ กล้องให้ {got[0]}x{got[1]} ไม่ใช่ {size[0]}x{size[1]}", file=sys.stderr)
+    for _ in range(10):                      # ทิ้งเฟรมแรกๆ ที่ exposure/autofocus ยังไม่นิ่ง
         cap.read()
     ok, frame = cap.read()
     cap.release()

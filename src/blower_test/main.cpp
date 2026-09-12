@@ -378,15 +378,17 @@ static void handleCommand(String cmd) {
 
 // ── setup / loop ──────────────────────────────────────────────
 
-void setup() {
+void blowerSetup() {
   // ตั้งขาให้เป็น LOW ก่อนทุกอย่าง กัน blower ออกตัวเองตอนบูต
   pinMode(PIN_SUCTION_EN, OUTPUT);
   digitalWrite(PIN_SUCTION_EN, LOW);
   pinMode(PIN_BRUSH_PWM, OUTPUT);       // ต้องอยู่ตรงนี้ ไม่ใช่หลัง delay(2000)
   digitalWrite(PIN_BRUSH_PWM, LOW);     // ไม่งั้นขาเกตแปรงลอยนาน ~2.3 วินาที
 
+#ifndef ROBOT_MERGED
   Serial.begin(115200);
   delay(2000);   // รอ USB CDC พร้อม ไม่งั้นบรรทัดแรกๆ จะหาย
+#endif
 
   Serial.println();
   Serial.println("=== M3: เทสระบบดูด (blower + MOSFET) ===");
@@ -420,7 +422,17 @@ void setup() {
   lastCommandMs = millis();
 }
 
-void loop() {
+// เฝ้าความปลอดภัยอย่างเดียว (ไม่อ่าน Serial) — เฟิร์มแวร์รวมเรียกทุกรอบ
+void blowerTick() {
+  // ต้องเฝ้าแปรงด้วย ไม่ใช่แค่ blower — สั่ง b อย่างเดียวโดยไม่เปิดดูดก็เกิดขึ้นได้
+  // และแปรงคือตัวที่ต้องการการเฝ้ามากที่สุด เพราะถูกขับด้วยแรงดันชั่วขณะเต็มราง
+  const bool anyLoadOn = blowerOn || (brushDuty > 0);
+  if (blowerOn      && millis() - onSinceMs      > MAX_ON_MS)  stopAll("blower ครบเวลาเปิดสูงสุด");
+  if (brushDuty > 0 && millis() - brushOnSinceMs > MAX_ON_MS)  stopAll("แปรงครบเวลาเปิดสูงสุด");
+  if (anyLoadOn     && millis() - lastCommandMs  > DEADMAN_MS) stopAll("ไม่มีคำสั่งใหม่นานเกินไป");
+}
+
+void blowerLoop() {
   static String buf;
   while (Serial.available()) {
     const char c = Serial.read();
@@ -428,12 +440,19 @@ void loop() {
     else buf += c;
   }
 
-  // ต้องเฝ้าแปรงด้วย ไม่ใช่แค่ blower — สั่ง b อย่างเดียวโดยไม่เปิดดูดก็เกิดขึ้นได้
-  // และแปรงคือตัวที่ต้องการการเฝ้ามากที่สุด เพราะถูกขับด้วยแรงดันชั่วขณะเต็มราง
-  const bool anyLoadOn = blowerOn || (brushDuty > 0);
-  if (blowerOn      && millis() - onSinceMs      > MAX_ON_MS)  stopAll("blower ครบเวลาเปิดสูงสุด");
-  if (brushDuty > 0 && millis() - brushOnSinceMs > MAX_ON_MS)  stopAll("แปรงครบเวลาเปิดสูงสุด");
-  if (anyLoadOn     && millis() - lastCommandMs  > DEADMAN_MS) stopAll("ไม่มีคำสั่งใหม่นานเกินไป");
-
+  blowerTick();
   delay(10);
 }
+
+// ── จุดต่อสำหรับเฟิร์มแวร์รวม (src/robot/main.cpp) ────────────
+void blowerCommand(const String& cmd) { handleCommand(cmd); }
+void blowerStop(const char* why)      { stopAll(why); }
+void blowerHelp()                     { printHelp(); }
+void blowerStatus()                   { printStatus(); }
+bool blowerOnNow()                    { return blowerOn; }
+bool brushOnNow()                     { return brushDuty > 0; }
+
+#ifndef ROBOT_MERGED
+void setup() { blowerSetup(); }
+void loop()  { blowerLoop(); }
+#endif

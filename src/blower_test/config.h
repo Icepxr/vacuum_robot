@@ -92,4 +92,3 @@ constexpr uint32_t DEADMAN_MS   =  60000;  // ไม่มีคำสั่ง�
 // จึงมีคำสั่ง `heat` แยกไว้เฉพาะ พร้อมปุ่มหยุดกลางคัน
 constexpr uint32_t MAX_HEAT_MS  = 600000;  // 10 นาที
 constexpr uint32_t MAX_HEAT_MIN =     10;
-constexpr uint32_t MAX_HEAT_MIN =     10;

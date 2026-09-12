@@ -261,14 +261,16 @@ static void handleCommand(String cmd) {
 
 // ── setup / loop ──────────────────────────────────────────────
 
-void setup() {
+void servoSetup() {
   // ตั้งขาเป็น LOW ก่อน กันเซอร์โวได้รับพัลส์ขยะตอนบูต
   // (ตัวที่กันจริงคือ pull-down 10 kΩ ตาม §3.2 — โค้ดทำหน้าที่ต่อจากนั้น)
   pinMode(PIN_SERVO, OUTPUT);
   digitalWrite(PIN_SERVO, LOW);
 
+#ifndef ROBOT_MERGED
   Serial.begin(115200);
   delay(2000);
+#endif
 
   Serial.println();
   Serial.println("=== M2: เทสเซอร์โวเสายก (MG996R) ===");
@@ -290,12 +292,28 @@ void setup() {
   printHelp();
 }
 
-void loop() {
+// เซอร์โวไม่มีตัวจับเวลาเฝ้าเหมือนอีกสองระบบ เพราะทุก routine เป็นแบบ blocking
+// และจบด้วยการ detach เสมอ — ฟังก์ชันนี้มีไว้ให้ชั้นบนเรียกได้เหมือนกันทั้งสามระบบ
+void servoTick() {}
+
+void servoLoop() {
   static String buf;
   while (Serial.available()) {
     const char c = Serial.read();
     if (c == '\n' || c == '\r') { if (buf.length()) { handleCommand(buf); buf = ""; } }
     else buf += c;
   }
+  servoTick();
   delay(10);
 }
+
+// ── จุดต่อสำหรับเฟิร์มแวร์รวม (src/robot/main.cpp) ────────────
+void servoCommand(const String& cmd) { handleCommand(cmd); }
+void servoStop(const char* why)      { servoDetach(why); }
+void servoHelp()                     { printHelp(); }
+bool servoAttachedNow()              { return attached; }
+
+#ifndef ROBOT_MERGED
+void setup() { servoSetup(); }
+void loop()  { servoLoop(); }
+#endif

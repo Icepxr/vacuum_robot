@@ -301,9 +301,11 @@ static void handleCommand(String cmd) {
 
 // ── setup / loop ──────────────────────────────────────────────
 
-void setup() {
+void motorSetup() {
+#ifndef ROBOT_MERGED
   Serial.begin(115200);
   delay(2000);  // รอ USB CDC พร้อมก่อน ไม่งั้นบรรทัดแรกๆ จะหาย
+#endif
 
   Serial.println();
   Serial.println("=== M1: เทสมอเตอร์ + เอ็นโคดเดอร์ (ไดรเวอร์ L298N ชั่วคราว) ===");
@@ -331,7 +333,14 @@ void setup() {
   lastCommandMs = millis();
 }
 
-void loop() {
+// เฝ้าความปลอดภัยอย่างเดียว (ไม่อ่าน Serial) — เฟิร์มแวร์รวมเรียกทุกรอบ
+void motorTick() {
+  // ตัดไฟเองถ้าสั่ง `d` ค้างไว้แล้วลืม
+  if (running && millis() > runUntilMs) stopAll("ครบเวลาสูงสุดของคำสั่ง d");
+  if (running && millis() - lastCommandMs > DEADMAN_MS) stopAll("ไม่มีคำสั่งใหม่นานเกินไป");
+}
+
+void motorLoop() {
   static String buf;
   while (Serial.available()) {
     const char c = Serial.read();
@@ -342,9 +351,18 @@ void loop() {
     }
   }
 
-  // ตัดไฟเองถ้าสั่ง `d` ค้างไว้แล้วลืม
-  if (running && millis() > runUntilMs) stopAll("ครบเวลาสูงสุดของคำสั่ง d");
-  if (running && millis() - lastCommandMs > DEADMAN_MS) stopAll("ไม่มีคำสั่งใหม่นานเกินไป");
-
+  motorTick();
   delay(10);
 }
+
+// ── จุดต่อสำหรับเฟิร์มแวร์รวม (src/robot/main.cpp) ────────────
+// ตรรกะการทดสอบไม่ถูกแตะเลย — ห่อของเดิมออกมาให้ชั้นบนเรียกได้เท่านั้น
+void motorCommand(const String& cmd) { handleCommand(cmd); }
+void motorStop(const char* why)      { stopAll(why); }
+void motorHelp()                     { printHelp(); }
+bool motorRunning()                  { return running; }
+
+#ifndef ROBOT_MERGED
+void setup() { motorSetup(); }
+void loop()  { motorLoop(); }
+#endif

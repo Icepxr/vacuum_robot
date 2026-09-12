@@ -9,11 +9,20 @@ numpy==1.26.4
 pytesseract==0.3.13
 requests==2.32.3
 
-# ── บน Raspberry Pi 5 ต้องติดตั้งเพิ่มด้วย apt ไม่ใช่ pip ──
-#   sudo apt install -y tesseract-ocr python3-picamera2
+# ── บน Pi 5 ต้องติดตั้งเพิ่มด้วย apt ไม่ใช่ pip ── (scripts/setup_pi.sh base ทำให้)
+#   sudo apt install -y tesseract-ocr
 #
-# ⚠ picamera2 ลงใน system Python ผ่าน apt ถ้าสร้าง venv ธรรมดาจะ import ไม่เจอ
-#   ต้องสร้างแบบนี้:  python3 -m venv --system-site-packages .venv
+# ⚠ Pi 5 ตัวจริงเป็น Ubuntu 24.04 + กล้อง USB (BRIO) → ไม่มี/ไม่ใช้ picamera2 (C22 ไฟล์ 10)
+#   ถ้าวันหนึ่งกลับไป Raspberry Pi OS + CSI: sudo apt install python3-picamera2
+#   และสร้าง venv แบบ  python3 -m venv --system-site-packages .venv  ให้ import เจอ
 #
 # ── ถ้ามิเตอร์เป็นจอ 7-segment ──
 #   sudo apt install -y ssocr
+
+# ── เพิ่ม 11 ก.ย. 2026 ตาม software_architecture.md §2.4/§3: เว็บเซิร์ฟเวอร์ + UART asyncio ──
+#   ปักเวอร์ชันล่าสุด ณ วันเพิ่ม (ตรวจ requires_python >=3.10/3.11 แล้ว ใช้กับ 3.11 บน Pi ได้)
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+websockets==17.1
+pyserial==3.5
+pyserial-asyncio==0.6
