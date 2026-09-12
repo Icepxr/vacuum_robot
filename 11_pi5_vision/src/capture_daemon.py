@@ -15,6 +15,7 @@ capture_daemon.py — ขั้น C ของแกนหลัก: ฟัง U
     python src/capture_daemon.py                       # /dev/ttyAMA0 · กล้อง USB index 0
     python src/capture_daemon.py --port /dev/ttyUSB0   # ทดสอบผ่าน USB-TTL ก่อนต่อสาย GPIO
     python src/capture_daemon.py --image photo.jpg     # ไม่มีกล้อง: ใช้รูปนี้แทนทุกครั้ง (ทดสอบลิงก์ล้วนๆ)
+    python src/capture_daemon.py --selftest            # ไม่แตะ serial: เปิดกล้อง → ถ่าย → เซฟ → OCR แล้วจับเวลา
 
 ทดสอบบนโน้ตบุ๊กโดยไม่มี Pi/กล้อง/cv2: tests/test_capture_daemon.py (pty ปลอม + backend ปลอม)
 """
@@ -204,6 +205,33 @@ class CaptureDaemon:
         log(f"ปิด · สถิติ {self.stats}")
 
 
+def selftest(backend, rounds=3):
+    """เส้นทางกล้อง→SD→OCR แบบเดียวกับตอนรับ CAPTURE_REQ แต่ไม่มี serial — ไว้เช็คบน Pi ก่อนต่อสาย
+    ตัวเลขที่ได้ = t_capture + t_write ของไฟล์ 19 §19.4.1 (เอาไปเทียบ 71 + 14 ms)"""
+    log("selftest: รอเฟรมแรกจากกล้อง…")
+    t0 = time.monotonic()
+    while backend.latest() is None:
+        if time.monotonic() - t0 > 5:
+            log("✗ ไม่ได้เฟรมใน 5 s — กล้องไม่ส่งภาพ"); return 1
+        time.sleep(0.05)
+    log(f"  เฟรมแรกหลัง {(time.monotonic()-t0)*1000:.0f} ms")
+    for i in range(1, rounds + 1):
+        t1 = time.monotonic()
+        frame = backend.latest()
+        t2 = time.monotonic()
+        ts, rid, img_name = backend.save(frame)
+        t3 = time.monotonic()
+        rec = backend.ocr(frame, ts, rid, img_name)
+        t4 = time.monotonic()
+        log(f"  รอบ {i}: หยิบเฟรม {(t2-t1)*1000:.0f} ms · เซฟ {img_name} {(t3-t2)*1000:.0f} ms "
+            f"(= t_ack ก่อนบวก UART) · OCR {(t4-t3)*1000:.0f} ms → value={rec.get('value')} "
+            f"conf={rec.get('confidence')} raw={rec.get('raw_text')!r}"
+            + (f"  ⚠ {rec['error']}" if rec.get("error") else ""))
+        time.sleep(0.3)
+    log("selftest จบ — ภาพอยู่ใน data/images/ · บรรทัดใน data/readings.jsonl")
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", default="/dev/ttyAMA0")
@@ -213,6 +241,7 @@ def main():
     ap.add_argument("--engine", choices=["tesseract", "ssocr"], default="tesseract")
     ap.add_argument("--meter-type", default="water")
     ap.add_argument("--run-id", default=time.strftime("run_%Y%m%d_%H%M%S"))
+    ap.add_argument("--selftest", action="store_true", help="ทดสอบกล้อง→SD→OCR โดยไม่แตะ serial")
     args = ap.parse_args()
 
     if args.image:
@@ -220,6 +249,11 @@ def main():
     else:
         backend = UsbCameraBackend(args.camera, engine=args.engine,
                                    run_id=args.run_id, meter_type=args.meter_type)
+    if args.selftest:
+        try:
+            sys.exit(selftest(backend))
+        finally:
+            backend.close()
     CaptureDaemon(args.port, backend, args.baud).run()
 
 

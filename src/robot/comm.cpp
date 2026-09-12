@@ -17,9 +17,9 @@ constexpr int      PIN_U0_RX = 44;         // §3.2 — Pi GPIO14 TXD → ESP32 
 constexpr int      PIN_U0_TX = 43;         // §3.2 — ESP32 GPIO43 → Pi GPIO15 RXD
 constexpr uint32_t BAUD      = 115200;     // §3.7 · ไฟล์ 09 §9.5
 constexpr uint32_t CAPTURE_TIMEOUT_MS = 5000;   // state CAMERA_CAPTURE §6.1
-constexpr size_t   LINE_MAX  = 96;         // #T เต็มฟิลด์ ~90 ตัวอักษร (ไฟล์ 09 §9.5) — กันบรรทัดหลุดยาว
+constexpr size_t   RX_LINE_MAX  = 96;         // #T เต็มฟิลด์ ~90 ตัวอักษร (ไฟล์ 09 §9.5) — กันบรรทัดหลุดยาว
 
-char     rxBuf[LINE_MAX];
+char     rxBuf[RX_LINE_MAX];
 size_t   rxLen = 0;
 
 CaptureState state = CaptureState::IDLE;
@@ -30,7 +30,7 @@ uint32_t statReq = 0, statOk = 0, statFail = 0, statTimeout = 0, statBadLine = 0
 
 // ส่ง <kind><body>*CC\n
 void sendFrame(char kind, const char* body) {
-  char out[LINE_MAX];
+  char out[RX_LINE_MAX];
   if (!mrc::appendCrc(body, out, sizeof out)) return;
   Serial0.write(kind);
   Serial0.print(out);
@@ -88,7 +88,7 @@ void commTick() {
     const char c = (char)Serial0.read();
     if (c == '\n' || c == '\r') {
       if (rxLen) { rxBuf[rxLen] = '\0'; handleLine(rxBuf, rxLen); rxLen = 0; }
-    } else if (rxLen < LINE_MAX - 1) {
+    } else if (rxLen < RX_LINE_MAX - 1) {
       rxBuf[rxLen++] = c;
     } else {
       rxLen = 0; ++statBadLine;            // ยาวเกิน = ไม่ใช่เฟรมของเรา ทิ้งทั้งบรรทัด

@@ -94,7 +94,17 @@ clang++ -std=c++17 -I src/robot test/host_comm_codec.cpp -o /tmp/codec && /tmp/c
 ```
 vector เดียวกับ `11_pi5_vision/tests/test_protocol.py` — ถ้าสองฝั่งได้ CRC ต่างกัน ลิงก์จะเงียบสนิทโดยไม่มี error ใดๆ
 
-⚠ **env `robot` ยังไม่เคยบิลด์จริง** (Mac ไม่มี PlatformIO) — บิลด์ครั้งแรกบน Windows · ถ้า `Serial0` ไม่มีในสโคป แปลว่า core/flag ไม่ตรงกับที่คาด (`ARDUINO_USB_CDC_ON_BOOT=1` ต้องเปิดอยู่ใน `[env]`)
+✅ **env `robot` บิลด์และแฟลชผ่านแล้ว 12 ก.ย. 2026 — จาก Pi 5 เอง** (Flash 11.4 % · RAM 7.0 % · core 3.3.11 · `Serial0` มีในสโคปจริง)
+PlatformIO รันบน Ubuntu aarch64 ได้ (pioarduino มี toolchain xtensa สำหรับ aarch64) · ESP32 เสียบ USB-C เข้า Pi โผล่เป็น `/dev/ttyACM0` (303a:1001 = USB native ตาม §3.7)
+
+```bash
+# บนโน้ตบุ๊ก: ส่งโปรเจกต์เฟิร์มแวร์ไป ~/mrc-fw บน Pi
+rsync -az --exclude .pio --exclude .git platformio.ini src test uchida@10.137.154.184:~/mrc-fw/
+# บน Pi (PlatformIO อยู่ใน venv ของ ~/mrc · ครั้งแรกดาวน์โหลด ~1.5 GB ใช้ 8 นาที · หลังจากนั้น ~20 s)
+cd ~/mrc-fw && ~/mrc/.venv/bin/pio run -e robot -t upload --upload-port /dev/ttyACM0
+```
+ผลบนบอร์ด: `cap` → `#E,…,CAPTURE_REQ,1` ออก → `timeout` ที่ 5000 ms พอดี (ยังไม่ต่อสาย Pi) · `bad lines 0` = ขา 44 ลอยไม่มี noise
+ยังเหลือ: ยืนยันข้อ 1–2 ข้างบน (สัญญาณออกขา 43/44 จริง) ตอนต่อสาย
 
 ## สิ่งที่ต้องเพิ่มเพื่อคุยกับ Pi 5 / เว็บแอป (11 ก.ย. 2026)
 
