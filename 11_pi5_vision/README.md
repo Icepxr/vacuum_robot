@@ -63,6 +63,20 @@ python -m pytest tests/ -q
 รูปแบบเฟรม + CRC8 อยู่ใน `src/mrc_protocol.py` (ต้องตรงกับ `src/robot/comm_codec.h`)
 **ยังไม่เคยรันบน Pi กับ ESP32 จริง** — ทำวันที่ 16 ก.ย.
 
+## ขั้น E ขั้นต่ำ — แอปควบคุมบน Pi (15 ก.ย. 2026 · ยังไม่ได้รันบน Pi จริง)
+
+`src/mrc_web.py` **ครอบ** `capture_daemon.py` (ไม่แทนที่): daemon ยังคุย UART เหมือนเดิม · FastAPI เพิ่มภาพสด MJPEG · WebSocket เหตุการณ์ · ปุ่มถ่ายจากเว็บ · รายการค่าที่อ่านได้ · หน้าเว็บ vanilla ไม่โหลดอะไรจากเน็ต
+
+```bash
+python src/mrc_web.py                      # UART /dev/ttyAMA0 · BRIO · http://<pi>:8000
+python src/mrc_web.py --no-serial          # ไม่มี ESP32
+python -m pytest tests/ -q                 # 19 เทสต์ (daemon + web) — ผ่านบน Mac 15 ก.ย.
+sudo cp systemd/mrc-web.service /etc/systemd/system/ && sudo systemctl enable --now mrc-web
+```
+
+**สิ่งที่หน้าเว็บตั้งใจ *ไม่* มี:** ปุ่ม E-STOP/ขับ/ยกเสาที่กดได้ — ESP32 ยังรับแค่ `CAPTURE_REQ`/`$K` (C19/C20) ปุ่มที่กดแล้วหุ่นไม่หยุดจริงอันตรายกว่าไม่มีปุ่ม · จะเปิดเมื่อ ESP32 รับ `$E`/`$V`
+**schema กลาง (C23):** ทุกแถวใน `readings.jsonl` มี `meter_id` · `status` (`ocr`→`confirmed`/`rejected`) · `confirmed_value` แยกจาก `value` ตั้งแต่แถวแรก — ARIA ใช้ร่วมได้โดยไม่ต้อง migrate
+
 ## ส่งขึ้นฐานข้อมูล
 
 ```bash

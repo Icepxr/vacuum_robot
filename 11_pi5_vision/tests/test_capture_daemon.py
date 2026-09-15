@@ -57,14 +57,15 @@ def link(tmp_path):
 
 
 def read_line(fd, timeout=2.0):
+    """อ่าน 1 บรรทัดจาก pty master · คืน b"" ถ้าไม่มีอะไรมาใน timeout (ไม่บล็อกค้าง)"""
+    import select
     buf = b""
     end = time.monotonic() + timeout
     while time.monotonic() < end:
-        try:
-            ch = os.read(fd, 1)
-        except BlockingIOError:
-            time.sleep(0.01)
-            continue
+        r, _, _ = select.select([fd], [], [], max(0.0, end - time.monotonic()))
+        if not r:
+            break
+        ch = os.read(fd, 1)
         buf += ch
         if ch == b"\n":
             return buf
@@ -120,3 +121,20 @@ def test_seq_echoes_request_n(link):
         os.write(master, P.capture_req(n * 100, n))
         assert P.decode(read_line(master)).fields[1] == str(n)
     assert len(backend.saved) == 3
+
+
+def test_serial_loss_does_not_kill_daemon(tmp_path):
+    """สายหลุดกลางทาง: thread ต้องไม่ตาย และเมื่อพอร์ตกลับมาต้องรับ CAPTURE_REQ ได้ต่อ"""
+    master, slave = pty.openpty()
+    name = os.ttyname(slave)
+    backend = FakeBackend(tmp_path)
+    d = D.CaptureDaemon(name, backend)
+    th = threading.Thread(target=d.run, daemon=True); th.start()
+    os.write(master, P.capture_req(1, 1))
+    assert P.decode(read_line(master)).fields == ["K", "1", "1"]
+    os.close(master)                         # "ดึงสาย"
+    time.sleep(0.6)
+    assert th.is_alive()
+    assert getattr(d, "port_errors", 0) >= 1
+    d.stop(); th.join(timeout=5)
+    assert not th.is_alive()

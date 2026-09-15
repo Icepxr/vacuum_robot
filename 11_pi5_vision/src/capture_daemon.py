@@ -41,6 +41,7 @@ def log(msg):
 # backend กล้อง — สลับได้ เพื่อให้ตรรกะ handshake ทดสอบได้โดยไม่ต้องมี cv2
 # ทุก backend ต้องมี:  latest() -> frame หรือ None   ·   save(frame) -> (ts, rid, img_name)
 #                     ocr(frame, ts, rid, img_name) -> dict (record)   ·   close()
+#                     preview_jpeg() -> bytes หรือ None  (เฟรมย่อสำหรับ /stream.mjpg ของ mrc_web.py)
 # ─────────────────────────────────────────────────────────────
 
 class UsbCameraBackend:
@@ -88,6 +89,15 @@ class UsbCameraBackend:
     def save(self, frame):
         return self.MR.save_image(frame)             # ต้นฉบับ 1080p q92 ลง data/images/
 
+    def preview_jpeg(self, size=(640, 360), quality=80):
+        """เฟรมย่อสำหรับภาพสด — resize+encode ≈ 6 ms · ~39 kB [วัดจริง ไฟล์ 19 §19.4.1]"""
+        frame = self.latest()
+        if frame is None:
+            return None
+        small = self.cv2.resize(frame, size, interpolation=self.cv2.INTER_AREA)
+        ok, buf = self.cv2.imencode(".jpg", small, [self.cv2.IMWRITE_JPEG_QUALITY, quality])
+        return buf.tobytes() if ok else None
+
     def ocr(self, frame, ts, rid, img_name):
         MR = self.MR
         raw, conf, value, err = "", 0.0, None, None
@@ -123,6 +133,10 @@ class StillImageBackend:
     def latest(self):            return self._img
     def save(self, frame):       return self.MR.save_image(frame)
     def ocr(self, *a):           return {"note": "StillImageBackend ไม่ทำ OCR"}
+    def preview_jpeg(self):
+        import cv2
+        ok, buf = cv2.imencode(".jpg", cv2.resize(self._img, (640, 360)), [cv2.IMWRITE_JPEG_QUALITY, 80])
+        return buf.tobytes() if ok else None
     def close(self):             pass
 
 
@@ -131,47 +145,90 @@ class StillImageBackend:
 # ─────────────────────────────────────────────────────────────
 
 class CaptureDaemon:
-    def __init__(self, port, backend, baud=115200, ocr_async=True):
+    """on_event(dict) ถูกเรียกจาก thread ของ daemon ทุกครั้งที่มีอะไรเกิดขึ้น (mrc_web.py ใช้ส่งขึ้น WebSocket)
+    ชนิดเหตุการณ์: link · capture · reading · log — ห้ามบล็อกใน callback"""
+
+    def __init__(self, port, backend, baud=115200, ocr_async=True, on_event=None):
         self.backend = backend
         self.ocr_async = ocr_async
+        self.on_event = on_event or (lambda ev: None)
         self.ser = serial.Serial(port, baud, timeout=0.2)
-        self.stats = {"req": 0, "ok": 0, "fail": 0, "bad_lines": 0}
+        self.stats = {"req": 0, "ok": 0, "fail": 0, "bad_lines": 0, "manual": 0}
+        self.last_rx_mono = None            # เวลาที่ได้เฟรมถูกต้องล่าสุด (ดูว่า ESP32 ยังคุยอยู่ไหม)
         self._stop = threading.Event()
+        self._cap_lock = threading.Lock()   # กัน CAPTURE_REQ กับปุ่มบนเว็บถ่ายพร้อมกัน
 
-    def handle_capture_req(self, fr):
-        n = fr.fields[3]
+    def _emit(self, ev):
+        try:
+            self.on_event(ev)
+        except Exception as e:              # noqa: BLE001 — callback พังต้องไม่ล้ม daemon
+            log(f"on_event พัง: {e}")
+
+    def _save_then_ocr(self, frame, n, source):
+        """เส้นทางร่วมของ CAPTURE_REQ และปุ่มบนเว็บ: เซฟ → (ผู้เรียกตอบ $K) → OCR ใน thread
+        คืน (ok, img_name, t_save_ms)"""
         t0 = time.monotonic()
-        frame = self.backend.latest()
-        if frame is None:
-            self.ser.write(P.capture_ack(n, False))
-            self.stats["fail"] += 1
-            log(f"CAPTURE_REQ #{n}: ไม่มีเฟรมจากกล้อง → $K,{n},0")
-            return
         try:
             ts, rid, img_name = self.backend.save(frame)
-        except Exception as e:                       # noqa: BLE001
-            self.ser.write(P.capture_ack(n, False))
-            self.stats["fail"] += 1
-            log(f"CAPTURE_REQ #{n}: เขียนภาพล้ม ({e}) → $K,{n},0")
-            return
-        # ── ตอบตรงนี้ ก่อน OCR — จุดที่สำคัญที่สุดของไฟล์ ──
-        self.stats["ok"] += 1
-        self.ser.write(P.capture_ack(n, True))
-        self.ser.flush()
-        t_ack = (time.monotonic() - t0) * 1000
-        log(f"CAPTURE_REQ #{n}: ภาพ {img_name} ลง SD · ตอบ $K ใน {t_ack:.0f} ms"
-            + ("" if t_ack < CAPTURE_TIMEOUT_S * 1000 * 0.5 else "  ⚠ ช้าเกินครึ่งหน้าต่าง 5 s"))
+        except Exception as e:              # noqa: BLE001
+            return False, None, (time.monotonic() - t0) * 1000, str(e)
+        t_save = (time.monotonic() - t0) * 1000
 
         def _ocr():
             t1 = time.monotonic()
             rec = self.backend.ocr(frame, ts, rid, img_name)
+            rec = dict(rec, ocr_ms=round((time.monotonic() - t1) * 1000), source_req=source, n=n)
             log(f"  OCR #{n}: value={rec.get('value')} conf={rec.get('confidence')} "
-                f"raw={rec.get('raw_text')!r} ใน {(time.monotonic()-t1)*1000:.0f} ms"
+                f"raw={rec.get('raw_text')!r} ใน {rec['ocr_ms']} ms"
                 + (f"  ⚠ {rec['error']}" if rec.get("error") else ""))
+            self._emit({"t": "reading", **rec})
         if self.ocr_async:
             threading.Thread(target=_ocr, name=f"ocr-{n}", daemon=True).start()
         else:
             _ocr()
+        return True, img_name, t_save, None
+
+    def capture_now(self):
+        """ถ่ายจากปุ่มบนเว็บ — ไม่เกี่ยวกับ ESP32 ไม่ส่ง $K · ไว้จูน ROI ที่สนามโดยไม่ต้องยกเสา"""
+        with self._cap_lock:
+            self.stats["manual"] += 1
+            n = f"m{self.stats['manual']}"
+            frame = self.backend.latest()
+            if frame is None:
+                self._emit({"t": "capture", "n": n, "ok": False, "reason": "no_frame", "source": "web"})
+                return False
+            ok, img_name, t_save, err = self._save_then_ocr(frame, n, "web")
+            self._emit({"t": "capture", "n": n, "ok": ok, "image": img_name, "t_ack_ms": round(t_save),
+                        "source": "web", **({"reason": err} if err else {})})
+            log(f"ถ่ายจากเว็บ #{n}: {'ภาพ ' + img_name if ok else 'ล้ม ' + str(err)} ({t_save:.0f} ms)")
+            return ok
+
+    def handle_capture_req(self, fr):
+        n = fr.fields[3]
+        with self._cap_lock:
+            t0 = time.monotonic()
+            frame = self.backend.latest()
+            if frame is None:
+                self.stats["fail"] += 1
+                self.ser.write(P.capture_ack(n, False))
+                log(f"CAPTURE_REQ #{n}: ไม่มีเฟรมจากกล้อง → $K,{n},0")
+                self._emit({"t": "capture", "n": n, "ok": False, "reason": "no_frame", "source": "esp32"})
+                return
+            ok, img_name, t_save, err = self._save_then_ocr(frame, n, "esp32")
+            if not ok:
+                self.stats["fail"] += 1
+                self.ser.write(P.capture_ack(n, False))
+                log(f"CAPTURE_REQ #{n}: เขียนภาพล้ม ({err}) → $K,{n},0")
+                self._emit({"t": "capture", "n": n, "ok": False, "reason": err, "source": "esp32"})
+                return
+            # ── ตอบตรงนี้ ก่อน OCR — จุดที่สำคัญที่สุดของไฟล์ ──
+            self.stats["ok"] += 1
+            self.ser.write(P.capture_ack(n, True))
+            self.ser.flush()
+            t_ack = (time.monotonic() - t0) * 1000
+        log(f"CAPTURE_REQ #{n}: ภาพ {img_name} ลง SD · ตอบ $K ใน {t_ack:.0f} ms"
+            + ("" if t_ack < CAPTURE_TIMEOUT_S * 1000 * 0.5 else "  ⚠ ช้าเกินครึ่งหน้าต่าง 5 s"))
+        self._emit({"t": "capture", "n": n, "ok": True, "image": img_name, "t_ack_ms": round(t_ack), "source": "esp32"})
 
     def run_once(self):
         """อ่าน 1 บรรทัด (หรือ timeout) แล้วจัดการ — แยกไว้ให้เทสต์เรียกได้"""
@@ -182,6 +239,7 @@ class CaptureDaemon:
         if fr is None:
             self.stats["bad_lines"] += 1           # boot log / CRC ผิด — ทิ้งเงียบ (§3.7 ข้อ 3)
             return
+        self.last_rx_mono = time.monotonic()
         if P.is_capture_req(fr):
             self.stats["req"] += 1
             self.handle_capture_req(fr)
@@ -189,19 +247,49 @@ class CaptureDaemon:
             log(f"เฟรมที่ยังไม่รองรับในขั้น C: {line.strip()!r}")
 
     def run(self):
+        """วนอ่านตลอด · ถ้าพอร์ตหาย (สายหลุด/USB-TTL ถูกดึง) จะพยายามเปิดใหม่ทุก 2 s แทนที่จะตายเงียบ"""
         log(f"ฟัง {self.ser.port} @ {self.ser.baudrate} · รอ CAPTURE_REQ (Ctrl-C เพื่อหยุด)")
         try:
             while not self._stop.is_set():
-                self.run_once()
+                try:
+                    self.run_once()
+                except (serial.SerialException, OSError) as e:
+                    if self._stop.is_set():
+                        break
+                    self.port_errors = getattr(self, "port_errors", 0) + 1
+                    log(f"พอร์ต {self.ser.port} มีปัญหา ({e}) — จะลองเปิดใหม่ใน 2 s")
+                    self._emit({"t": "log", "level": "bad", "msg": f"serial หลุด: {e}"})
+                    self._reopen()
         finally:
             self.close()
+
+    def _reopen(self):
+        port, baud = self.ser.port, self.ser.baudrate
+        try:
+            self.ser.close()
+        except Exception:                    # noqa: BLE001
+            pass
+        while not self._stop.is_set():
+            self._stop.wait(2.0)
+            if self._stop.is_set():
+                return
+            try:
+                self.ser = serial.Serial(port, baud, timeout=0.2)
+                log(f"เปิด {port} ใหม่สำเร็จ")
+                self._emit({"t": "log", "level": "good", "msg": f"serial กลับมา: {port}"})
+                return
+            except (serial.SerialException, OSError):
+                continue
 
     def stop(self):
         self._stop.set()
 
     def close(self):
         self.backend.close()
-        self.ser.close()
+        try:
+            self.ser.close()
+        except Exception:                    # noqa: BLE001
+            pass
         log(f"ปิด · สถิติ {self.stats}")
 
 

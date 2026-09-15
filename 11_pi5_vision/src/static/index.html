@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MRC-001 · ควบคุม</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header>
+  <div class="brand">MRC-001 <span class="sub">แอปควบคุมบน Pi 5 · ขั้น E ขั้นต่ำ</span></div>
+  <div class="pills">
+    <span id="p-ws"   class="pill off">เว็บ: ยังไม่ต่อ</span>
+    <span id="p-cam"  class="pill off">กล้อง: —</span>
+    <span id="p-link" class="pill off">ESP32: —</span>
+    <span id="p-sys"  class="pill">Pi: —</span>
+  </div>
+</header>
+
+<main>
+  <section class="card cam">
+    <h2>ภาพสด <small id="cam-note">BRIO 1080p → ย่อ 640×360 · ≤10 fps</small></h2>
+    <div class="frame"><img id="stream" alt="ภาพสดจากกล้อง"></div>
+    <div class="row">
+      <button id="btn-capture" class="primary">ถ่ายเดี๋ยวนี้ + OCR</button>
+      <span id="cap-result" class="muted">ถ่ายจากเว็บไม่ผ่าน ESP32 — ไว้จูน ROI โดยไม่ต้องยกเสา</span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>ค่ามิเตอร์ล่าสุด</h2>
+    <div id="latest" class="latest empty">ยังไม่มีค่า</div>
+    <h3>ย้อนหลังในรอบนี้ <small id="rd-count"></small></h3>
+    <div class="tbl-wrap"><table id="readings">
+      <thead><tr><th>เวลา</th><th>ค่า</th><th>conf</th><th>raw</th><th>ที่มา</th><th>OCR ms</th><th>รูป</th></tr></thead>
+      <tbody></tbody>
+    </table></div>
+  </section>
+
+  <section class="card ctrl">
+    <h2>ควบคุมหุ่น <small>ผ่าน ESP32</small></h2>
+    <div class="notice" id="ctrl-notice">
+      ESP32 ตอนนี้รองรับเฉพาะ <code>CAPTURE_REQ</code>/<code>$K</code> (ขั้น C) —
+      ปุ่มขับ / ดูด / ยกเสา / <b>E-STOP</b> ยังไม่มีให้กด <u>โดยตั้งใจ</u> เพราะกดแล้วหุ่นไม่หยุดจริง
+      (รอ C19/C20 ขั้น E · ดู <code>software_architecture.md</code> §8)
+    </div>
+    <div class="row">
+      <button class="ghost" disabled>E-STOP</button>
+      <button class="ghost" disabled>ขับ</button>
+      <button class="ghost" disabled>ดูด/แปรง</button>
+      <button class="ghost" disabled>ยกเสา</button>
+    </div>
+    <dl class="kv" id="link-kv"></dl>
+  </section>
+
+  <section class="card log">
+    <h2>เหตุการณ์ <small>ล่าสุดอยู่บน</small></h2>
+    <ul id="events"></ul>
+  </section>
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

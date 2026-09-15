@@ -288,11 +288,15 @@ def save_reading(ts, rid, img_name, raw, value, conf, run_id, meter_type, source
         "run_id": run_id,
         "meter_type": meter_type,
         "raw_text": raw,
-        "value": value,
+        "value": value,                    # ค่าที่ OCR อ่านได้ — ห้ามเขียนทับ (C23 ข้อ 2)
         "confidence": round(conf, 4),
         "image_path": f"images/{img_name}",
         "source": source_name,
         "synced_at": None,
+        # ── ฟิลด์ schema กลางที่ ARIA (ระบบหอพัก) ต้องใช้ — ใส่ตั้งแต่แถวแรกเพื่อไม่ต้อง migrate (C23 ข้อ 1–2) ──
+        "meter_id": None,                  # ผูกห้อง/มิเตอร์ — ยังไม่มีทะเบียนมิเตอร์ ใส่ทีหลังได้
+        "status": "ocr",                   # ocr → confirmed | rejected (ผู้ให้เช่าเป็นคนเปลี่ยน ไม่ใช่หุ่น)
+        "confirmed_value": None,           # ค่าที่คนยืนยัน — คนละฟิลด์กับ value เสมอ
     }
     JSONL_PATH.parent.mkdir(parents=True, exist_ok=True)
     with JSONL_PATH.open("a", encoding="utf-8") as f:

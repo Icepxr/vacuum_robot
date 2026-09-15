@@ -1,0 +1,21 @@
+# systemd unit — แอปควบคุมหุ่นบน Pi 5 (software_architecture.md §3)
+# ติดตั้ง:  sudo cp systemd/mrc-web.service /etc/systemd/system/ && sudo systemctl daemon-reload
+#           sudo systemctl enable --now mrc-web      # เริ่มตอนบูต
+# ดู log:   journalctl -u mrc-web -f
+# ⚠ ยังไม่ได้ทดสอบบน Pi (15 ก.ย. 2026 — Pi ไม่อยู่กับตัว)
+[Unit]
+Description=MRC-001 control web (FastAPI + capture daemon)
+After=network.target
+Wants=network.target
+
+[Service]
+User=uchida
+WorkingDirectory=/home/uchida/mrc
+Environment=MRC_DATA_DIR=/home/uchida/mrc/data
+ExecStart=/home/uchida/mrc/.venv/bin/python /home/uchida/mrc/src/mrc_web.py --serial /dev/ttyAMA0 --camera 0 --port 8000
+Restart=always
+RestartSec=2
+# ถ้ากล้องหรือ UART ยังไม่พร้อมตอนบูต Restart=always จะวนจนกว่าจะเปิดได้
+
+[Install]
+WantedBy=multi-user.target

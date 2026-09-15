@@ -14,8 +14,15 @@ create table if not exists meter_readings (
   value       numeric,                     -- null = อ่านไม่ออก ไม่ใช่ค่า 0
   confidence  real,
   image_path  text,                        -- ภาพต้นฉบับใน SD ของ Pi (ยังไม่ crop)
+  -- schema กลางที่ ARIA ใช้ร่วม (C23 · 15 ก.ย. 2026) — เพิ่มได้ด้วย alter table ถ้าตารางมีอยู่แล้ว
+  meter_id        text,                    -- ผูกห้อง/มิเตอร์ (ทะเบียนอยู่ฝั่ง ARIA)
+  status          text not null default 'ocr' check (status in ('ocr','confirmed','rejected')),
+  confirmed_value numeric,                 -- ค่าที่ผู้ให้เช่ายืนยัน — คนละคอลัมน์กับ value เสมอ
   created_at  timestamptz not null default now()
 );
+alter table meter_readings add column if not exists meter_id text;
+alter table meter_readings add column if not exists status text not null default 'ocr';
+alter table meter_readings add column if not exists confirmed_value numeric;
 
 create index if not exists meter_readings_run_idx on meter_readings (run_id, captured_at);
 
