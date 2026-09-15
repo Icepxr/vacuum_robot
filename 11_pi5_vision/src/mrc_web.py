@@ -245,7 +245,9 @@ def main():
     else:
         start_daemon(args.serial, backend)
     D.log(f"เว็บ http://{args.host}:{args.port}  (ภาพสด {PREVIEW_FPS} fps)")
-    uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
+    # timeout_graceful_shutdown: ไม่งั้น SIGTERM จะรอ /stream.mjpg ที่ browser เปิดค้างไว้ตลอดกาล
+    # → process เก่าไม่ตาย ถือ /dev/ttyAMA0 ซ้อนกับตัวใหม่ แล้วแย่งอ่าน byte จนไม่มีใครได้เฟรมครบ (เจอจริง 16 ก.ย.)
+    uvicorn.run(app, host=args.host, port=args.port, log_level="warning", timeout_graceful_shutdown=2)
 
 
 if __name__ == "__main__":

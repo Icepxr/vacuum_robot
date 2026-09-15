@@ -8,7 +8,11 @@ set -u
 cd "$(dirname "$0")/.."
 mkdir -p logs
 for p in $(pgrep -f "src/capture_daemon.py"; pgrep -f "src/mrc_web.py"); do kill "$p" 2>/dev/null; done
+sleep 3
+# ถ้ายังอยู่ (เช่น uvicorn รุ่นเก่ารอ stream ปิด) ยิงแรง — สองตัวถือ /dev/ttyAMA0 พร้อมกันไม่ได้
+for p in $(pgrep -f "src/capture_daemon.py"; pgrep -f "src/mrc_web.py"); do kill -9 "$p" 2>/dev/null && echo "kill -9 $p (ไม่ยอมตายใน 3 s)"; done
 sleep 0.5
+if pgrep -f "src/mrc_web.py|src/capture_daemon.py" >/dev/null; then echo "ยังมี process เก่าอยู่ — หยุด"; exit 1; fi
 [[ "${1:-}" == "--stop" ]] && { echo "หยุดแล้ว"; exit 0; }
 ARGS=(--serial /dev/ttyAMA0 --camera 0 --port 8000)
 if [[ "${1:-}" == "--image" ]]; then
