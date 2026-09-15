@@ -3,59 +3,132 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0B1220">
 <title>MRC-001 · ขับ</title>
 <link rel="stylesheet" href="/static/drive.css">
 </head>
 <body>
-<main class="cockpit">
-  <img id="cam" class="cam" alt="ภาพสดจากกล้องหุ่น">
+<main class="cockpit" id="cockpit">
+  <div class="viewport">
+    <img id="cam" class="cam" alt="ภาพสดจากกล้องหุ่น">
+    <div id="grid" class="grid" hidden></div>
+    <div id="roi" class="roi" hidden><span class="roi-tag">กรอบที่อ่านตัวเลข</span><i class="h tl"></i><i class="h tr"></i><i class="h bl"></i><i class="h br"></i></div>
+    <div class="vignette"></div>
+  </div>
 
   <header class="hud">
-    <div class="hud-l">
-      <span id="mode" class="mode">รอ ESP32</span>
-      <span class="stat" id="bat">แบต —</span>
-      <span class="stat" id="link">ลิงก์ —</span>
-      <span class="stat" id="cams">กล้อง —</span>
+    <div class="chips">
+      <span id="mode" class="chip mode">กำลังเชื่อมต่อ</span>
+      <span id="bat" class="chip">แบต —</span>
+      <span id="link" class="chip">ลิงก์ —</span>
+      <span id="cams" class="chip">กล้อง —</span>
     </div>
-    <button id="estop" class="estop" type="button">■ หยุดฉุกเฉิน</button>
+    <div class="hud-r">
+      <button id="settings-btn" class="icon" type="button" aria-label="ตั้งค่า">⚙</button>
+    </div>
   </header>
 
-  <div id="warn" class="warn" hidden></div>
+  <div id="toast" class="toast" hidden></div>
 
-  <div id="joy" class="joy" aria-label="จอยขับ">
-    <div class="joy-ring"></div>
+  <div id="joy" class="joy">
+    <div class="joy-ring"><div class="joy-arc" id="arc"></div></div>
     <div id="knob" class="joy-knob"></div>
-    <div class="joy-hint">นิ้วซ้าย · WASD · จอยเกม</div>
   </div>
 
-  <div class="acts">
-    <button id="capture" class="act primary" type="button">📷 ถ่ายมิเตอร์</button>
-    <button id="suction" class="act tog" type="button">ดูดฝุ่น <b>ปิด</b></button>
-    <button id="brush" class="act tog" type="button">แปรงข้าง <b>ปิด</b></button>
-    <label class="speed">ความเร็ว <b id="spdv">50%</b>
-      <input id="spd" type="range" min="20" max="100" value="50" step="10">
-    </label>
-    <div id="velo" class="velo">0 mm/s</div>
+  <div class="dial" id="dial">
+    <div class="dial-num"><b id="spdnum">75</b><small>mm/s</small></div>
+    <input id="spd" class="dial-slider" type="range" min="10" max="100" value="50" step="5" aria-label="ความเร็ว">
+    <div class="dial-presets">
+      <button type="button" data-pct="25">ช้า</button>
+      <button type="button" data-pct="50" class="on">ปกติ</button>
+      <button type="button" data-pct="100">เต็ม</button>
+    </div>
   </div>
 
-  <button id="side-btn" class="side-btn" type="button" aria-label="สถานะและตั้งค่า">☰</button>
+  <nav class="dock">
+    <button id="suction" class="dock-btn tog" type="button"><span class="ico">◌</span><span>ดูดฝุ่น</span><b>ปิด</b></button>
+    <button id="brush" class="dock-btn tog" type="button"><span class="ico">✳</span><span>แปรงข้าง</span><b>ปิด</b></button>
+    <button id="capture" class="dock-btn cap" type="button"><span class="ico">◉</span><span>ถ่ายมิเตอร์</span><b id="capn">0 ใบ</b></button>
+  </nav>
+
+  <button id="estop" class="estop" type="button"><span>หยุด</span><small>ฉุกเฉิน</small></button>
 </main>
 
-<aside id="side" class="side" hidden>
-  <div class="side-head"><b>สถานะหุ่น</b><button id="side-close" type="button">✕</button></div>
-  <dl class="kv" id="kv"></dl>
-  <h4>สภาพแวดล้อม</h4>
-  <div class="na" id="air">เซนเซอร์คุณภาพอากาศ ENS160/AHT21 — ยังไม่ติดตั้ง (ไฟล์ 21)</div>
-  <h4>ตั้งค่า</h4>
-  <dl class="kv">
-    <dt>เพดานความเร็ว</dt><dd>150 mm/s (G14 · แก้ในเฟิร์มแวร์)</dd>
-    <dt>ความไวหมุน</dt><dd><input id="wgain" type="range" min="500" max="1500" value="1000" step="100"> <span id="wgainv">1000</span> mrad/s</dd>
-    <dt>deadman</dt><dd>Pi 300 ms → ESP32 300 ms</dd>
-    <dt>หน้าวินิจฉัย</dt><dd><a href="/">เปิด (สำหรับช่าง)</a></dd>
-  </dl>
-  <h4>เหตุการณ์ล่าสุด</h4>
-  <ul id="ev" class="ev"></ul>
-</aside>
+<section id="sheet" class="sheet" hidden>
+  <div class="sheet-head">
+    <div class="tabs" id="tabs">
+      <button data-tab="drive" class="on" type="button">ขับ</button>
+      <button data-tab="cam" type="button">กล้อง</button>
+      <button data-tab="clean" type="button">ทำความสะอาด</button>
+      <button data-tab="alert" type="button">การเตือน</button>
+      <button data-tab="screen" type="button">จอ</button>
+      <button data-tab="keys" type="button">ปุ่ม</button>
+      <button data-tab="status" type="button">สถานะ</button>
+    </div>
+    <button id="sheet-close" class="icon" type="button" aria-label="ปิด">✕</button>
+  </div>
+
+  <div class="pane on" data-pane="drive">
+    <label class="row"><span>เพดานความเร็ว <small>สูงสุด 150 mm/s (G14 ในเฟิร์มแวร์)</small></span><input data-cfg="maxPct" type="range" min="20" max="100" step="5"><output></output></label>
+    <label class="row"><span>ความไวการหมุน <small>mrad/s ที่จอยสุดทาง</small></span><input data-cfg="turnGain" type="range" min="400" max="1500" step="50"><output></output></label>
+    <label class="row"><span>ความนุ่มตอนออกตัว <small>ms ไต่ถึงความเร็วที่ขอ</small></span><input data-cfg="rampMs" type="range" min="0" max="800" step="50"><output></output></label>
+    <label class="row"><span>โซนตายของจอย</span><input data-cfg="deadzone" type="range" min="0" max="0.35" step="0.05"><output></output></label>
+    <label class="row"><span>ลดความเร็วหมุนเมื่อวิ่งเร็ว <small>กันหมุนหวือตอนเต็มสปีด</small></span><input data-cfg="turnScale" type="checkbox"></label>
+    <label class="row"><span>กลับทิศเดินหน้า/ถอย</span><input data-cfg="invY" type="checkbox"></label>
+    <label class="row"><span>กลับทิศซ้าย/ขวา</span><input data-cfg="invX" type="checkbox"></label>
+    <label class="row"><span>จอยอยู่ด้าน</span><select data-cfg="joySide"><option value="left">ซ้าย</option><option value="right">ขวา</option></select></label>
+    <label class="row"><span>ขนาดจอย</span><select data-cfg="joySize"><option value="s">เล็ก</option><option value="m">กลาง</option><option value="l">ใหญ่</option></select></label>
+    <label class="row"><span>เปิดดูดอัตโนมัติเมื่อเริ่มขับ</span><input data-cfg="autoSuction" type="checkbox"></label>
+  </div>
+
+  <div class="pane" data-pane="cam">
+    <label class="row"><span>เฟรมเรตภาพสด <small>ลดลงถ้าภาพกระตุกบน Wi-Fi</small></span><input data-cfg="fps" type="range" min="2" max="15" step="1"><output></output></label>
+    <label class="row"><span>เส้นตารางช่วยเล็ง</span><input data-cfg="gridOn" type="checkbox"></label>
+    <label class="row"><span>แสดงกรอบที่ OCR อ่าน</span><input data-cfg="roiOn" type="checkbox"></label>
+    <label class="row"><span>กลับซ้าย-ขวา (กระจก)</span><input data-cfg="mirror" type="checkbox"></label>
+    <div class="row col">
+      <span>ตั้งกรอบอ่านตัวเลข <small>ลากบนภาพสด แล้วบันทึก — มีผลกับการถ่ายครั้งถัดไป</small></span>
+      <div class="btns"><button id="roi-edit" class="btn" type="button">ลากกรอบบนภาพ</button><button id="roi-save" class="btn primary" type="button" disabled>บันทึกกรอบ</button><button id="roi-reset" class="btn" type="button">เต็มภาพ</button></div>
+    </div>
+  </div>
+
+  <div class="pane" data-pane="clean">
+    <label class="row"><span>แรงดูด <small>เฟิร์มแวร์ตอนนี้เป็นเปิด/ปิด (§3.5) — ค่ากลางยังไม่มีผล</small></span><input data-cfg="suctionPct" type="range" min="0" max="100" step="10"><output></output></label>
+    <label class="row"><span>แปรงข้าง <small>เพดาน 40 % (G7 — แรงดันมอเตอร์)</small></span><input data-cfg="brushPct" type="range" min="10" max="40" step="2"><output></output></label>
+    <label class="row"><span>ปิดดูดอัตโนมัติเมื่อหยุดนาน <small>วินาที · 0 = ไม่ปิด</small></span><input data-cfg="suctionIdleOff" type="range" min="0" max="120" step="10"><output></output></label>
+  </div>
+
+  <div class="pane" data-pane="alert">
+    <label class="row"><span>เสียงเตือน <small>ปฏิเสธคำสั่ง · ลิงก์หลุด · หยุดฉุกเฉิน</small></span><input data-cfg="sound" type="checkbox"></label>
+    <label class="row"><span>สั่นเครื่อง (มือถือ)</span><input data-cfg="vibrate" type="checkbox"></label>
+    <label class="row"><span>แสดงข้อความนานกี่วินาที</span><input data-cfg="toastSec" type="range" min="1" max="8" step="1"><output></output></label>
+    <label class="row"><span>เตือนเมื่อ ESP32 เงียบเกิน <small>วินาที</small></span><input data-cfg="staleSec" type="range" min="1" max="5" step="0.5"><output></output></label>
+  </div>
+
+  <div class="pane" data-pane="screen">
+    <div class="row"><span>สีเน้น</span><div class="swatches" id="swatches">
+      <button type="button" data-accent="mint" style="--c:#5EE1B5"></button><button type="button" data-accent="sky" style="--c:#6EC4FF"></button>
+      <button type="button" data-accent="amber" style="--c:#FFC46B"></button><button type="button" data-accent="rose" style="--c:#FF8FB1"></button></div></div>
+    <label class="row"><span>ความหนาแน่น HUD</span><select data-cfg="density"><option value="comfortable">สบายตา</option><option value="compact">กะทัดรัด</option></select></label>
+    <label class="row"><span>ปุ่มใหญ่พิเศษ (ใช้กลางแจ้ง/ถุงมือ)</span><input data-cfg="bigButtons" type="checkbox"></label>
+    <label class="row"><span>กันจอดับขณะขับ</span><input data-cfg="wakeLock" type="checkbox"></label>
+  </div>
+
+  <div class="pane" data-pane="keys">
+    <dl class="kv">
+      <dt>W A S D / ลูกศร</dt><dd>ขับ</dd><dt>Space</dt><dd>หยุดฉุกเฉิน</dd><dt>C</dt><dd>ถ่ายมิเตอร์</dd><dt>F</dt><dd>ดูดฝุ่น เปิด/ปิด</dd><dt>G</dt><dd>แปรง เปิด/ปิด</dd><dt>1 2 3</dt><dd>ความเร็ว ช้า/ปกติ/เต็ม</dd>
+      <dt>จอยเกม</dt><dd>สติ๊กซ้าย = ขับ · B/○ = หยุดฉุกเฉิน · A/✕ = ถ่าย · X/□ = ดูด · RT = เร่ง</dd>
+    </dl>
+  </div>
+
+  <div class="pane" data-pane="status">
+    <dl class="kv" id="kv"></dl>
+    <h4>สภาพแวดล้อม</h4>
+    <div class="na">เซนเซอร์คุณภาพอากาศ ENS160/AHT21 — ยังไม่ต่อ (ต่อกับ Pi ขา 3/5 ตามไฟล์ 21) · เมื่อต่อแล้วจะแสดง AQI · eCO₂ · TVOC · อุณหภูมิ · ความชื้น พร้อมสถานะ "กำลังอุ่นเครื่อง 3 นาที"</div>
+    <h4>เหตุการณ์</h4><ul id="ev" class="ev"></ul>
+    <p class="fine"><a href="/">หน้าวินิจฉัยสำหรับช่าง</a> · ค่าตั้งค่าเก็บในเครื่องนี้ · <button id="cfg-reset" class="link" type="button">คืนค่าเริ่มต้น</button></p>
+  </div>
+</section>
 
 <script src="/static/drive.js"></script>
 </body>

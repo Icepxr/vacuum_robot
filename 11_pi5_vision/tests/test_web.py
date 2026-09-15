@@ -185,3 +185,13 @@ def test_nack_from_esp32_forwarded(web):
         os.write(master, P.encode("#", "N", 7, "MAST_UP"))
         ev = _drain_until(ws, "nack")
         assert ev["seq"] == 7 and ev["reason"] == "MAST_UP"
+
+
+def test_roi_get_set(web, tmp_path, monkeypatch):
+    c = web[0]
+    monkeypatch.setattr(W, "ROI_PATH", tmp_path / "roi.json")
+    assert c.get("/api/roi").json()["crop"]["w"] == 1
+    r = c.post("/api/roi", json={"crop": {"x": 0.3, "y": 0.4, "w": 0.3, "h": 0.2}}).json()
+    assert r["ok"] and r["crop"]["x"] == 0.3
+    assert json.loads((tmp_path / "roi.json").read_text())["crop"]["h"] == 0.2
+    assert c.post("/api/roi", json={"crop": {"x": 0, "y": 0, "w": 0.001, "h": 1}}).status_code == 400

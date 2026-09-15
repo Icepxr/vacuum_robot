@@ -191,14 +191,50 @@ def api_capture():
     return JSONResponse({"ok": ok})
 
 
+ROI_PATH = Path(__file__).resolve().parent / "roi_config.json"
+
+
+@app.get("/api/roi")
+def api_roi_get():
+    """กรอบ crop ที่ OCR ใช้ (สัดส่วน 0..1) — จาก roi_config.json ของ meter_reader"""
+    try:
+        cfg = json.loads(ROI_PATH.read_text(encoding="utf-8"))
+    except Exception:                        # noqa: BLE001
+        cfg = {}
+    return JSONResponse({"crop": cfg.get("crop", {"x": 0, "y": 0, "w": 1, "h": 1})})
+
+
+@app.post("/api/roi")
+async def api_roi_set(body: dict):
+    """ตั้งกรอบ crop จากหน้าเว็บ (ลากบนภาพสด) → เขียน roi_config.json · มีผลกับการถ่ายครั้งถัดไป"""
+    c = body.get("crop") or {}
+    try:
+        crop = {k: max(0.0, min(1.0, float(c[k]))) for k in ("x", "y", "w", "h")}
+    except (KeyError, TypeError, ValueError):
+        return JSONResponse({"ok": False, "reason": "crop ต้องมี x y w h (0..1)"}, status_code=400)
+    if crop["w"] < 0.02 or crop["h"] < 0.02:
+        return JSONResponse({"ok": False, "reason": "กรอบเล็กเกินไป"}, status_code=400)
+    try:
+        cfg = json.loads(ROI_PATH.read_text(encoding="utf-8"))
+    except Exception:                        # noqa: BLE001
+        cfg = {}
+    cfg["crop"] = crop
+    ROI_PATH.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+    if hub.backend is not None and hasattr(hub.backend, "cfg"):
+        hub.backend.cfg["crop"] = crop        # backend กล้องจริงถือ cfg ไว้ในหน่วยความจำ
+    hub.on_event({"t": "log", "level": "good", "msg": f"ตั้งกรอบ OCR ใหม่ x={crop['x']:.2f} y={crop['y']:.2f} w={crop['w']:.2f} h={crop['h']:.2f}"})
+    return JSONResponse({"ok": True, "crop": crop})
+
+
 @app.get("/stream.mjpg")
-async def stream(frames: int = 0):
-    """MJPEG multipart · frames>0 = จำกัดจำนวนเฟรมแล้วจบ (ใช้ในเทสต์) · 0 = ไม่รู้จบ"""
+async def stream(frames: int = 0, fps: int = 0):
+    """MJPEG multipart · frames>0 = จำกัดจำนวนเฟรมแล้วจบ (ใช้ในเทสต์) · fps = 2..15 (ค่าตั้งต้น PREVIEW_FPS)"""
     if hub.backend is None:
         return JSONResponse({"error": "no camera"}, status_code=503)
+    rate = max(2, min(15, fps)) if fps else PREVIEW_FPS
 
     async def gen():
-        period = 1.0 / PREVIEW_FPS
+        period = 1.0 / rate
         sent = 0
         while frames <= 0 or sent < frames:
             sent += 1
