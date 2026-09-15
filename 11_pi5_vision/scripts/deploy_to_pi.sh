@@ -8,7 +8,7 @@ set -euo pipefail
 PI="${PI:-uchida@10.137.154.184}"
 SRC="$(cd "$(dirname "$0")/.." && pwd)/"
 rsync -az --delete \
-    --exclude '.venv' --exclude 'data/' --exclude '__pycache__' --exclude '*.pyc' --exclude 'debug/' \
+    --exclude '.venv' --exclude 'data/' --exclude 'logs/' --exclude '__pycache__' --exclude '*.pyc' --exclude 'debug/' \
     "$SRC" "$PI:~/mrc/"
 echo "rsync → $PI:~/mrc  เสร็จ"
 case "${1:-}" in

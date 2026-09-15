@@ -63,7 +63,7 @@ python -m pytest tests/ -q
 รูปแบบเฟรม + CRC8 อยู่ใน `src/mrc_protocol.py` (ต้องตรงกับ `src/robot/comm_codec.h`)
 **ยังไม่เคยรันบน Pi กับ ESP32 จริง** — ทำวันที่ 16 ก.ย.
 
-## ขั้น E ขั้นต่ำ — แอปควบคุมบน Pi (15 ก.ย. 2026 · ยังไม่ได้รันบน Pi จริง)
+## ขั้น E ขั้นต่ำ — แอปควบคุมบน Pi (15 ก.ย. 2026 · **รันบน Pi จริงผ่านแล้ว 16 ก.ย.** — `cap` จาก ESP32 เด้งขึ้นเว็บ · CPU ~17 % · ยังใช้ `--image` แทนกล้อง)
 
 `src/mrc_web.py` **ครอบ** `capture_daemon.py` (ไม่แทนที่): daemon ยังคุย UART เหมือนเดิม · FastAPI เพิ่มภาพสด MJPEG · WebSocket เหตุการณ์ · ปุ่มถ่ายจากเว็บ · รายการค่าที่อ่านได้ · หน้าเว็บ vanilla ไม่โหลดอะไรจากเน็ต
 
@@ -71,6 +71,7 @@ python -m pytest tests/ -q
 python src/mrc_web.py                      # UART /dev/ttyAMA0 · BRIO · http://<pi>:8000
 python src/mrc_web.py --no-serial          # ไม่มี ESP32
 python -m pytest tests/ -q                 # 19 เทสต์ (daemon + web) — ผ่านบน Mac 15 ก.ย.
+bash scripts/start_web.sh [--image|--stop]   # รันเบื้องหลังบน Pi · log ที่ logs/web.log (ใช้แทน systemd ระหว่างพัฒนา)
 sudo cp systemd/mrc-web.service /etc/systemd/system/ && sudo systemctl enable --now mrc-web
 ```
 
