@@ -104,9 +104,9 @@ rsync -az --exclude .pio --exclude .git platformio.ini src test uchida@10.137.15
 cd ~/mrc-fw && ~/mrc/.venv/bin/pio run -e robot -t upload --upload-port /dev/ttyACM0
 ```
 ผลบนบอร์ด: `cap` → `#E,…,CAPTURE_REQ,1` ออก → `timeout` ที่ 5000 ms พอดี (ยังไม่ต่อสาย Pi) · `bad lines 0` = ขา 44 ลอยไม่มี noise
-ยังเหลือ: ยืนยันข้อ 1–2 ข้างบน (สัญญาณออกขา 43/44 จริง) ตอนต่อสาย
+**✅ 15 ก.ย.: ต่อสาย 3 เส้นแล้ว — `cap` → `got $K,n,1 ใน 30 ms` 3/3 รอบ · ขา 43/44 ยืนยันจริง · ข้อ 1–2 ข้างบนปิด**
 
-## ขั้น D — ภารกิจ 1 รอบแบบ script (15 ก.ย. 2026 · เขียนบน Mac ยังไม่ได้บิลด์/รันบนบอร์ด)
+## ขั้น D — ภารกิจ 1 รอบแบบ script (15 ก.ย. 2026 · บิลด์+แฟลชบนบอร์ดแล้ว · ยังไม่ได้เดินจริงเพราะยังไม่มีกลไก/ตำแหน่งเสา)
 
 `src/robot/mission_core.h` (ตรรกะลำดับ ไม่พึ่ง Arduino · ทดสอบ `test/host_mission.cpp` 7 เคส) + `mission.cpp` (ผูกกับล้อ/ดูด/เซอร์โว/comm)
 
