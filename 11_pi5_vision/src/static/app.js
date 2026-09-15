@@ -2,6 +2,11 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const fmtT = (ts) => new Date((ts || 0) * 1000).toLocaleTimeString("th-TH", { hour12: false });
+  const fmtISO = (iso, long = false) => {          // captured_at อาจหายถ้า record ไม่ครบ — อย่าโชว์ "Invalid Date"
+    const d = iso ? new Date(iso) : null;
+    if (!d || isNaN(d)) return "—";
+    return long ? d.toLocaleString("th-TH", { hour12: false }) : d.toLocaleTimeString("th-TH", { hour12: false });
+  };
   const pill = (id, cls, text) => { const e = $(id); e.className = "pill " + cls; e.textContent = text; };
 
   // ── ภาพสด ──
@@ -42,7 +47,7 @@
     const none = r.value == null;
     box.innerHTML = `
       <div class="big ${none ? "none" : ""}">${none ? "อ่านไม่ออก" : r.value}</div>
-      <dt class="muted">เวลา</dt><dd>${new Date(r.captured_at).toLocaleString("th-TH", { hour12: false })}</dd>
+      <dt class="muted">เวลา</dt><dd>${fmtISO(r.captured_at, true)}</dd>
       <dt class="muted">conf</dt><dd>${r.confidence ?? "—"}</dd>
       <dt class="muted">raw</dt><dd><code>${r.raw_text ?? ""}</code></dd>
       <dt class="muted">สถานะ</dt><dd>${r.status ?? "ocr"}${r.meter_id ? " · " + r.meter_id : ""}</dd>
@@ -51,7 +56,7 @@
   function addReadingRow(r, prepend = true) {
     const tr = document.createElement("tr");
     const none = r.value == null;
-    tr.innerHTML = `<td>${new Date(r.captured_at).toLocaleTimeString("th-TH", { hour12: false })}</td>
+    tr.innerHTML = `<td>${fmtISO(r.captured_at)}</td>
       <td class="${none ? "none" : ""}">${none ? "—" : r.value}</td>
       <td>${r.confidence ?? "—"}</td><td><code>${r.raw_text ?? ""}</code></td>
       <td>${r.source_req ?? r.source ?? ""}</td><td>${r.ocr_ms ?? ""}</td>

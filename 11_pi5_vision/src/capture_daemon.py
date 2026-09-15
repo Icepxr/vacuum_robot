@@ -132,7 +132,9 @@ class StillImageBackend:
 
     def latest(self):            return self._img
     def save(self, frame):       return self.MR.save_image(frame)
-    def ocr(self, *a):           return {"note": "StillImageBackend ไม่ทำ OCR"}
+    def ocr(self, frame, ts, rid, img_name):
+        # ไม่ทำ OCR แต่ต้องเขียน record ให้ครบเหมือนกล้องจริง ไม่งั้นหน้าเว็บ/sync ได้แถวไม่มี captured_at
+        return self.MR.save_reading(ts, rid, img_name, "", None, 0.0, None, "stub", "image-stub")
     def preview_jpeg(self):
         import cv2
         ok, buf = cv2.imencode(".jpg", cv2.resize(self._img, (640, 360)), [cv2.IMWRITE_JPEG_QUALITY, 80])
