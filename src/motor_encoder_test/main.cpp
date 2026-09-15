@@ -357,6 +357,18 @@ void motorLoop() {
 
 // ── จุดต่อสำหรับเฟิร์มแวร์รวม (src/robot/main.cpp) ────────────
 // ตรรกะการทดสอบไม่ถูกแตะเลย — ห่อของเดิมออกมาให้ชั้นบนเรียกได้เท่านั้น
+// ── API สำหรับโหมดขับเอง (src/robot/manual.cpp) — ตั้ง duty ซ้าย/ขวาทันที ไม่ ramp (ผู้เรียก slew เองทุก 10 ms)
+// ยังอยู่ใต้ตัวเฝ้าเดิม: MAX_RUN_MS และ DEADMAN_MS นับจากคำสั่งล่าสุด
+void motorSetLR(int permilleL, int permilleR) {
+  motL.setDuty(permilleL);
+  motR.setDuty(permilleR);
+  running = (permilleL != 0 || permilleR != 0);
+  lastCommandMs = millis();
+  if (running) runUntilMs = millis() + MAX_RUN_MS;
+}
+int motorDutyL() { return motL.duty(); }
+int motorDutyR() { return motR.duty(); }
+
 void motorCommand(const String& cmd) { handleCommand(cmd); }
 void motorStop(const char* why)      { stopAll(why); }
 void motorHelp()                     { printHelp(); }

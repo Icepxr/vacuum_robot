@@ -83,6 +83,33 @@ def capture_ack(seq: int, ok: bool) -> bytes:
     return encode("$", "K", seq, 1 if ok else 0)
 
 
+# ── ขั้น E (16 ก.ย. 2026) ──
+TELE_FIELDS = ("ms", "state", "v", "w", "duty_l", "duty_r", "us_l", "us_r", "vbat_mV", "servo_i_mA", "mast", "flags")
+STATE_NAMES = {0: "IDLE", 1: "MANUAL", 2: "MISSION"}
+
+
+def parse_tele(fr: Frame):
+    """#T,<ms>,<state>,<v>,<w>,<duty_l>,<duty_r>,<us_l>,<us_r>,<vbat_mV>,<servo_i_mA>,<mast>,<flags> → dict หรือ None
+    ⚠ ช่อง enc_l/enc_r ของ §7.2 ตอนนี้ ESP32 ส่ง duty ‰ (ยังไม่มี PCNT ในเฟิร์มแวร์รวม — C27)"""
+    if fr is None or fr.kind != "#" or fr.type != "T" or len(fr.fields) < 1 + len(TELE_FIELDS):
+        return None
+    try:
+        vals = [int(x) for x in fr.fields[1:1 + len(TELE_FIELDS)]]
+    except ValueError:
+        return None
+    d = dict(zip(TELE_FIELDS, vals))
+    d["state_name"] = STATE_NAMES.get(d["state"], str(d["state"]))
+    d["comm_lost"] = bool(d["flags"] & 0x02)
+    return d
+
+
+def cmd_velocity(seq: int, v_mm_s: int, w_mrad_s: int) -> bytes: return encode("$", "V", seq, int(v_mm_s), int(w_mrad_s))
+def cmd_stop(seq: int) -> bytes:                                   return encode("$", "S", seq)
+def cmd_estop(seq: int) -> bytes:                                  return encode("$", "E", seq)
+def cmd_clean(seq: int, suction_pct: int, brush_pct: int) -> bytes: return encode("$", "C", seq, int(suction_pct), int(brush_pct))
+def cmd_ping(seq: int) -> bytes:                                   return encode("$", "P", seq)
+
+
 def is_capture_req(fr: Frame) -> bool:
     return fr is not None and fr.kind == "#" and fr.type == "E" \
         and len(fr.fields) >= 4 and fr.fields[2] == "CAPTURE_REQ"

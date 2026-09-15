@@ -106,6 +106,21 @@ cd ~/mrc-fw && ~/mrc/.venv/bin/pio run -e robot -t upload --upload-port /dev/tty
 ผลบนบอร์ด: `cap` → `#E,…,CAPTURE_REQ,1` ออก → `timeout` ที่ 5000 ms พอดี (ยังไม่ต่อสาย Pi) · `bad lines 0` = ขา 44 ลอยไม่มี noise
 **✅ 15 ก.ย.: ต่อสาย 3 เส้นแล้ว — `cap` → `got $K,n,1 ใน 30 ms` 3/3 รอบ · ขา 43/44 ยืนยันจริง · ข้อ 1–2 ข้างบนปิด**
 
+## ขั้น E — โหมดขับเองจาก Pi + telemetry (16 ก.ย. 2026 · บิลด์+แฟลช+ทดสอบลิงก์จริงแล้ว)
+
+`src/robot/manual_core.h` (ผสม v/ω → duty ซ้าย/ขวา · slew · deadman G8 · เพดาน G14 — host test `test/host_manual.cpp`) + `manual.cpp` (guard G2/R1/R2/IN_MISSION) · `comm.cpp` รับ `$V $S $E $C $P` ตอบ `#A,<seq>` / `#N,<seq>,<เหตุผล>` · ส่ง `#T` 10 Hz
+
+| จาก Pi | ทำอะไร | ปฏิเสธเมื่อ (`#N`) |
+|---|---|---|
+| `$V,<seq>,<v mm/s>,<ω mrad/s>` | เข้าโหมด MANUAL · ตั้ง setpoint (ต้องส่งซ้ำ ≤ 300 ms ไม่งั้นหยุดเอง) | `MAST_UP` เสาไม่พับ · `IN_MISSION` · `SUCTION_SPINUP` เพิ่งเปิดดูด < 1 s |
+| `$S,<seq>` · `$E,<seq>` | หยุดนุ่มนวล · E-STOP (= `stop` ในคอนโซล) | — |
+| `$C,<seq>,<ดูด %>,<แปรง %>` | ดูด on/off · แปรง 0–40 % (G7) | `NOT_STOPPED` เปิดดูดขณะล้อหมุน (R2) · `MAST_UP` เปิดแปรงขณะเสายก (R1) |
+| `$P,<seq>` | ping | — |
+| `$M` `$R` | ยังไม่ทำ | `NOT_IMPLEMENTED` |
+
+`#T,<ms>,<state 0/1/2>,<v>,<ω>,<dutyL‰>,<dutyR‰>,0,0,0,0,<mast 0/2>,<flags bit1=deadman>` — ช่อง encoder/vbat/servo_i/us ยังเป็น duty/0 (C27)
+**ขับจริงครั้งแรก:** ยกล้อลอย · เปิด `http://<pi>:8000/drive` · ค่าเริ่ม 50 % = 75 mm/s
+
 ## ขั้น D — ภารกิจ 1 รอบแบบ script (15 ก.ย. 2026 · บิลด์+แฟลชบนบอร์ดแล้ว · ยังไม่ได้เดินจริงเพราะยังไม่มีกลไก/ตำแหน่งเสา)
 
 `src/robot/mission_core.h` (ตรรกะลำดับ ไม่พึ่ง Arduino · ทดสอบ `test/host_mission.cpp` 7 เคส) + `mission.cpp` (ผูกกับล้อ/ดูด/เซอร์โว/comm)

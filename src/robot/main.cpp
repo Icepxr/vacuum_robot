@@ -17,6 +17,7 @@
 #include <Arduino.h>
 #include "comm.h"      // ลิงก์ Pi 5 บน UART0 — ขั้น C: cap / cs
 #include "mission.h"   // ภารกิจ 1 รอบแบบ script — ขั้น D: mis …
+#include "manual.h"    // โหมดขับเองจาก Pi — ขั้น E: $V/$S/$E/$C
 
 // ── จุดต่อของแต่ละโมดูล (นิยามอยู่ท้าย src/<ชุด>/main.cpp) ────
 void motorSetup();  void motorTick();  void motorCommand(const String&);
@@ -86,6 +87,7 @@ static bool isServoMove(const String& c) {
 static void stopAllSystems(const char* why) {
   Serial.printf("\n>>> หยุดทุกระบบ: %s\n", why);
   missionAbort(why);   // ก่อนโมดูล ไม่งั้น mission จะสั่งเปิดกลับใน tick ถัดไป
+  manualHalt(why);     // เช่นกัน — ไม่งั้น manual จะเขียน duty ทับใน tick ถัดไป
   motorStop(why);
   blowerStop(why);
   servoStop(why);
@@ -152,6 +154,9 @@ static bool interlockAllows(char sys, const String& sub, bool force) {
   }
   return true;
 }
+
+// ให้ comm.cpp เรียกได้ (E-STOP จาก Pi = เส้นทางเดียวกับ `stop` ในคอนโซล)
+void robotEmergencyStop(const char* why) { stopAllSystems(why); }
 
 static void printMergedHelp() {
   Serial.println();
@@ -260,6 +265,7 @@ void setup() {
   motorSetup();
   commSetup();   // UART0 ไป Pi 5 — ไม่แตะขาของสามชุดข้างบน (43/44 จองไว้ตาม §3.2)
   missionSetup();
+  manualSetup();
 
   printInterlock();
   printMergedHelp();
@@ -279,6 +285,7 @@ void loop() {
   servoTick();
   commTick();
   missionTick();   // หลัง commTick เพื่อให้เห็น $K ในรอบเดียวกัน
+  manualTick();    // เขียน duty ล้อทุก 10 ms ตาม setpoint จาก $V (หรือ 0 เมื่อ deadman)
 
   delay(10);
 }

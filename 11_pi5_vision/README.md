@@ -75,7 +75,9 @@ bash scripts/start_web.sh [--image|--stop]   # รันเบื้องหล
 sudo cp systemd/mrc-web.service /etc/systemd/system/ && sudo systemctl enable --now mrc-web
 ```
 
-**สิ่งที่หน้าเว็บตั้งใจ *ไม่* มี:** ปุ่ม E-STOP/ขับ/ยกเสาที่กดได้ — ESP32 ยังรับแค่ `CAPTURE_REQ`/`$K` (C19/C20) ปุ่มที่กดแล้วหุ่นไม่หยุดจริงอันตรายกว่าไม่มีปุ่ม · จะเปิดเมื่อ ESP32 รับ `$E`/`$V`
+**16 ก.ย. — โหมดขับเอง:** หน้า **`/drive`** (cockpit ตาม concept: ภาพสดเต็มจอ · จอย touch/WASD/จอยเกม · E-STOP · ดูด/แปรง · ถ่าย · ลิ้นชักสถานะ) · `/` = หน้าวินิจฉัยสำหรับช่าง
+กติกาความปลอดภัยฝั่ง Pi: browser ส่ง `drive` ทุก 100 ms ขณะกด · Pi ถือค่าล่าสุดแล้วส่ง `$V` ซ้ำ 10 Hz เอง · browser เงียบ > 300 ms → Pi ส่ง `$S` · ESP32 มี deadman ของตัวเองอีก 300 ms (G8) · `estop` ไม่ผ่านตัวกรองใดๆ
+ปุ่มยกเสาจาก Pi ยังไม่มี (`$M` ยังไม่ทำ) · แบตยังไม่แสดงเพราะเฟิร์มแวร์รวมยังไม่มี ADC (C27) · เซนเซอร์อากาศ ENS160/AHT21 ยังไม่ต่อ (ไฟล์ 21)
 **schema กลาง (C23):** ทุกแถวใน `readings.jsonl` มี `meter_id` · `status` (`ocr`→`confirmed`/`rejected`) · `confirmed_value` แยกจาก `value` ตั้งแต่แถวแรก — ARIA ใช้ร่วมได้โดยไม่ต้อง migrate
 
 ## ส่งขึ้นฐานข้อมูล

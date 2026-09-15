@@ -37,7 +37,11 @@ DATA_DIR = Path(os.environ.get("MRC_DATA_DIR", Path(__file__).resolve().parent.p
 IMAGE_DIR = DATA_DIR / "images"
 JSONL_PATH = DATA_DIR / "readings.jsonl"
 PREVIEW_FPS = 10                    # ไฟล์ 19 §19.1 — 10 fps ≈ 3 Mbps บน hotspot
-LINK_STALE_S = 2.0                  # ไม่ได้เฟรมถูกต้องจาก ESP32 นานกว่านี้ = แสดง "ไม่ตอบ" (ยังไม่มี #T ที่ 20 Hz)
+LINK_STALE_S = 1.0                  # #T มา 10 Hz — เงียบเกิน 1 s = ลิงก์มีปัญหา
+DRIVE_DEADMAN_S = 0.30              # ไฟล์ 19 §19.3 — browser เงียบเกินนี้ → ส่ง $S แล้วเลิกส่ง $V
+DRIVE_REPEAT_S = 0.10               # ส่ง $V ซ้ำ 10 Hz ให้ G8 (300 ms) ผ่านด้วย margin 3×
+V_MAX_MM_S = 150                    # G14 — clamp ฝั่ง Pi ก่อน (ESP32 clamp ซ้ำอยู่ดี)
+W_MAX_MRAD_S = 1500
 
 
 class Hub:
@@ -51,6 +55,39 @@ class Hub:
         self.events = deque(maxlen=200)          # log ล่าสุดให้ client ที่เพิ่งต่อเห็นย้อนหลัง
         self.last_capture = None
         self.started = time.time()
+        # ── โหมดขับเอง: Pi "ถือ" setpoint ล่าสุดแล้วส่งซ้ำเอง (ไฟล์ 19 §19.3 — ห้ามให้ browser ส่ง $V ตรง) ──
+        self.drive_v = 0
+        self.drive_w = 0
+        self.drive_last_mono = None              # เวลาที่ได้ drive จาก browser ล่าสุด · None = ไม่ได้ขับ
+        self.drive_tripped = 0                   # นับครั้งที่ deadman ฝั่ง Pi ทำงาน
+        self.cleaning = {"suction": 0, "brush": 0}
+
+    # ── ขับเอง ──
+    def drive(self, v, w):
+        self.drive_v = max(-V_MAX_MM_S, min(V_MAX_MM_S, int(v)))
+        self.drive_w = max(-W_MAX_MRAD_S, min(W_MAX_MRAD_S, int(w)))
+        self.drive_last_mono = time.monotonic()
+
+    def drive_release(self):
+        """ผู้ใช้ปล่อยจอย/กด stop: ส่ง $S แล้วหยุดส่งซ้ำ"""
+        self.drive_v = self.drive_w = 0
+        self.drive_last_mono = None
+        if self.daemon: self.daemon.send_stop()
+
+    async def drive_loop(self):
+        """ทุก 100 ms: ถ้ายังได้ drive จาก browser ภายใน 300 ms → ส่ง $V ซ้ำ · ไม่งั้น $S ครั้งเดียว (deadman ชั้น Pi)"""
+        while True:
+            await asyncio.sleep(DRIVE_REPEAT_S)
+            if self.drive_last_mono is None or self.daemon is None:
+                continue
+            if time.monotonic() - self.drive_last_mono > DRIVE_DEADMAN_S:
+                self.drive_tripped += 1
+                self.drive_v = self.drive_w = 0
+                self.drive_last_mono = None
+                self.daemon.send_stop()
+                self.on_event({"t": "log", "level": "warn", "msg": "deadman ฝั่ง Pi: browser เงียบเกิน 300 ms → $S"})
+                continue
+            self.daemon.send_velocity(self.drive_v, self.drive_w)
 
     # ── ถูกเรียกจาก thread ของ daemon — ห้ามบล็อก ──
     def on_event(self, ev):
@@ -78,8 +115,7 @@ class Hub:
         if d is not None:
             age = None if d.last_rx_mono is None else round(time.monotonic() - d.last_rx_mono, 1)
             link = {"port": d.ser.port, "baud": d.ser.baudrate, "stats": d.stats,
-                    "age_s": age, "alive": age is not None and age < LINK_STALE_S,
-                    "note": "ESP32 ยังไม่ส่ง #T ต่อเนื่อง — alive จะจริงเฉพาะหลัง CAPTURE_REQ ล่าสุดไม่นาน"}
+                    "age_s": age, "alive": age is not None and age < LINK_STALE_S}
         cam_ok = self.backend is not None and self.backend.latest() is not None
         try:
             temp = int(Path("/sys/class/thermal/thermal_zone0/temp").read_text()) / 1000
@@ -93,7 +129,11 @@ class Hub:
         return {"t": "sys", "ts": time.time(), "uptime_s": round(time.time() - self.started),
                 "cam_ok": cam_ok, "cpu_temp_c": temp, "disk_free_mb": du.free // 2**20,
                 "pending_sync": pending, "link": link, "last_capture": self.last_capture,
-                "esp32_supports": ["CAPTURE_REQ", "$K"],   # หน้าเว็บใช้ตัดสินว่าโชว์ปุ่มอะไร
+                "esp32_supports": ["CAPTURE_REQ", "$K", "$V", "$S", "$E", "$C", "$P", "#T"],
+                "tele": (self.daemon.tele if self.daemon else None),
+                "drive": {"v": self.drive_v, "w": self.drive_w, "active": self.drive_last_mono is not None,
+                          "tripped": self.drive_tripped, "deadman_ms": int(DRIVE_DEADMAN_S * 1000)},
+                "cleaning": self.cleaning,
                 "clients": len(self.clients)}
 
 
@@ -117,6 +157,11 @@ def read_readings(limit=50):
 @app.get("/")
 def index():
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/drive")
+def drive_page():
+    return FileResponse(STATIC_DIR / "drive.html")
 
 
 @app.get("/api/status")
@@ -181,15 +226,31 @@ async def ws_endpoint(ws: WebSocket):
             except json.JSONDecodeError:
                 continue
             t = cmd.get("t")
-            if t == "capture" and hub.daemon is not None:
-                await asyncio.to_thread(hub.daemon.capture_now)
+            d = hub.daemon
+            if t == "capture" and d is not None:
+                await asyncio.to_thread(d.capture_now)
             elif t == "status":
                 await ws.send_text(json.dumps(hub.status(), ensure_ascii=False))
+            elif t == "drive":                       # {"t":"drive","v":mm/s,"w":mrad/s} ส่งซ้ำ ≥ 5 Hz ขณะกด
+                hub.drive(cmd.get("v", 0), cmd.get("w", 0))
+            elif t == "release":                     # ปล่อยจอย
+                hub.drive_release()
+            elif t == "stop" and d is not None:
+                hub.drive_release()
+            elif t == "estop" and d is not None:     # ทำงานทุกโหมด ไม่ผ่านตัวกรอง
+                hub.drive_v = hub.drive_w = 0; hub.drive_last_mono = None
+                d.send_estop()
+                hub.on_event({"t": "log", "level": "bad", "msg": "E-STOP จากหน้าเว็บ → $E"})
+            elif t == "clean" and d is not None:     # {"t":"clean","suction":0-100,"brush":0-40}
+                suc = int(cmd.get("suction", hub.cleaning["suction"])); br = int(cmd.get("brush", hub.cleaning["brush"]))
+                hub.cleaning = {"suction": max(0, min(100, suc)), "brush": max(0, min(40, br))}
+                d.send_clean(hub.cleaning["suction"], hub.cleaning["brush"])
+            elif t == "ping" and d is not None:
+                d.send_ping()
+            elif t == "mast":
+                await ws.send_text(json.dumps({"t": "nack", "cmd": t, "reason": "ESP32 ยังไม่รับ $M (ยกเสาจาก Pi) — ใช้ mis/sv ในคอนโซล"}, ensure_ascii=False))
             else:
-                # คำสั่งขับ/E-STOP/ยกเสา ยังไม่รองรับฝั่ง ESP32 (C19/C20) — ตอบตรงๆ ไม่แกล้งส่ง
-                await ws.send_text(json.dumps({"t": "nack", "cmd": t,
-                                               "reason": "ESP32 ยังรองรับแค่ CAPTURE_REQ/$K (ขั้น E)"},
-                                              ensure_ascii=False))
+                await ws.send_text(json.dumps({"t": "nack", "cmd": t, "reason": "ไม่รู้จักคำสั่ง"}, ensure_ascii=False))
     except WebSocketDisconnect:
         pass
     finally:
@@ -207,6 +268,7 @@ async def sys_ticker():
 async def _startup():
     hub.loop = asyncio.get_running_loop()
     asyncio.create_task(sys_ticker())
+    asyncio.create_task(hub.drive_loop())
 
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")

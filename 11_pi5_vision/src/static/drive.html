@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>MRC-001 · ขับ</title>
+<link rel="stylesheet" href="/static/drive.css">
+</head>
+<body>
+<main class="cockpit">
+  <img id="cam" class="cam" alt="ภาพสดจากกล้องหุ่น">
+
+  <header class="hud">
+    <div class="hud-l">
+      <span id="mode" class="mode">รอ ESP32</span>
+      <span class="stat" id="bat">แบต —</span>
+      <span class="stat" id="link">ลิงก์ —</span>
+      <span class="stat" id="cams">กล้อง —</span>
+    </div>
+    <button id="estop" class="estop" type="button">■ หยุดฉุกเฉิน</button>
+  </header>
+
+  <div id="warn" class="warn" hidden></div>
+
+  <div id="joy" class="joy" aria-label="จอยขับ">
+    <div class="joy-ring"></div>
+    <div id="knob" class="joy-knob"></div>
+    <div class="joy-hint">นิ้วซ้าย · WASD · จอยเกม</div>
+  </div>
+
+  <div class="acts">
+    <button id="capture" class="act primary" type="button">📷 ถ่ายมิเตอร์</button>
+    <button id="suction" class="act tog" type="button">ดูดฝุ่น <b>ปิด</b></button>
+    <button id="brush" class="act tog" type="button">แปรงข้าง <b>ปิด</b></button>
+    <label class="speed">ความเร็ว <b id="spdv">50%</b>
+      <input id="spd" type="range" min="20" max="100" value="50" step="10">
+    </label>
+    <div id="velo" class="velo">0 mm/s</div>
+  </div>
+
+  <button id="side-btn" class="side-btn" type="button" aria-label="สถานะและตั้งค่า">☰</button>
+</main>
+
+<aside id="side" class="side" hidden>
+  <div class="side-head"><b>สถานะหุ่น</b><button id="side-close" type="button">✕</button></div>
+  <dl class="kv" id="kv"></dl>
+  <h4>สภาพแวดล้อม</h4>
+  <div class="na" id="air">เซนเซอร์คุณภาพอากาศ ENS160/AHT21 — ยังไม่ติดตั้ง (ไฟล์ 21)</div>
+  <h4>ตั้งค่า</h4>
+  <dl class="kv">
+    <dt>เพดานความเร็ว</dt><dd>150 mm/s (G14 · แก้ในเฟิร์มแวร์)</dd>
+    <dt>ความไวหมุน</dt><dd><input id="wgain" type="range" min="500" max="1500" value="1000" step="100"> <span id="wgainv">1000</span> mrad/s</dd>
+    <dt>deadman</dt><dd>Pi 300 ms → ESP32 300 ms</dd>
+    <dt>หน้าวินิจฉัย</dt><dd><a href="/">เปิด (สำหรับช่าง)</a></dd>
+  </dl>
+  <h4>เหตุการณ์ล่าสุด</h4>
+  <ul id="ev" class="ev"></ul>
+</aside>
+
+<script src="/static/drive.js"></script>
+</body>
+</html>

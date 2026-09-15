@@ -92,14 +92,16 @@ def test_ws_capture_from_web(web):
 
 
 def test_ws_unsupported_command_gets_honest_nack(web):
-    c = web[0]
+    """คำสั่งที่ ESP32 ยังไม่รับ (ยกเสาจาก Pi = $M) ต้องได้ nack ตรงๆ ไม่แกล้งส่ง"""
+    c, master, backend, hub = web
     with c.websocket_connect("/ws") as ws:
         ws.receive_json(); ws.receive_json()
-        ws.send_json({"t": "estop"})
+        ws.send_json({"t": "mast", "up": 1})
         ev = ws.receive_json()
-        while ev["t"] == "sys":
+        while ev["t"] in ("sys", "log", "tele"):
             ev = ws.receive_json()
-        assert ev["t"] == "nack" and ev["cmd"] == "estop"
+        assert ev["t"] == "nack" and ev["cmd"] == "mast"
+        assert read_line(master, timeout=0.3) == b""      # ไม่มีอะไรออกไป ESP32
 
 
 def test_esp32_capture_req_still_works_and_reaches_ws(web):
@@ -115,3 +117,71 @@ def test_esp32_capture_req_still_works_and_reaches_ws(web):
         assert ev["n"] == "7" and ev["source"] == "esp32" and ev["ok"]
         time.sleep(0.2)
         assert c.get("/api/status").json()["link"]["alive"] is True
+
+
+# ── ขั้น E: ขับเอง · deadman ฝั่ง Pi · #T · nack จาก ESP32 ──
+
+def _drain_until(ws, kind, n=20):
+    for _ in range(n):
+        ev = ws.receive_json()
+        if ev["t"] == kind:
+            return ev
+    raise AssertionError(f"ไม่เจอ {kind}")
+
+
+def test_drive_repeats_V_at_10hz_then_deadman_sends_S(web):
+    c, master, backend, hub = web
+    with c.websocket_connect("/ws") as ws:
+        ws.receive_json(); ws.receive_json()
+        ws.send_json({"t": "drive", "v": 120, "w": -300})
+        # browser เงียบ: Pi ต้องส่ง $V ซ้ำ ≥ 2 ครั้งใน 300 ms แล้วตามด้วย $S ครั้งเดียว
+        got = []
+        end = time.time() + 0.9
+        while time.time() < end:
+            line = read_line(master, timeout=0.2)
+            if line:
+                got.append(P.decode(line))
+        kinds = [g.type for g in got if g]
+        assert kinds.count("V") >= 2, kinds
+        assert kinds[-1] == "S" and kinds.count("S") == 1, kinds
+        v = next(g for g in got if g and g.type == "V")
+        assert v.fields[2:] == ["120", "-300"]
+        assert hub.drive_tripped == 1
+
+
+def test_drive_clamped_to_G14(web):
+    c, master, backend, hub = web
+    hub.drive(999, -9999)
+    assert (hub.drive_v, hub.drive_w) == (150, -1500)
+
+
+def test_estop_and_clean_frames(web):
+    c, master, backend, hub = web
+    with c.websocket_connect("/ws") as ws:
+        ws.receive_json(); ws.receive_json()
+        ws.send_json({"t": "estop"})
+        assert P.decode(read_line(master)).type == "E"
+        ws.send_json({"t": "clean", "suction": 100, "brush": 60})   # brush เกิน 40 → clamp
+        fr = P.decode(read_line(master))
+        assert fr.type == "C" and fr.fields[2:] == ["100", "40"]
+
+
+def test_tele_from_esp32_reaches_ws_and_status(web):
+    c, master, backend, hub = web
+    with c.websocket_connect("/ws") as ws:
+        ws.receive_json(); ws.receive_json()
+        os.write(master, P.encode("#", "T", 12345, 1, 120, 0, 168, 168, 0, 0, 0, 0, 0, 2))
+        ev = _drain_until(ws, "tele")
+        assert ev["state_name"] == "MANUAL" and ev["v"] == 120 and ev["duty_l"] == 168 and ev["comm_lost"] is True
+        time.sleep(0.1)
+        s = c.get("/api/status").json()
+        assert s["tele"]["state"] == 1 and s["link"]["alive"] is True
+
+
+def test_nack_from_esp32_forwarded(web):
+    c, master, backend, hub = web
+    with c.websocket_connect("/ws") as ws:
+        ws.receive_json(); ws.receive_json()
+        os.write(master, P.encode("#", "N", 7, "MAST_UP"))
+        ev = _drain_until(ws, "nack")
+        assert ev["seq"] == 7 and ev["reason"] == "MAST_UP"

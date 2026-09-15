@@ -3,13 +3,16 @@
 // ทำไม Serial0 ไม่ใช่ Serial: ด้วย -D ARDUINO_USB_CDC_ON_BOOT=1 (platformio.ini) `Serial` คือ USB-CDC
 // (คอนโซล debug/คำสั่งทดสอบ m/sv/bl) ส่วน `Serial0` คือ HardwareSerial(0) = UART0 ฮาร์ดแวร์
 // ระบุขา RX=44 TX=43 ตรงๆ ใน begin() แทนการพึ่ง default ของ core — ถ้า core map ผิด โค้ดนี้ยังถูก
-// ⚠ ยังไม่ได้ยืนยันบนบอร์ดจริงว่าออกขา 43/44 — ขั้นตอนยืนยันอยู่ใน 10_firmware_esp32/README.md
+// ✅ ยืนยันบนสายจริง 15 ก.ย. 2026 ว่าออกขา 43/44 · ขั้น E (16 ก.ย.): $V $S $E $C $P → #A/#N · #T 10 Hz
+// ยังไม่มี: $M · $R · ฟิลด์ vbat/servo_i/us (ยังไม่มี ADC/US ในเฟิร์มแวร์รวม) — ส่ง 0 ตาม §7.2
 //
 // CRC8: poly 0x07 · init 0x00 · ไม่ reflect · คำนวณจากตัวอักษรหลัง sentinel จนถึงก่อน '*'
 //   test vector ต้องตรงกับ 11_pi5_vision/src/mrc_protocol.py:
 //   crc8("123456789") = 0xF4 (ค่า check มาตรฐาน) · crc8("E,1000,CAPTURE_REQ,1") = 0xE0
 #include "comm.h"
 #include "comm_codec.h"   // crc8 / checkFrame — ทดสอบบน host ได้
+#include "manual.h"
+void robotEmergencyStop(const char*); bool missionRunning(); bool servoAttachedNow();
 
 namespace {
 
@@ -37,26 +40,80 @@ void sendFrame(char kind, const char* body) {
   Serial0.write('\n');          // จบด้วย \n ตัวเดียวตาม §7 (ไม่ใช่ \r\n ของ println)
 }
 
+// ── คำสั่งจาก Pi (ขั้น E) ──
+void ack(uint32_t seq)                     { char b[24]; snprintf(b, sizeof b, "A,%lu", (unsigned long)seq); sendFrame('#', b); }
+void nack(uint32_t seq, const char* why)   { char b[48]; snprintf(b, sizeof b, "N,%lu,%s", (unsigned long)seq, why); sendFrame('#', b);
+                                             Serial.printf("[comm] #N %lu %s\n", (unsigned long)seq, why); }
+
+// parse ตัวเลขคั่นด้วย ',' · คืนจำนวนที่ได้
+int parseInts(const char* p, long* out, int maxN) {
+  int n = 0;
+  while (n < maxN && *p) {
+    char* e; out[n] = strtol(p, &e, 10);
+    if (e == p) break;
+    ++n;
+    if (*e != ',') break;
+    p = e + 1;
+  }
+  return n;
+}
+
 void handleLine(char* line, size_t len) {
   if (!mrc::checkFrame(line, len)) { ++statBadLine; return; }   // boot log/ขยะ/CRC ผิด — ทิ้งเงียบ
-  // $K,<seq>,<1|0>
-  if (line[0] == '$' && line[1] == 'K' && line[2] == ',') {
-    char* p = line + 3;
-    const uint32_t gotSeq = strtoul(p, &p, 10);
-    if (*p != ',') return;
-    const int ok = atoi(p + 1);
-    if (state != CaptureState::WAITING || gotSeq != seq) {
-      Serial.printf("[comm] $K แปลกปลอม seq=%lu (รอ %lu, state %d) — ทิ้ง\n",
-                    (unsigned long)gotSeq, (unsigned long)seq, (int)state);
+  if (line[0] != '$' || line[2] != ',') { Serial.printf("[comm] เฟรมไม่รู้จัก: %s\n", line); return; }
+  long f[4] = {0, 0, 0, 0};
+  const int n = parseInts(line + 3, f, 4);
+  const uint32_t rseq = n >= 1 ? (uint32_t)f[0] : 0;
+  switch (line[1]) {
+    case 'K': {                                   // $K,<seq>,<1|0>
+      if (n < 2) return;
+      const int ok = (int)f[1];
+      if (state != CaptureState::WAITING || rseq != seq) {
+        Serial.printf("[comm] $K แปลกปลอม seq=%lu (รอ %lu, state %d) — ทิ้ง\n", (unsigned long)rseq, (unsigned long)seq, (int)state);
+        return;
+      }
+      roundtripMs = millis() - sentMs;
+      state = ok ? CaptureState::OK : CaptureState::FAIL;
+      if (ok) ++statOk; else ++statFail;
+      Serial.printf("[comm] got $K,%lu,%d ใน %lu ms\n", (unsigned long)rseq, ok, (unsigned long)roundtripMs);
       return;
     }
-    roundtripMs = millis() - sentMs;
-    state = ok ? CaptureState::OK : CaptureState::FAIL;
-    if (ok) ++statOk; else ++statFail;
-    Serial.printf("[comm] got $K,%lu,%d ใน %lu ms\n", (unsigned long)gotSeq, ok, (unsigned long)roundtripMs);
-    return;
+    case 'V': {                                   // $V,<seq>,<v_mm_s>,<w_mrad_s>
+      if (n < 3) { nack(rseq, "BAD_ARGS"); return; }
+      const char* why = manualSetpoint((int)f[1], (int)f[2]);
+      if (why) nack(rseq, why); else ack(rseq);
+      return;
+    }
+    case 'S': manualStop("Pi สั่ง $S"); ack(rseq); return;
+    case 'E': robotEmergencyStop("Pi สั่ง $E (E-STOP)"); ack(rseq); return;
+    case 'C': {                                   // $C,<seq>,<suction_pct>,<brush_pct>
+      if (n < 3) { nack(rseq, "BAD_ARGS"); return; }
+      const char* why = manualSetCleaning((int)f[1], (int)f[2]);
+      if (why) nack(rseq, why); else ack(rseq);
+      return;
+    }
+    case 'P': ack(rseq); return;                  // ping
+    case 'M': case 'R': nack(rseq, "NOT_IMPLEMENTED"); return;
+    default:  nack(rseq, "UNKNOWN"); return;
   }
-  Serial.printf("[comm] เฟรมที่ยังไม่รองรับในขั้น C: %s\n", line);
+}
+
+// ── #T telemetry 10 Hz — ฟิลด์ตาม §7.2 · ที่ยังไม่มีส่ง 0 ──
+//  #T,<ms>,<state>,<v_mm_s>,<w_mrad_s>,<dutyL‰>,<dutyR‰>,<us_l=0>,<us_r=0>,<vbat_mV=0>,<servo_i_mA=0>,<mast>,<flags>
+//  state: 0 IDLE · 1 MANUAL · 2 MISSION · mast: 0 ปล่อย PWM · 2 จับสัญญาณ · flags bit1 = comm-lost (deadman)
+//  ⚠ ช่อง enc_l/enc_r ของ §7.2 ส่ง duty ‰ ไปก่อน (ยังไม่มี PCNT ในเฟิร์มแวร์รวม) — Pi ต้องรู้ (C27)
+constexpr uint32_t TELE_PERIOD_MS = 100;
+uint32_t lastTeleMs = 0;
+uint8_t  flags = 0;
+
+void sendTelemetry() {
+  const int st = missionRunning() ? 2 : (manualActive() ? 1 : 0);
+  const mrc::WheelCmd w = manualOut();
+  char b[96];
+  snprintf(b, sizeof b, "T,%lu,%d,%d,%d,%d,%d,0,0,0,0,%d,%u",
+           (unsigned long)millis(), st, manualActive() ? manualV() : 0, manualActive() ? manualW() : 0,
+           w.l, w.r, servoAttachedNow() ? 2 : 0, (unsigned)flags);
+  sendFrame('#', b);
 }
 
 }  // namespace
@@ -94,6 +151,8 @@ void commTick() {
       rxLen = 0; ++statBadLine;            // ยาวเกิน = ไม่ใช่เฟรมของเรา ทิ้งทั้งบรรทัด
     }
   }
+  if (manualTripped()) flags |= 0x02; else flags &= ~0x02;
+  if (millis() - lastTeleMs >= TELE_PERIOD_MS) { lastTeleMs = millis(); sendTelemetry(); }
   if (state == CaptureState::WAITING && millis() - sentMs >= CAPTURE_TIMEOUT_MS) {
     state = CaptureState::TIMEOUT; ++statTimeout;
     Serial.printf("[comm] timeout: ไม่ได้ $K ของครั้งที่ %lu ใน %lu ms — FSM ต้องพับเสาต่อเอง (§6.1)\n",
@@ -110,4 +169,10 @@ void commPrintStatus() {
                 names[(int)state], (unsigned long)seq, (unsigned long)roundtripMs,
                 (unsigned long)statReq, (unsigned long)statOk, (unsigned long)statFail,
                 (unsigned long)statTimeout, (unsigned long)statBadLine);
+}
+
+void commSendEvent(const char* code, const char* detail) {
+  char b[64];
+  snprintf(b, sizeof b, "E,%lu,%s,%s", (unsigned long)millis(), code, detail ? detail : "");
+  sendFrame('#', b);
 }

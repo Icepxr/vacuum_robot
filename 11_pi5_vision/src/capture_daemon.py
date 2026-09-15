@@ -155,10 +155,33 @@ class CaptureDaemon:
         self.ocr_async = ocr_async
         self.on_event = on_event or (lambda ev: None)
         self.ser = serial.Serial(port, baud, timeout=0.2)
-        self.stats = {"req": 0, "ok": 0, "fail": 0, "bad_lines": 0, "manual": 0}
+        self.stats = {"req": 0, "ok": 0, "fail": 0, "bad_lines": 0, "manual": 0, "tx": 0, "ack": 0, "nack": 0}
         self.last_rx_mono = None            # เวลาที่ได้เฟรมถูกต้องล่าสุด (ดูว่า ESP32 ยังคุยอยู่ไหม)
+        self.tele = None                    # #T ล่าสุด (dict) — ขั้น E
+        self.tele_mono = None
+        self._seq = 0
+        self._tx_lock = threading.Lock()    # ส่งจากหลาย thread (deadman/repeat/ws) ห้ามสลับ byte กัน
         self._stop = threading.Event()
         self._cap_lock = threading.Lock()   # กัน CAPTURE_REQ กับปุ่มบนเว็บถ่ายพร้อมกัน
+
+    # ── ส่งคำสั่งไป ESP32 (ขั้น E) — คืน seq ที่ใช้ เพื่อจับคู่กับ #A/#N ──
+    def send(self, builder, *args):
+        with self._tx_lock:
+            self._seq = (self._seq + 1) % 1_000_000
+            seq = self._seq
+            try:
+                self.ser.write(builder(seq, *args))
+                self.stats["tx"] += 1
+            except (serial.SerialException, OSError) as e:
+                log(f"ส่งไม่ได้: {e}")
+                return None
+        return seq
+
+    def send_velocity(self, v, w):   return self.send(P.cmd_velocity, v, w)
+    def send_stop(self):             return self.send(P.cmd_stop)
+    def send_estop(self):            return self.send(P.cmd_estop)
+    def send_clean(self, suc, br):   return self.send(P.cmd_clean, suc, br)
+    def send_ping(self):             return self.send(P.cmd_ping)
 
     def _emit(self, ev):
         try:
@@ -242,11 +265,28 @@ class CaptureDaemon:
             self.stats["bad_lines"] += 1           # boot log / CRC ผิด — ทิ้งเงียบ (§3.7 ข้อ 3)
             return
         self.last_rx_mono = time.monotonic()
-        if P.is_capture_req(fr):
+        if fr.type == "T":                                  # telemetry 10 Hz — ไม่ log ทุกเฟรม
+            t = P.parse_tele(fr)
+            if t is not None:
+                self.tele, self.tele_mono = t, time.monotonic()
+                self._emit({"t": "tele", **t})
+            else:
+                self.stats["bad_lines"] += 1
+        elif fr.type == "A" and len(fr.fields) >= 2:
+            self.stats["ack"] += 1
+            self._emit({"t": "ack", "seq": int(fr.fields[1]) if fr.fields[1].isdigit() else fr.fields[1]})
+        elif fr.type == "N" and len(fr.fields) >= 3:
+            self.stats["nack"] += 1
+            log(f"ESP32 ปฏิเสธ seq {fr.fields[1]}: {fr.fields[2]}")
+            self._emit({"t": "nack", "seq": int(fr.fields[1]) if fr.fields[1].isdigit() else fr.fields[1], "reason": fr.fields[2]})
+        elif P.is_capture_req(fr):
             self.stats["req"] += 1
             self.handle_capture_req(fr)
+        elif fr.type == "E" and len(fr.fields) >= 3:
+            log(f"เหตุการณ์จาก ESP32: {fr.fields[2]} {fr.fields[3] if len(fr.fields) > 3 else ''}")
+            self._emit({"t": "event", "code": fr.fields[2], "detail": fr.fields[3] if len(fr.fields) > 3 else ""})
         else:
-            log(f"เฟรมที่ยังไม่รองรับในขั้น C: {line.strip()!r}")
+            log(f"เฟรมที่ยังไม่รองรับ: {line.strip()!r}")
 
     def run(self):
         """วนอ่านตลอด · ถ้าพอร์ตหาย (สายหลุด/USB-TTL ถูกดึง) จะพยายามเปิดใหม่ทุก 2 s แทนที่จะตายเงียบ"""

@@ -1,0 +1,45 @@
+// clang++ -std=c++17 -I src/robot test/host_manual.cpp -o /tmp/manual && /tmp/manual
+#include <cstdio>
+#include "manual_core.h"
+using namespace mrc;
+static int fails = 0;
+#define CHECK(c) do { if (!(c)) { ++fails; printf("FAIL line %d: %s\n", __LINE__, #c); } } while (0)
+
+int main() {
+  Manual m; ManualCfg c; m.configure(c);
+  uint32_t t = 0;
+  // 1. เดินหน้า 150 mm/s → 210 ‰ ทั้งสองข้าง หลัง slew (15/tick → 14 tick)
+  CHECK(m.setpoint(150, 0, t));
+  WheelCmd w{};
+  for (int i = 0; i < 20; ++i) { t += 10; if (i % 5 == 0) m.setpoint(150, 0, t); w = m.tick(t); }
+  CHECK(w.l == 210 && w.r == 210);
+  // slew: tick แรกจาก 0 ต้องได้แค่ 15
+  Manual m1; m1.configure(c); m1.setpoint(150, 0, 0); w = m1.tick(10); CHECK(w.l == 15 && w.r == 15);
+  // 2. clamp G14: ขอ 300 mm/s → คืน false และได้เท่า 150
+  Manual m2; m2.configure(c); CHECK(!m2.setpoint(300, 0, 0)); CHECK(m2.v() == 150);
+  // 3. หมุนอยู่กับที่: v=0 ω=+1500 → ซ้ายถอย ขวาเดิน สมมาตร
+  Manual m3; m3.configure(c); m3.setpoint(0, 1500, 0);
+  for (int i = 0; i < 40; ++i) { m3.setpoint(0, 1500, i * 10); w = m3.tick(i * 10); }
+  CHECK(w.l < 0 && w.r > 0 && w.l == -w.r);
+  // half = 1500*180/2000 = 135 mm/s → 189 ‰
+  CHECK(w.r == 189);
+  // 4. deadman: ไม่มี $V 300 ms → ล้อไล่ลง 0 และ tripped
+  Manual m4; m4.configure(c); m4.setpoint(150, 0, 0);
+  for (int i = 1; i <= 14; ++i) m4.tick(i * 10);
+  CHECK(m4.out().l == 210);
+  for (int i = 15; i <= 60; ++i) w = m4.tick(i * 10);           // 600 ms ไม่มีคำสั่ง
+  CHECK(w.l == 0 && w.r == 0 && m4.tripped() && !m4.active());
+  // หลัง trip ถ้า Pi กลับมา ต้องรับคำสั่งใหม่ได้
+  CHECK(m4.setpoint(100, 0, 700)); CHECK(m4.active() && !m4.tripped());
+  // 5. halt (E-STOP) ตัดเป็น 0 ทันทีไม่ slew
+  Manual m5; m5.configure(c); m5.setpoint(150, 0, 0); for (int i = 1; i <= 14; ++i) m5.tick(i * 10);
+  m5.halt(); CHECK(m5.out().l == 0 && m5.out().r == 0);
+  // 6. deadband: ขอ 20 mm/s → 28 ‰ < 40 → 0
+  Manual m6; m6.configure(c); m6.setpoint(20, 0, 0); for (int i = 1; i <= 5; ++i) w = m6.tick(i * 10);
+  CHECK(w.l == 0 && w.r == 0);
+  // 7. เพดาน permille_max: v=150 + ω=1500 → ขวา 210+189=399 → clamp 260
+  Manual m7; m7.configure(c); for (int i = 0; i < 40; ++i) { m7.setpoint(150, 1500, i * 10); w = m7.tick(i * 10); }
+  CHECK(w.r == 260 && w.l == 0);   // ซ้าย 210−189 = 21 ‰ < deadband 40 → 0
+  printf(fails ? "%d FAILED\n" : "all ok\n", fails);
+  return fails ? 1 : 0;
+}
