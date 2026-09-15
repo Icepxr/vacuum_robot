@@ -313,6 +313,20 @@ void servoStop(const char* why)      { servoDetach(why); }
 void servoHelp()                     { printHelp(); }
 bool servoAttachedNow()              { return attached; }
 
+// ── API สำหรับภารกิจ (ขั้น D · src/robot/mission.cpp) ──
+// ต่างจาก `us <ค่า>` ตรงที่ **ไม่หยุดรอกด Enter** หลัง detach: ภารกิจปล่อย PWM ที่ตำแหน่งพับทุกครั้ง
+// (กลไกล็อกตัวเองตอนพับ) แล้วยกครั้งถัดไปจากตำแหน่งเดิม จึงรู้ตำแหน่งจริงอยู่ — ถ้ามีคนหมุนฮอร์นด้วยมือ
+// ระหว่างภารกิจ ข้อสมมตินี้ผิด → ต้องสั่ง `sv us <พับ>` เองก่อนเริ่มรอบใหม่
+// ยังเป็น blocking (~4.8 s เต็มช่วง) และยังยกเลิกได้ด้วยการพิมพ์อะไรก็ได้ในคอนโซล เหมือน slewTo เดิม
+bool servoMissionMove(int us, int fromUsIfUnknown) {
+  if (positionUnknown) {
+    positionUnknown = false;
+    if (!servoAttachAt(fromUsIfUnknown)) return false;
+  }
+  return slewTo(us);
+}
+int servoCurrentUs() { return currentUs; }
+
 #ifndef ROBOT_MERGED
 void setup() { servoSetup(); }
 void loop()  { servoLoop(); }

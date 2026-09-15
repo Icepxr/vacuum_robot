@@ -15,7 +15,8 @@
 // 🔴 ยังไม่ได้บิลด์ทดสอบ — เครื่อง Mac ที่เขียนไฟล์นี้ไม่มี PlatformIO ติดตั้ง
 // ─────────────────────────────────────────────────────────────
 #include <Arduino.h>
-#include "comm.h"   // ลิงก์ Pi 5 บน UART0 — ขั้น C: cap / cs
+#include "comm.h"      // ลิงก์ Pi 5 บน UART0 — ขั้น C: cap / cs
+#include "mission.h"   // ภารกิจ 1 รอบแบบ script — ขั้น D: mis …
 
 // ── จุดต่อของแต่ละโมดูล (นิยามอยู่ท้าย src/<ชุด>/main.cpp) ────
 void motorSetup();  void motorTick();  void motorCommand(const String&);
@@ -84,6 +85,7 @@ static bool isServoMove(const String& c) {
 
 static void stopAllSystems(const char* why) {
   Serial.printf("\n>>> หยุดทุกระบบ: %s\n", why);
+  missionAbort(why);   // ก่อนโมดูล ไม่งั้น mission จะสั่งเปิดกลับใน tick ถัดไป
   motorStop(why);
   blowerStop(why);
   servoStop(why);
@@ -165,6 +167,7 @@ static void printMergedHelp() {
   Serial.println("║   ? m | ? sv | ? bl   คำสั่งของชุดนั้น                 ║");
   Serial.println("║   cap           ส่ง CAPTURE_REQ ไป Pi 5 แล้วรอ $K (5 s) ║");
   Serial.println("║   cs            สถานะลิงก์ Pi 5                         ║");
+  Serial.println("║   mis <คำสั่ง>  ภารกิจ 1 รอบแบบ script (? mis)          ║");
   Serial.println("║   force <คำสั่ง>  ข้ามกติกา R4 เท่านั้น (R1/R2 ข้ามไม่ได้)║");
   Serial.println("╚════════════════════════════════════════════════════════╝");
   Serial.println("ตัวอย่าง:  m t1   ·   sv v1   ·   bl on   ·   force m d 400");
@@ -195,6 +198,8 @@ static void route(String line) {
   if (line == "il") { printInterlock(); return; }
   if (line == "cap") { commRequestCapture(); return; }
   if (line == "cs")  { commPrintStatus(); return; }
+  if (line == "? mis") { missionHelp(); return; }
+  if (line.startsWith("mis ")) { String sub = line.substring(4); sub.trim(); missionCommand(sub); return; }
   if (line == "st") {
     printInterlock();
     blowerStatus();
@@ -254,6 +259,7 @@ void setup() {
   servoSetup();
   motorSetup();
   commSetup();   // UART0 ไป Pi 5 — ไม่แตะขาของสามชุดข้างบน (43/44 จองไว้ตาม §3.2)
+  missionSetup();
 
   printInterlock();
   printMergedHelp();
@@ -272,6 +278,7 @@ void loop() {
   blowerTick();
   servoTick();
   commTick();
+  missionTick();   // หลัง commTick เพื่อให้เห็น $K ในรอบเดียวกัน
 
   delay(10);
 }
