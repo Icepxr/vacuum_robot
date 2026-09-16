@@ -218,3 +218,17 @@ def test_roi_get_set(web, tmp_path, monkeypatch):
     assert r["ok"] and r["crop"]["x"] == 0.3
     assert json.loads((tmp_path / "roi.json").read_text())["crop"]["h"] == 0.2
     assert c.post("/api/roi", json={"crop": {"x": 0, "y": 0, "w": 0.001, "h": 1}}).status_code == 400
+
+
+def test_boot_event_resends_limits(web):
+    """ESP32 ส่ง #E BOOT,TASK_WDT → Pi ส่ง $L ซ้ำ (ค่าเพดานอยู่ใน RAM ของ ESP32 หายตอนรีบูต) + log เตือน"""
+    c, master, backend, hub = web
+    hub.set_limits(300, 2000)
+    assert P.decode(read_line(master)).type == "L"
+    with c.websocket_connect("/ws") as ws:
+        ws.receive_json(); ws.receive_json()
+        os.write(master, P.encode("#", "E", 1234, "BOOT", "TASK_WDT"))
+        fr = P.decode(read_line(master))
+        assert fr.type == "L" and fr.fields[2:] == ["300", "2000"]
+        ev = _drain_until(ws, "log")
+        assert "watchdog" in ev["msg"] and ev["level"] == "warn"

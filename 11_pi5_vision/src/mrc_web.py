@@ -107,6 +107,15 @@ class Hub:
         self.events.append(ev)
         if ev.get("t") == "capture":
             self.last_capture = ev
+        if ev.get("t") == "event" and ev.get("code") == "BOOT":
+            # ESP32 เพิ่งบูต (เปิดเครื่อง / WDT / brownout) — ค่าเพดาน $L หายไปกับ RAM → ส่งซ้ำ · บอกคนขับถ้าไม่ใช่เปิดเครื่อง
+            reason = ev.get("detail", "")
+            if self.daemon: self.daemon.send_limits(self.limits["v_max"], self.limits["w_max"])
+            self.events.append({"t": "log", "ts": time.time(),
+                                "level": "info" if reason == "POWERON" else "warn",
+                                "msg": f"ESP32 บูตใหม่ ({reason}) — ส่งเพดาน $L ซ้ำแล้ว" +
+                                       (" · รีบูตจาก watchdog: loop ค้างเกิน 1 s" if "WDT" in reason else "")})
+            if self.loop: asyncio.run_coroutine_threadsafe(self.broadcast(self.events[-1]), self.loop)
         if self.loop:
             asyncio.run_coroutine_threadsafe(self.broadcast(ev), self.loop)
 

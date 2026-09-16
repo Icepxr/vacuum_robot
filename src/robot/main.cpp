@@ -18,6 +18,7 @@
 #include "comm.h"      // ลิงก์ Pi 5 บน UART0 — ขั้น C: cap / cs
 #include "mission.h"   // ภารกิจ 1 รอบแบบ script — ขั้น D: mis …
 #include "manual.h"    // โหมดขับเองจาก Pi — ขั้น E: $V/$S/$E/$C
+#include "wdt.h"       // Task WDT 1 s (C29) — loop() ค้าง → รีบูต → ล้อ coast
 
 // ── จุดต่อของแต่ละโมดูล (นิยามอยู่ท้าย src/<ชุด>/main.cpp) ────
 void motorSetup();  void motorTick();  void motorCommand(const String&);
@@ -256,7 +257,8 @@ void setup() {
   // วัดจริง: Serial.printf ~100 B ทำให้ loop() ค้าง ~2 s → #T หาย · $V ไม่ถูกอ่าน · deadman ตัด
   // ตั้ง TX timeout = 0 → ถ้าส่งไม่ได้ให้ทิ้ง log แทนที่จะหยุดหุ่น (คอนโซลเป็นของเสริม ลิงก์ Pi เป็นของจริง)
   Serial.setTxTimeoutMs(0);
-  delay(2000);  // รอ USB CDC พร้อม ไม่งั้นบรรทัดแรกๆ จะหาย
+  // เดิม delay(2000) รอ USB CDC — วัดจริง 16 ก.ย.: รีเซ็ต → #T แรก 2.04 s ทั้งที่ setup เอง ~40 ms (§19.8.1)
+  // บนหุ่นคือ "ตาบอด 2 s ทุกครั้งที่รีบูต/WDT" แลกกับบรรทัดแรกบนคอนโซล → ตัดออก (พิมพ์ ? เพื่อดู help ทีหลังได้)
 
   Serial.println();
   Serial.println("════════════════════════════════════════════════════════");
@@ -273,13 +275,32 @@ void setup() {
 
   printInterlock();
   printMergedHelp();
+  // บอกเหตุผลที่บูตทั้งคอนโซลและ Pi (#E BOOT,<reason>) — Pi ใช้แยกว่าเป็น WDT/brownout/เปิดเครื่อง และส่ง $L ซ้ำ
+  Serial.printf("[boot] reset reason: %s\n", wdtResetReason());
+  commSendEvent("BOOT", wdtResetReason());
+  Serial.printf("[wdt] task WDT %lu ms: %s\n", (unsigned long)WDT_TIMEOUT_MS, wdtSetup() ? "on" : "FAILED");
 }
 
 void loop() {
+  wdtFeed();                                   // ต้องถึงบรรทัดนี้ทุก < 1 s ไม่งั้นรีบูต
   static String buf;
   while (Serial.available()) {
     const char c = Serial.read();
-    if (c == '\n' || c == '\r') { if (buf.length()) { route(buf); buf = ""; } }
+    if (c == '\n' || c == '\r') {
+      if (buf.length()) {
+        if (buf.startsWith("hang")) {          // ทดสอบ WDT: บล็อก loop() จงใจ (ไม่ suspend) — ต้องรีบูตถ้า > 1 s
+          const uint32_t ms = buf.length() > 5 ? buf.substring(5).toInt() : 3000;
+          Serial.printf("[wdt] hang %lu ms (busy-wait) — ถ้า > %lu ms ต้องรีบูตด้วย TASK_WDT\n", (unsigned long)ms, (unsigned long)WDT_TIMEOUT_MS);
+          const uint32_t t0 = millis(); while (millis() - t0 < ms) { }
+          Serial.println("[wdt] hang จบโดยไม่รีบูต");
+        } else {
+          wdtSuspend();                        // คำสั่งคอนโซล (ชุดทดสอบ m/sv/bl) บล็อกโดยตั้งใจได้ — งานบนโต๊ะ
+          route(buf);
+          wdtResume();
+        }
+        buf = "";
+      }
+    }
     else buf += c;
   }
 

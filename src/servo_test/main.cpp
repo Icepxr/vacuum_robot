@@ -13,6 +13,9 @@
 // ขั้นตอนเต็ม + ตารางกรอกผล: 03_ผลการทดสอบ/M2_เซอร์โวเสายก.md
 // ─────────────────────────────────────────────────────────────
 #include <Arduino.h>
+#ifdef ROBOT_MERGED
+#include <esp_task_wdt.h>
+#endif
 #include <esp_idf_version.h>
 #if ESP_IDF_VERSION_MAJOR < 5
 #error "ต้องใช้ Arduino-ESP32 core 3.x (ESP-IDF v5) — ดู platformio.ini"
@@ -109,6 +112,9 @@ static bool slewTo(int targetUs) {
     currentUs += dir;
     ledcWrite(PIN_SERVO, usToDuty(currentUs));
     delay(SLEW_STEP_MS);
+#ifdef ROBOT_MERGED
+    esp_task_wdt_reset();   // slew ยกเสาบล็อก loop() นานกว่า 1 s ได้ (ภารกิจเรียกจาก missionTick) — ให้อาหาร WDT ระหว่างทาง
+#endif
   }
   currentUs = targetUs;
   ledcWrite(PIN_SERVO, usToDuty(currentUs));
