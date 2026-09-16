@@ -149,10 +149,30 @@ def test_drive_repeats_V_at_10hz_then_deadman_sends_S(web):
         assert hub.drive_tripped == 1
 
 
-def test_drive_clamped_to_G14(web):
+def test_drive_clamped_to_user_limits_default_150(web):
     c, master, backend, hub = web
     hub.drive(999, -9999)
     assert (hub.drive_v, hub.drive_w) == (150, -1500)
+
+
+def test_user_limits_raise_cap_and_send_L_clamped_at_hw(web):
+    """C28: ผู้ใช้ตั้งเพดานเอง → Pi clamp ที่ฮาร์ดแวร์ 716/7950 · ส่ง $L · broadcast limits · drive ใช้เพดานใหม่"""
+    c, master, backend, hub = web
+    with c.websocket_connect("/ws") as ws:
+        ws.receive_json(); ws.receive_json()
+        ws.send_json({"t": "limits", "v_max": 300, "w_max": 2000})
+        fr = P.decode(read_line(master))
+        assert fr.type == "L" and fr.fields[2:] == ["300", "2000"]
+        ev = _drain_until(ws, "limits")
+        assert ev["v_max"] == 300 and ev["w_max"] == 2000 and ev["v_hw_max"] == 716
+        hub.drive(999, -9999)
+        assert (hub.drive_v, hub.drive_w) == (300, -2000)
+        ws.send_json({"t": "limits", "v_max": 5000, "w_max": 99999})     # เกินฮาร์ดแวร์ → clamp
+        fr = P.decode(read_line(master))
+        assert fr.fields[2:] == ["716", "7950"]
+        assert _drain_until(ws, "limits")["v_max"] == 716
+        s = c.get("/api/status").json()
+        assert s["limits"]["v_max"] == 716 and "$L" in s["esp32_supports"]
 
 
 def test_estop_and_clean_frames(web):
@@ -173,6 +193,9 @@ def test_tele_from_esp32_reaches_ws_and_status(web):
         os.write(master, P.encode("#", "T", 12345, 1, 120, 0, 168, 168, 0, 0, 0, 0, 0, 2))
         ev = _drain_until(ws, "tele")
         assert ev["state_name"] == "MANUAL" and ev["v"] == 120 and ev["duty_l"] == 168 and ev["comm_lost"] is True
+        assert ev["spinup_hold"] is False
+        os.write(master, P.encode("#", "T", 12445, 1, 120, 0, 0, 0, 0, 0, 0, 0, 0, 4))    # flag 0x04 = R2 hold
+        assert _drain_until(ws, "tele")["spinup_hold"] is True
         time.sleep(0.1)
         s = c.get("/api/status").json()
         assert s["tele"]["state"] == 1 and s["link"]["alive"] is True

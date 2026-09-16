@@ -50,3 +50,8 @@ def test_field_with_star_or_newline_rejected():
         P.encode("#", "E", "a*b")
     with pytest.raises(ValueError):
         P.encode("$", "K", "1\n")
+
+
+def test_cmd_limits_frame():
+    fr = P.decode(P.cmd_limits(7, 300, 2000))
+    assert fr.kind == "$" and fr.type == "L" and fr.fields == ["L", "7", "300", "2000"]

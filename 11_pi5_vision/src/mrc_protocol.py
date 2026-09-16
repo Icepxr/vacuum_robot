@@ -100,6 +100,7 @@ def parse_tele(fr: Frame):
     d = dict(zip(TELE_FIELDS, vals))
     d["state_name"] = STATE_NAMES.get(d["state"], str(d["state"]))
     d["comm_lost"] = bool(d["flags"] & 0x02)
+    d["spinup_hold"] = bool(d["flags"] & 0x04)   # R2: รอ blower ไต่รอบ ล้อยังไม่ออกตัว
     return d
 
 
@@ -108,6 +109,7 @@ def cmd_stop(seq: int) -> bytes:                                   return encode
 def cmd_estop(seq: int) -> bytes:                                  return encode("$", "E", seq)
 def cmd_clean(seq: int, suction_pct: int, brush_pct: int) -> bytes: return encode("$", "C", seq, int(suction_pct), int(brush_pct))
 def cmd_ping(seq: int) -> bytes:                                   return encode("$", "P", seq)
+def cmd_limits(seq: int, v_max_mm_s: int, w_max_mrad_s: int) -> bytes: return encode("$", "L", seq, int(v_max_mm_s), int(w_max_mrad_s))   # C28 เพดานที่ผู้ใช้ตั้ง
 
 
 def is_capture_req(fr: Frame) -> bool:

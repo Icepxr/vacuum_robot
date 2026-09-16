@@ -252,6 +252,10 @@ void setup() {
   pinMode(GATE_SERVO,   OUTPUT); digitalWrite(GATE_SERVO,   LOW);
 
   Serial.begin(115200);
+  // C29 (16 ก.ย. 2026): คอนโซล USB CDC จะ "บล็อก" ตอนเขียนถ้าโฮสต์เปิดพอร์ตค้างไว้แต่ไม่อ่าน (buffer เต็ม → รอ timeout)
+  // วัดจริง: Serial.printf ~100 B ทำให้ loop() ค้าง ~2 s → #T หาย · $V ไม่ถูกอ่าน · deadman ตัด
+  // ตั้ง TX timeout = 0 → ถ้าส่งไม่ได้ให้ทิ้ง log แทนที่จะหยุดหุ่น (คอนโซลเป็นของเสริม ลิงก์ Pi เป็นของจริง)
+  Serial.setTxTimeoutMs(0);
   delay(2000);  // รอ USB CDC พร้อม ไม่งั้นบรรทัดแรกๆ จะหาย
 
   Serial.println();

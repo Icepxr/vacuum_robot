@@ -182,6 +182,7 @@ class CaptureDaemon:
     def send_estop(self):            return self.send(P.cmd_estop)
     def send_clean(self, suc, br):   return self.send(P.cmd_clean, suc, br)
     def send_ping(self):             return self.send(P.cmd_ping)
+    def send_limits(self, v, w):     return self.send(P.cmd_limits, v, w)
 
     def _emit(self, ev):
         try:

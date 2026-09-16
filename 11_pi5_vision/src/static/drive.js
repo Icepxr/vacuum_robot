@@ -3,8 +3,10 @@
 // Pi ถือค่าล่าสุดแล้วส่ง $V ซ้ำเอง · เงียบ 300 ms = Pi ส่ง $S · ESP32 มี deadman ของตัวเองอีกชั้น
 (() => {
   const $ = (id) => document.getElementById(id);
-  const V_MAX = 150;                                   // G14
-  const DEFAULTS = { maxPct: 50, turnGain: 1000, rampMs: 250, deadzone: 0.12, turnScale: true, invY: false, invX: false,
+  // C28: เพดานความเร็วเป็นของผู้ใช้ (cfg.vMax/wMax → {t:"limits"} → Pi → $L) · ESP32 clamp แค่ที่ฮาร์ดแวร์ 716 mm/s
+  let V_MAX = 150;                                     // = cfg.vMax หลัง applyCfg
+  const V_HW_MAX = 716, W_HW_MAX = 7950;
+  const DEFAULTS = { vMax: 150, wMax: 1500, maxPct: 50, turnGain: 1000, rampMs: 250, deadzone: 0.12, turnScale: true, invY: false, invX: false,
     joySide: "left", joySize: "m", autoSuction: false, fps: 10, gridOn: false, roiOn: true, mirror: false,
     suctionPct: 100, brushPct: 24, suctionIdleOff: 0, sound: true, vibrate: true, toastSec: 3, staleSec: 2,
     accent: "mint", density: "comfortable", bigButtons: false, wakeLock: true };
@@ -14,7 +16,14 @@
 
   // ── apply cfg → DOM ──
   const root = document.documentElement;
+  let limitsT;
+  function pushLimits() {                              // ส่งเพดานให้ Pi (debounce ตอนลากสไลเดอร์) — ส่งซ้ำตอน ws ต่อใหม่ด้วย
+    clearTimeout(limitsT); limitsT = setTimeout(() => send({ t: "limits", v_max: cfg.vMax, w_max: cfg.wMax }), 250);
+  }
   function applyCfg() {
+    cfg.vMax = Math.max(50, Math.min(V_HW_MAX, +cfg.vMax || 150)); cfg.wMax = Math.max(500, Math.min(W_HW_MAX, +cfg.wMax || 1500));
+    if (cfg.turnGain > cfg.wMax) cfg.turnGain = cfg.wMax;
+    V_MAX = cfg.vMax;
     root.dataset.accent = cfg.accent; root.dataset.density = cfg.density; root.dataset.big = cfg.bigButtons ? 1 : 0;
     root.dataset.joyside = cfg.joySide; root.dataset.mirror = cfg.mirror ? 1 : 0;
     root.style.setProperty("--joy", { s: "120px", m: "160px", l: "210px" }[cfg.joySize] || "160px");
@@ -28,11 +37,12 @@
     if (streamFps !== cfg.fps) startStream();
     wake();
   }
-  const fmtOut = (k, v) => ({ maxPct: `${v}% · ${Math.round(V_MAX * v / 100)} mm/s`, turnGain: `${v}`, rampMs: `${v} ms`, deadzone: `${v}`, fps: `${v} fps`,
+  const fmtOut = (k, v) => ({ vMax: `${v} mm/s${v > 150 ? " ⚠ เกินค่าเริ่มต้น" : ""}`, wMax: `${v} mrad/s`, maxPct: `${v}% · ${Math.round(V_MAX * v / 100)} mm/s`, turnGain: `${v}`, rampMs: `${v} ms`, deadzone: `${v}`, fps: `${v} fps`,
     suctionPct: `${v}%`, brushPct: `${v}%`, suctionIdleOff: v ? `${v} s` : "ไม่ปิด", toastSec: `${v} s`, staleSec: `${v} s` })[k] ?? v;
   document.querySelectorAll("[data-cfg]").forEach((el) => el.addEventListener("input", () => {
     const k = el.dataset.cfg; cfg[k] = el.type === "checkbox" ? el.checked : (el.tagName === "SELECT" ? el.value : +el.value);
     save(); applyCfg();
+    if (k === "vMax" || k === "wMax") pushLimits();
   }));
   document.querySelectorAll("#swatches button").forEach((b) => b.onclick = () => { cfg.accent = b.dataset.accent; save(); applyCfg(); });
   $("cfg-reset").onclick = () => { cfg = { ...DEFAULTS }; save(); applyCfg(); toast("คืนค่าเริ่มต้นแล้ว", "good"); };
@@ -46,7 +56,7 @@
   let ws, wsOk = false;
   function connect() {
     ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
-    ws.onopen = () => { wsOk = true; chip("link", "ลิงก์ ต่ออยู่"); };
+    ws.onopen = () => { wsOk = true; chip("link", "ลิงก์ ต่ออยู่"); pushLimits(); };
     ws.onclose = () => { wsOk = false; setMode("ขาดการเชื่อมต่อ", "lost"); chip("link", "ลิงก์ หลุด — ต่อใหม่…", "bad"); beep("bad"); setTimeout(connect, 1000); };
     ws.onmessage = (m) => handle(JSON.parse(m.data));
   }
@@ -68,7 +78,7 @@
     try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); const o = actx.createOscillator(), g = actx.createGain();
       o.frequency.value = kind === "bad" ? 220 : kind === "good" ? 880 : 520; g.gain.value = 0.05; o.connect(g); g.connect(actx.destination); o.start(); o.stop(actx.currentTime + (kind === "bad" ? 0.25 : 0.08)); } catch (e) {}
   }
-  const NACK_TH = { MAST_UP: "เสายังไม่พับ — ขับไม่ได้", IN_MISSION: "หุ่นกำลังเดินภารกิจอัตโนมัติ", SUCTION_SPINUP: "เพิ่งเปิดดูด รอ 1 วิ ก่อนออกตัว", NOT_STOPPED: "หยุดล้อก่อนเปิดดูด", NOT_IMPLEMENTED: "ยังไม่รองรับคำสั่งนี้", BAD_ARGS: "คำสั่งผิดรูปแบบ" };
+  const NACK_TH = { MAST_UP: "เปิดแปรงตอนเสายกไม่ได้ (ราง 5 V) — พับเสาก่อน", IN_MISSION: "หุ่นกำลังเดินภารกิจอัตโนมัติ", SUCTION_SPINUP: "เพิ่งเปิดดูด รอ 1 วิ ก่อนออกตัว", NOT_STOPPED: "หยุดล้อก่อนเปิดดูด", NOT_IMPLEMENTED: "ยังไม่รองรับคำสั่งนี้", BAD_ARGS: "คำสั่งผิดรูปแบบ" };
 
   let lastTele = null, lastSys = null, capCount = 0, staleT;
   function handle(ev) {
@@ -82,7 +92,13 @@
       case "tele": lastTele = ev; clearTimeout(staleT); staleT = setTimeout(() => { setMode("ESP32 เงียบ", "lost"); beep("bad"); }, cfg.staleSec * 1000);
         setMode(ev.state_name === "MANUAL" ? "ขับเอง" : ev.state_name === "MISSION" ? "ภารกิจอัตโนมัติ" : "พร้อม", ev.state_name === "MANUAL" ? "" : ev.state_name === "MISSION" ? "mission" : "idle");
         chip("bat", ev.vbat_mV ? `แบต <b>${(ev.vbat_mV / 1000).toFixed(1)} V</b>` : "แบต —");
+        $("mast").hidden = ev.mast !== 2;                                        // C28: เสายกไม่ห้ามขับ — แค่บอกให้เห็น
+        if (ev.spinup_hold && !$("spin").matches(":not([hidden])")) beep("warn");
+        $("spin").hidden = !ev.spinup_hold;
         if (ev.comm_lost) toast("ESP32 หยุดเอง: ไม่ได้คำสั่งใน 300 ms", "warn"); break;
+      case "limits":                                                             // Pi ยืนยันเพดาน (อาจถูก clamp ที่ฮาร์ดแวร์)
+        if (ev.v_max !== cfg.vMax || ev.w_max !== cfg.wMax) { cfg.vMax = ev.v_max; cfg.wMax = ev.w_max; save(); applyCfg(); }
+        logEv(`เพดาน ${ev.v_max} mm/s · หมุน ${ev.w_max} mrad/s`, ""); break;
       case "nack": toast("ปฏิเสธ: " + (NACK_TH[ev.reason] || ev.reason), "warn"); logEv("ปฏิเสธ " + ev.reason, "warn"); beep("warn"); break;
       case "capture": $("capture").disabled = false; if (ev.ok) { capCount++; $("capn").textContent = `${capCount} ใบ`; toast("ถ่ายแล้ว — กำลังอ่านตัวเลข…", "good"); beep("good"); } else { toast("ถ่ายไม่สำเร็จ: " + ev.reason, "bad"); beep("bad"); } logEv(ev.ok ? `ถ่าย ${ev.image}` : `ถ่ายไม่สำเร็จ ${ev.reason}`, ev.ok ? "good" : "bad"); break;
       case "reading": toast(ev.value == null ? "อ่านตัวเลขไม่ออก — เล็งให้เข้ากรอบแล้วถ่ายใหม่" : `อ่านได้ ${ev.value}`, ev.value == null ? "warn" : "good"); logEv(`ค่า ${ev.value ?? "—"} (conf ${ev.confidence})`, ev.value == null ? "warn" : "good"); break;

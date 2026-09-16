@@ -1,12 +1,17 @@
 // manual.cpp — ดู manual.h · ตรรกะการผสม/slew/deadman อยู่ใน manual_core.h (host test: test/host_manual.cpp)
 //
-// guard ที่บังคับที่นี่ (ที่มา: system_architecture §6.3 · ไฟล์ 18):
-//   G2  เสาไม่พับ (เซอร์โวยังจับสัญญาณ) → $V ถูกปฏิเสธ MAST_UP  · ถ้าเสายกขึ้นระหว่างขับ → หยุดล้อทันที
-//   G8  deadman 300 ms (ใน core)
-//   G14 เพดาน 150 mm/s (ใน core)
-//   R2  เปิดดูดแล้วต้องเว้น 1000 ms ก่อนล้อออกตัว → $V ≠ 0 ในช่วงนั้นถูกปฏิเสธ SUCTION_SPINUP
-//   R1  แปรง ↔ เซอร์โว: $C ที่เปิดแปรงขณะเซอร์โวจับสัญญาณ → ปฏิเสธ MAST_UP
-//   mission กำลังเดิน → $V/$C ถูกปฏิเสธ IN_MISSION (ห้ามสองสมองสั่งล้อพร้อมกัน)
+// หลักโหมดแมนวล (C28 · 16 ก.ย. 2026): "คนขับตัดสินใจเอง" — ESP32 ไม่ปฏิเสธคำสั่งขับด้วยเหตุผลที่คนมองเห็นได้เอง
+// สิ่งที่ยังบังคับที่นี่ (เหลือเฉพาะที่คนขับมองไม่เห็น = ไฟฟ้า/ลิงก์):
+//   G8  deadman 300 ms (ใน core) — ลิงก์ขาด ไม่ใช่การห้ามคน
+//   R2  เปิดดูดแล้วต้องเว้น 1000 ms ก่อนล้อออกตัว (ราง 12 V margin 7.5 % · ไฟล์ 18 §18.2)
+//       → ไม่ปฏิเสธแล้ว: รับ $V ไว้ แต่ล้อ = 0 จนพ้นช่วง แล้วออกตัวเองจาก $V ถัดไป · บอก HUD ด้วย flag SPINUP_HOLD
+//   R2' ห้ามเปิดดูดขณะล้อหมุน (NOT_STOPPED) — เหตุผลเดียวกัน (inrush ยังไม่วัด)
+//   R1  แปรง ↔ เซอร์โว: $C ที่เปิดแปรงขณะเซอร์โวจับสัญญาณ → ปฏิเสธ MAST_UP (ราง 5 V เกิน 33 % · C12)
+//       ⚠ กว้างเกินไป — ควรห้ามเฉพาะตอนเซอร์โว*กำลังขยับ* แต่ต้องวัดกระแสค้างสุด (M6) ก่อนแคบลง
+//   G7  แปรง ≤ 40 % (clamp ไม่ปฏิเสธ)
+//   mission กำลังเดิน → $V/$C ถูกปฏิเสธ IN_MISSION (สองสมองสั่งล้อพร้อมกันไม่ได้ — ไม่เกิดในแมนวล)
+// ที่ยกออก (C28): G2 MAST_UP ใน $V และการหยุดล้อเมื่อเสายก (ไฟล์ 08: ห่างขีดพลิก 24 เท่า) ·
+//   G14 เปลี่ยนจาก "ห้ามเกิน 150" เป็น "เพดานที่ผู้ใช้ตั้งเอง ($L)" clamp ที่ฮาร์ดแวร์ 716 mm/s เท่านั้น
 #include "manual.h"
 
 void motorSetLR(int l, int r); void motorStop(const char*);
@@ -20,18 +25,35 @@ uint32_t suctionOnMs = 0;                 // เวลาเปิดดูด�
 constexpr uint32_t R2_SPINUP_MS = 1000;   // ไฟล์ 18 §18.3
 constexpr int      BRUSH_MAX_PCT = 40;    // G7
 bool wasActive = false;
+bool spinupHold = false;                  // R2 กำลังหน่วงล้ออยู่ (โชว์ใน #T)
+
+bool inSpinup() { return blowerOnNow() && millis() - suctionOnMs < R2_SPINUP_MS; }
 }
 
 void manualSetup() { core.configure(mrc::ManualCfg{}); }
 
 const char* manualSetpoint(int v, int w) {
   if (missionRunning())     return "IN_MISSION";
-  if (servoAttachedNow())   return "MAST_UP";
-  if ((v != 0 || w != 0) && blowerOnNow() && millis() - suctionOnMs < R2_SPINUP_MS) return "SUCTION_SPINUP";
-  const bool ok = core.setpoint(v, w, millis());
-  if (!ok) Serial.printf("[man] setpoint ถูก clamp: ขอ v=%d w=%d → ใช้ v=%d w=%d (G14)\n", v, w, core.v(), core.w());
+  // R2: อยู่ในช่วงไต่รอบ blower → รับคำสั่ง (ต่อลมหายใจ deadman) แต่ล้อ 0 · Pi ส่ง $V ซ้ำทุก 100 ms อยู่แล้ว
+  // พอพ้น 1000 ms คำสั่งถัดไปจะออกตัวเอง คนขับแค่กดจอยค้างไว้
+  const bool hold = (v != 0 || w != 0) && inSpinup();
+  if (hold != spinupHold) Serial.printf("[man] R2 spin-up hold %s\n", hold ? "เริ่ม (ล้อรอ 1 s)" : "จบ → ออกตัว");
+  spinupHold = hold;
+  const bool ok = core.setpoint(hold ? 0 : v, hold ? 0 : w, millis());
+  if (!ok) Serial.printf("[man] setpoint ถูก clamp: ขอ v=%d w=%d → ใช้ v=%d w=%d (เพดาน %d/%d)\n",
+                         v, w, core.v(), core.w(), core.vMax(), core.wMax());
   return nullptr;
 }
+
+bool manualSetLimits(int vMax, int wMax) {
+  const bool exact = core.setLimits(vMax, wMax);
+  Serial.printf("[man] $L เพดาน v=%d mm/s ω=%d mrad/s → duty สูงสุด %d ‰%s\n",
+                core.vMax(), core.wMax(), core.permilleMax(), exact ? "" : " (ถูก clamp ที่เพดานฮาร์ดแวร์)");
+  return exact;
+}
+int  manualVMax() { return core.vMax(); }
+int  manualWMax() { return core.wMax(); }
+bool manualSpinupHold() { return spinupHold; }
 
 void manualStop(const char* why) {
   if (core.active()) Serial.printf("[man] stop: %s\n", why);
@@ -63,8 +85,7 @@ const char* manualSetCleaning(int suctionPct, int brushPct) {
 }
 
 void manualTick() {
-  // G2 ระหว่างขับ: ถ้าเสาถูกยก (ใครสั่งก็ตาม) ให้หยุดล้อทันที
-  if (core.active() && servoAttachedNow()) manualHalt("เสาไม่ได้พับ (G2)");
+  if (spinupHold && !inSpinup() && !core.active()) spinupHold = false;   // deadman ตัดระหว่างรอ → เคลียร์ flag
   const mrc::WheelCmd w = core.tick(millis());
   if (core.tripped()) { core.ackTrip(); Serial.println("[man] deadman: ไม่ได้ $V ใน 300 ms → หยุด (G8)"); }
   const bool nowActive = core.active() || w.l || w.r;

@@ -40,8 +40,10 @@ PREVIEW_FPS = 10                    # ไฟล์ 19 §19.1 — 10 fps ≈ 3 Mb
 LINK_STALE_S = 1.0                  # #T มา 10 Hz — เงียบเกิน 1 s = ลิงก์มีปัญหา
 DRIVE_DEADMAN_S = 0.30              # ไฟล์ 19 §19.3 — browser เงียบเกินนี้ → ส่ง $S แล้วเลิกส่ง $V
 DRIVE_REPEAT_S = 0.10               # ส่ง $V ซ้ำ 10 Hz ให้ G8 (300 ms) ผ่านด้วย margin 3×
-V_MAX_MM_S = 150                    # G14 — clamp ฝั่ง Pi ก่อน (ESP32 clamp ซ้ำอยู่ดี)
+V_MAX_MM_S = 150                    # ค่าเริ่มต้นของเพดานที่ผู้ใช้ตั้งได้ (C28 — เดิม G14 เป็นการห้าม)
 W_MAX_MRAD_S = 1500
+V_HW_MAX_MM_S = 716                 # เพดานฮาร์ดแวร์: 152 rpm [วัดจริง M1] × π × Ø90 mm (ไฟล์ 19 §19.7) — ขอเกินก็ไม่ได้อยู่แล้ว
+W_HW_MAX_MRAD_S = 7950              # 716 / (180/2) mm ≈ 7.96 rad/s [คำนวณ] ต้องตรงกับ manual_core.h
 
 
 class Hub:
@@ -61,12 +63,22 @@ class Hub:
         self.drive_last_mono = None              # เวลาที่ได้ drive จาก browser ล่าสุด · None = ไม่ได้ขับ
         self.drive_tripped = 0                   # นับครั้งที่ deadman ฝั่ง Pi ทำงาน
         self.cleaning = {"suction": 0, "brush": 0}
+        # C28: เพดานความเร็วเป็นของผู้ใช้ (ตั้งจากหน้าเว็บ → $L) · Pi แค่ clamp ตามค่าเดียวกันและจำไว้ให้ client ใหม่
+        self.limits = {"v_max": V_MAX_MM_S, "w_max": W_MAX_MRAD_S, "v_hw_max": V_HW_MAX_MM_S, "w_hw_max": W_HW_MAX_MRAD_S}
 
     # ── ขับเอง ──
     def drive(self, v, w):
-        self.drive_v = max(-V_MAX_MM_S, min(V_MAX_MM_S, int(v)))
-        self.drive_w = max(-W_MAX_MRAD_S, min(W_MAX_MRAD_S, int(w)))
+        vm, wm = self.limits["v_max"], self.limits["w_max"]
+        self.drive_v = max(-vm, min(vm, int(v)))
+        self.drive_w = max(-wm, min(wm, int(w)))
         self.drive_last_mono = time.monotonic()
+
+    def set_limits(self, v_max, w_max):
+        """เพดานที่ผู้ใช้ตั้ง — clamp ที่ฮาร์ดแวร์ (716 mm/s [คำนวณจาก 152 rpm วัดจริง] · ไฟล์ 19 §19.7) แล้วส่ง $L"""
+        self.limits["v_max"] = max(0, min(V_HW_MAX_MM_S, int(v_max)))
+        self.limits["w_max"] = max(0, min(W_HW_MAX_MRAD_S, int(w_max)))
+        if self.daemon: self.daemon.send_limits(self.limits["v_max"], self.limits["w_max"])
+        return self.limits
 
     def drive_release(self):
         """ผู้ใช้ปล่อยจอย/กด stop: ส่ง $S แล้วหยุดส่งซ้ำ"""
@@ -129,11 +141,12 @@ class Hub:
         return {"t": "sys", "ts": time.time(), "uptime_s": round(time.time() - self.started),
                 "cam_ok": cam_ok, "cpu_temp_c": temp, "disk_free_mb": du.free // 2**20,
                 "pending_sync": pending, "link": link, "last_capture": self.last_capture,
-                "esp32_supports": ["CAPTURE_REQ", "$K", "$V", "$S", "$E", "$C", "$P", "#T"],
+                "esp32_supports": ["CAPTURE_REQ", "$K", "$V", "$S", "$E", "$C", "$P", "$L", "#T"],
                 "tele": (self.daemon.tele if self.daemon else None),
                 "drive": {"v": self.drive_v, "w": self.drive_w, "active": self.drive_last_mono is not None,
                           "tripped": self.drive_tripped, "deadman_ms": int(DRIVE_DEADMAN_S * 1000)},
                 "cleaning": self.cleaning,
+                "limits": self.limits,
                 "clients": len(self.clients)}
 
 
@@ -283,6 +296,9 @@ async def ws_endpoint(ws: WebSocket):
                 d.send_clean(hub.cleaning["suction"], hub.cleaning["brush"])
             elif t == "ping" and d is not None:
                 d.send_ping()
+            elif t == "limits":                      # {"t":"limits","v_max":mm/s,"w_max":mrad/s} — C28 ผู้ใช้ตั้งเพดานเอง
+                lim = hub.set_limits(cmd.get("v_max", hub.limits["v_max"]), cmd.get("w_max", hub.limits["w_max"]))
+                hub.on_event({"t": "limits", **lim})
             elif t == "mast":
                 await ws.send_text(json.dumps({"t": "nack", "cmd": t, "reason": "ESP32 ยังไม่รับ $M (ยกเสาจาก Pi) — ใช้ mis/sv ในคอนโซล"}, ensure_ascii=False))
             else:

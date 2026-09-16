@@ -3,7 +3,7 @@
 // ทำไม Serial0 ไม่ใช่ Serial: ด้วย -D ARDUINO_USB_CDC_ON_BOOT=1 (platformio.ini) `Serial` คือ USB-CDC
 // (คอนโซล debug/คำสั่งทดสอบ m/sv/bl) ส่วน `Serial0` คือ HardwareSerial(0) = UART0 ฮาร์ดแวร์
 // ระบุขา RX=44 TX=43 ตรงๆ ใน begin() แทนการพึ่ง default ของ core — ถ้า core map ผิด โค้ดนี้ยังถูก
-// ✅ ยืนยันบนสายจริง 15 ก.ย. 2026 ว่าออกขา 43/44 · ขั้น E (16 ก.ย.): $V $S $E $C $P → #A/#N · #T 10 Hz
+// ✅ ยืนยันบนสายจริง 15 ก.ย. 2026 ว่าออกขา 43/44 · ขั้น E (16 ก.ย.): $V $S $E $C $P $L → #A/#N · #T 10 Hz
 // ยังไม่มี: $M · $R · ฟิลด์ vbat/servo_i/us (ยังไม่มี ADC/US ในเฟิร์มแวร์รวม) — ส่ง 0 ตาม §7.2
 //
 // CRC8: poly 0x07 · init 0x00 · ไม่ reflect · คำนวณจากตัวอักษรหลัง sentinel จนถึงก่อน '*'
@@ -93,6 +93,12 @@ void handleLine(char* line, size_t len) {
       return;
     }
     case 'P': ack(rseq); return;                  // ping
+    case 'L': {                                   // $L,<seq>,<v_max_mm_s>,<w_max_mrad_s> — เพดานที่ผู้ใช้ตั้ง (C28)
+      if (n < 3) { nack(rseq, "BAD_ARGS"); return; }
+      manualSetLimits((int)f[1], (int)f[2]);      // ถูก clamp ที่ฮาร์ดแวร์ก็ยัง ack — ค่าจริงดูใน #T ไม่ได้ จึงพิมพ์ทางคอนโซล
+      ack(rseq);
+      return;
+    }
     case 'M': case 'R': nack(rseq, "NOT_IMPLEMENTED"); return;
     default:  nack(rseq, "UNKNOWN"); return;
   }
@@ -100,7 +106,7 @@ void handleLine(char* line, size_t len) {
 
 // ── #T telemetry 10 Hz — ฟิลด์ตาม §7.2 · ที่ยังไม่มีส่ง 0 ──
 //  #T,<ms>,<state>,<v_mm_s>,<w_mrad_s>,<dutyL‰>,<dutyR‰>,<us_l=0>,<us_r=0>,<vbat_mV=0>,<servo_i_mA=0>,<mast>,<flags>
-//  state: 0 IDLE · 1 MANUAL · 2 MISSION · mast: 0 ปล่อย PWM · 2 จับสัญญาณ · flags bit1 = comm-lost (deadman)
+//  state: 0 IDLE · 1 MANUAL · 2 MISSION · mast: 0 ปล่อย PWM · 2 จับสัญญาณ · flags 0x02 = comm-lost (deadman) · 0x04 = R2 spin-up hold
 //  ⚠ ช่อง enc_l/enc_r ของ §7.2 ส่ง duty ‰ ไปก่อน (ยังไม่มี PCNT ในเฟิร์มแวร์รวม) — Pi ต้องรู้ (C27)
 constexpr uint32_t TELE_PERIOD_MS = 100;
 uint32_t lastTeleMs = 0;
@@ -152,6 +158,7 @@ void commTick() {
     }
   }
   if (manualTripped()) flags |= 0x02; else flags &= ~0x02;
+  if (manualSpinupHold()) flags |= 0x04; else flags &= ~0x04;
   if (millis() - lastTeleMs >= TELE_PERIOD_MS) { lastTeleMs = millis(); sendTelemetry(); }
   if (state == CaptureState::WAITING && millis() - sentMs >= CAPTURE_TIMEOUT_MS) {
     state = CaptureState::TIMEOUT; ++statTimeout;
