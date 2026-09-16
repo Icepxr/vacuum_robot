@@ -232,3 +232,18 @@ def test_boot_event_resends_limits(web):
         assert fr.type == "L" and fr.fields[2:] == ["300", "2000"]
         ev = _drain_until(ws, "log")
         assert "watchdog" in ev["msg"] and ev["level"] == "warn"
+
+
+def test_camera_fallback_keeps_service_alive(tmp_path, monkeypatch):
+    """ไม่มีกล้อง (เปิด index ไม่ได้) → ไม่ raise · ได้ backend ภาพนิ่ง · cam_ok False (บอกตรงๆ) — กัน systemd วน restart"""
+    import types
+    monkeypatch.setattr(W, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(W, "IMAGE_DIR", tmp_path / "images")
+    def boom(*a, **k): raise RuntimeError("เปิดกล้อง index 0 ไม่ได้")
+    monkeypatch.setattr(W.D, "UsbCameraBackend", boom)
+    args = types.SimpleNamespace(camera=0, engine="tesseract", run_id="t")
+    b = W.open_camera_or_fallback(args)
+    assert b.latest() is not None and W.hub.cam_fallback is True and (tmp_path / "no_camera.jpg").exists()
+    W.hub.backend = b
+    assert W.hub.status()["cam_ok"] is False
+    W.hub.cam_fallback = False

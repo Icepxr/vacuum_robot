@@ -6,6 +6,11 @@
 # หมายเหตุ: ใช้ pgrep กับ path ของสคริปต์ python ไม่ใช่ pkill -f ชื่อสั้นๆ — ไม่งั้นฆ่า ssh session ที่พิมพ์คำสั่งเอง
 set -u
 cd "$(dirname "$0")/.."
+# ถ้า service systemd เปิดอยู่ ให้ใช้ systemctl แทน — ไม่งั้นจะได้ 2 process ถือ UART ซ้อน (C25)
+if systemctl is-active --quiet mrc-web 2>/dev/null; then
+    [[ "${1:-}" == "--stop" ]] && { sudo systemctl stop mrc-web && echo "หยุด service mrc-web แล้ว"; exit 0; }
+    echo "service mrc-web รันอยู่ — ใช้: sudo systemctl restart mrc-web  (หรือ --stop ที่นี่เพื่อหยุด service ก่อน)"; exit 1
+fi
 mkdir -p logs
 for p in $(pgrep -f "src/capture_daemon.py"; pgrep -f "src/mrc_web.py"); do kill "$p" 2>/dev/null; done
 sleep 3

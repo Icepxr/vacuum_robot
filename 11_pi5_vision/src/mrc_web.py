@@ -64,6 +64,7 @@ class Hub:
         self.drive_tripped = 0                   # นับครั้งที่ deadman ฝั่ง Pi ทำงาน
         self.cleaning = {"suction": 0, "brush": 0}
         # C28: เพดานความเร็วเป็นของผู้ใช้ (ตั้งจากหน้าเว็บ → $L) · Pi แค่ clamp ตามค่าเดียวกันและจำไว้ให้ client ใหม่
+        self.cam_fallback = False                # True = เปิดกล้องไม่ได้ ใช้ภาพนิ่งแทน → cam_ok False ให้หน้าเว็บบอกตรงๆ
         self.limits = {"v_max": V_MAX_MM_S, "w_max": W_MAX_MRAD_S, "v_hw_max": V_HW_MAX_MM_S, "w_hw_max": W_HW_MAX_MRAD_S}
 
     # ── ขับเอง ──
@@ -137,7 +138,7 @@ class Hub:
             age = None if d.last_rx_mono is None else round(time.monotonic() - d.last_rx_mono, 1)
             link = {"port": d.ser.port, "baud": d.ser.baudrate, "stats": d.stats,
                     "age_s": age, "alive": age is not None and age < LINK_STALE_S}
-        cam_ok = self.backend is not None and self.backend.latest() is not None
+        cam_ok = self.backend is not None and self.backend.latest() is not None and not self.cam_fallback
         try:
             temp = int(Path("/sys/class/thermal/thermal_zone0/temp").read_text()) / 1000
         except Exception:                        # noqa: BLE001
@@ -148,7 +149,7 @@ class Hub:
             pending = sum(1 for l in JSONL_PATH.read_text(encoding="utf-8").splitlines()
                           if l.strip() and '"synced_at": null' in l)
         return {"t": "sys", "ts": time.time(), "uptime_s": round(time.time() - self.started),
-                "cam_ok": cam_ok, "cpu_temp_c": temp, "disk_free_mb": du.free // 2**20,
+                "cam_ok": cam_ok, "cam_fallback": self.cam_fallback, "cpu_temp_c": temp, "disk_free_mb": du.free // 2**20,
                 "pending_sync": pending, "link": link, "last_capture": self.last_capture,
                 "esp32_supports": ["CAPTURE_REQ", "$K", "$V", "$S", "$E", "$C", "$P", "$L", "#T"],
                 "tele": (self.daemon.tele if self.daemon else None),
@@ -343,6 +344,28 @@ def start_daemon(port, backend, baud=115200):
     return d
 
 
+def open_camera_or_fallback(args):
+    """เปิดกล้อง USB · ถ้าไม่มี (ยังไม่เสียบ / ถอดไป) ให้รันต่อด้วยภาพนิ่งแทนที่จะตาย —
+    ไม่งั้น systemd Restart=always จะวนเปิดใหม่ทุก 2 s และหน้าเว็บ/ลิงก์ ESP32 ไม่ขึ้นเลยทั้งที่ขับได้โดยไม่มีภาพ
+    cam_ok ใน /api/status จะเป็น False → หน้าเว็บโชว์ "ไม่มีภาพ" (เสียบกล้องแล้วต้องรีสตาร์ท service — ยังไม่ทำ hot-plug)"""
+    try:
+        return D.UsbCameraBackend(args.camera, engine=args.engine, run_id=args.run_id)
+    except RuntimeError as e:
+        D.log(f"⚠ {e} — รันต่อโดยไม่มีกล้อง")
+    hub.cam_fallback = True
+    imgs = sorted(IMAGE_DIR.glob("*.jpg"), key=lambda p: p.stat().st_mtime) if IMAGE_DIR.exists() else []
+    if imgs:
+        D.log(f"ใช้รูปล่าสุดแทนภาพสด: {imgs[-1].name}")
+        return D.StillImageBackend(imgs[-1])
+    import cv2, numpy as np
+    ph = DATA_DIR / "no_camera.jpg"
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    frame = np.full((480, 640, 3), 24, np.uint8)
+    cv2.putText(frame, "NO CAMERA", (170, 250), cv2.FONT_HERSHEY_SIMPLEX, 1.6, (90, 90, 200), 3)
+    cv2.imwrite(str(ph), frame)
+    return D.StillImageBackend(ph)
+
+
 def main():
     import uvicorn
     ap = argparse.ArgumentParser()
@@ -356,8 +379,7 @@ def main():
     ap.add_argument("--run-id", default=time.strftime("run_%Y%m%d_%H%M%S"))
     args = ap.parse_args()
 
-    backend = (D.StillImageBackend(args.image) if args.image
-               else D.UsbCameraBackend(args.camera, engine=args.engine, run_id=args.run_id))
+    backend = D.StillImageBackend(args.image) if args.image else open_camera_or_fallback(args)
     if args.no_serial:
         hub.backend = backend
         # daemon ที่ไม่มี serial: ใช้ capture_now ได้ แต่ไม่ฟัง ESP32

@@ -76,6 +76,27 @@ sudo cp systemd/mrc-web.service /etc/systemd/system/ && sudo systemctl enable --
 ```
 
 **16 ก.ย. — โหมดขับเอง:** หน้า **`/drive`** rev.2 (ดีไซน์ใหม่: viewport มุมมน · HUD แก้ว · จอย+วงโค้งทิศ · dial ความเร็ว · dock ดูด/แปรง/ถ่าย · ปุ่มหยุดฉุกเฉินกลม) + **ตั้งค่า 7 แท็บ** (ขับ: เพดาน/ความไวหมุน/ramp/deadzone/กลับทิศ/ด้าน+ขนาดจอย/ดูดอัตโนมัติ · กล้อง: fps/ตาราง/กระจก/**ลากกรอบ OCR บนภาพ → `POST /api/roi`** · ทำความสะอาด · การเตือน เสียง/สั่น · จอ: สีเน้น/ความหนาแน่น/ปุ่มใหญ่/กันจอดับ · ปุ่ม · สถานะ) เก็บใน localStorage · `/` = หน้าวินิจฉัยสำหรับช่าง
+## รันเป็น service (systemd) — ทดสอบบน Pi แล้ว 16 ก.ย. 2026 ✅
+
+ติดตั้งไว้แล้วบน Pi ตัวจริง (`enable`) → **เสียบไฟ Pi แล้วเว็บขึ้นเองที่ `http://<ip>:8000/drive` โดยไม่ต้อง ssh**
+
+| ทดสอบ | ผล |
+|---|---|
+| `enable --now` โดยไม่มีกล้องเสียบ | รันต่อด้วยรูปล่าสุด (`open_camera_or_fallback`) · `cam_ok=false` หน้าเว็บบอก "ไม่มีภาพ" · ลิงก์ ESP32 ปกติ · ไม่วน restart |
+| `kill -9` MainPID | systemd เริ่มใหม่เองใน 2 s · process เดียวถือ `/dev/ttyAMA0` (`fuser` ยืนยัน) |
+| `systemctl restart` | เว็บตอบใน 1.25 s |
+| `sudo reboot` | เว็บตอบ **51 s** หลังสั่ง (Ubuntu Desktop บูต ~46 s + แอป 3 s) · 0 restart · ลิงก์ alive · bad lines 0 |
+| ESP32 ตอน Pi รีบูต | **รีบูตตามด้วย** (บนโต๊ะ ESP32 กินไฟจาก USB-C ของ Pi — Pi ดับ USB ตอน shutdown) · บนหุ่นจริง ESP32 อยู่ราง 5 V แยก จะไม่รีบูต |
+
+คำสั่งประจำวัน (บน Pi):
+```
+sudo systemctl status mrc-web        # ดูว่ารันอยู่ไหม
+sudo systemctl restart mrc-web       # หลัง deploy โค้ดใหม่
+journalctl -u mrc-web -f             # log สด
+sudo systemctl stop mrc-web          # หยุด (เช่นจะรัน start_web.sh --image เพื่อทดสอบ)
+```
+⚠ `scripts/start_web.sh` จะปฏิเสธถ้า service เปิดอยู่ (กัน 2 process ถือ UART ซ้อน — C25) · ถ้าเสียบกล้องทีหลังต้อง `restart` (ยังไม่ทำ hot-plug)
+
 C29 (16 ก.ย.): ESP32 มี task WDT 1 s — loop ค้าง → รีบูตใน 1.44 s → `#E BOOT,TASK_WDT` → Pi ส่ง `$L` ซ้ำ + log เตือน · บูตปกติ 40 ms
 C28 (16 ก.ย.): โหมดแมนวล "คนขับตัดสินใจเอง" — เพดานความเร็วตั้งได้จากแท็บตั้งค่า (`{"t":"limits"}` → `$L`, clamp ที่ฮาร์ดแวร์ 716 mm/s) · เสายกไม่ห้ามขับ (ชิป "เสายกอยู่") · เปิดดูดแล้วล้อรอ 1 s เอง (ชิป "ไต่รอบดูด" จาก `#T` flag 0x04) — รายละเอียดใน `08_การคำนวณ/10` C28
 กติกาความปลอดภัยฝั่ง Pi: browser ส่ง `drive` ทุก 100 ms ขณะกด · Pi ถือค่าล่าสุดแล้วส่ง `$V` ซ้ำ 10 Hz เอง · browser เงียบ > 300 ms → Pi ส่ง `$S` · ESP32 มี deadman ของตัวเองอีก 300 ms (G8) · `estop` ไม่ผ่านตัวกรองใดๆ

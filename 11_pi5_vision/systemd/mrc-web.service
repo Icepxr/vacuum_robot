@@ -1,12 +1,14 @@
 # systemd unit — แอปควบคุมหุ่นบน Pi 5 (software_architecture.md §3)
-# ติดตั้ง:  sudo cp systemd/mrc-web.service /etc/systemd/system/ && sudo systemctl daemon-reload
-#           sudo systemctl enable --now mrc-web      # เริ่มตอนบูต
-# ดู log:   journalctl -u mrc-web -f
-# ⚠ ยังไม่ได้ทดสอบบน Pi (15 ก.ย. 2026 — Pi ไม่อยู่กับตัว)
+# ติดตั้ง:  sudo cp ~/mrc/systemd/mrc-web.service /etc/systemd/system/ && sudo systemctl daemon-reload
+#           sudo systemctl enable --now mrc-web      # เริ่มตอนบูต + เริ่มเดี๋ยวนี้
+# ดู log:   journalctl -u mrc-web -f        หยุด: sudo systemctl stop mrc-web       เริ่มใหม่: sudo systemctl restart mrc-web
+# ⚠ ห้ามใช้ scripts/start_web.sh พร้อมกับ service นี้ — จะได้ 2 process ถือ /dev/ttyAMA0 ซ้อน (C25)
+#   (start_web.sh จะเช็คและปฏิเสธถ้า service เปิดอยู่)
+# ทดสอบบน Pi 16 ก.ย. 2026: enable/บูต/ไม่มีกล้อง/kill -9 แล้วกลับมาเอง — ผลใน 11_pi5_vision/README.md
 [Unit]
 Description=MRC-001 control web (FastAPI + capture daemon)
-After=network.target
-Wants=network.target
+After=network-online.target dev-ttyAMA0.device
+Wants=network-online.target
 
 [Service]
 User=uchida
@@ -15,7 +17,10 @@ Environment=MRC_DATA_DIR=/home/uchida/mrc/data
 ExecStart=/home/uchida/mrc/.venv/bin/python /home/uchida/mrc/src/mrc_web.py --serial /dev/ttyAMA0 --camera 0 --port 8000
 Restart=always
 RestartSec=2
-# ถ้ากล้องหรือ UART ยังไม่พร้อมตอนบูต Restart=always จะวนจนกว่าจะเปิดได้
+# ไม่มีกล้อง → แอปรันต่อด้วยภาพนิ่ง (open_camera_or_fallback) ไม่ต้องพึ่ง Restart วน
+# SIGTERM → uvicorn timeout_graceful_shutdown=2 → ถ้ายังไม่ตาย systemd ยิง SIGKILL หลัง TimeoutStopSec
+TimeoutStopSec=6
+KillMode=mixed
 
 [Install]
 WantedBy=multi-user.target
