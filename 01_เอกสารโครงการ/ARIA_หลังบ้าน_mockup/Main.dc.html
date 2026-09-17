@@ -1,0 +1,202 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap">
+  <style>
+body{margin:0;background:#F4F6F3;color:#17231D;font-family:"IBM Plex Sans Thai","Noto Sans Thai",-apple-system,"Segoe UI",sans-serif;font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased}
+a{color:#1F8A5B}a:hover{color:#166A45}
+*{box-sizing:border-box}
+</style>
+</helmet>
+<div style="display:flex;width:1440px;min-height:900px;background:#F4F6F3">
+  
+<aside style="width:232px;flex:none;background:#123D2C;display:flex;flex-direction:column;padding:22px 16px;gap:6px;min-height:100%">
+  <div style="display:flex;align-items:center;gap:10px;padding:2px 6px 22px">
+    <div style="width:34px;height:34px;border-radius:10px;background:#1F8A5B;display:flex;align-items:center;justify-content:center;color:#FFFFFF"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><rect x="5" y="7" width="14" height="12" rx="2"/><path d="M12 3v4M9 12h.01M15 12h.01M9 16h6"/></svg></div>
+    <div style="display:flex;flex-direction:column">
+      <div style="color:#FFFFFF;font-weight:700;font-size:17px;letter-spacing:.04em">ARIA</div>
+      <div style="color:#8FB3A1;font-size:11px">ระบบจัดการมิเตอร์และบิลหอพัก</div>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:10px;font-size:14px;font-weight:600;background:rgba(255,255,255,.14);color:#FFFFFF;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg><span>หน้าหลัก</span></div><div style="display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:10px;font-size:14px;font-weight:500;color:#C9DCD1;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></svg><span>ยืนยันค่ามิเตอร์</span><span style="margin-left:auto;background:#F3B54A;color:#2B1B00;font-size:11px;font-weight:700;padding:1px 7px;border-radius:10px">21</span></div><div style="display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:10px;font-size:14px;font-weight:500;color:#C9DCD1;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg><span>บิล</span></div><div style="display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:10px;font-size:14px;font-weight:500;color:#C9DCD1;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg><span>ห้องและมิเตอร์</span></div><div style="display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:10px;font-size:14px;font-weight:500;color:#C9DCD1;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg><span>ตั้งค่า</span></div>
+  <div style="margin-top:auto;background:rgba(255,255,255,.08);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:3px">
+    <div style="color:#FFFFFF;font-weight:600;font-size:13px">[ชื่อหอพัก]</div>
+    <div style="color:#8FB3A1;font-size:12px">48 ห้อง · 96 มิเตอร์</div>
+    <div style="color:#8FB3A1;font-size:12px;display:flex;align-items:center;gap:6px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#8FB3A1" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><rect x="5" y="7" width="14" height="12" rx="2"/><path d="M12 3v4M9 12h.01M15 12h.01M9 16h6"/></svg>MRC-001 · ซิงก์ล่าสุด 20:12</div>
+  </div>
+</aside>
+  <main style="flex:1;display:flex;flex-direction:column;padding:24px 28px 28px;min-width:0">
+    
+<header style="display:flex;align-items:center;gap:16px;padding:0 0 18px">
+  <div style="display:flex;flex-direction:column;gap:2px">
+    <h1 style="margin:0;font-size:22px;font-weight:700;letter-spacing:-.01em">สวัสดี [ชื่อผู้ให้เช่า]</h1>
+    <div style="color:#64736B;font-size:13px">วันนี้ 16 ก.ย. 2569 · รอบบิลกันยายน — เหลือ 21 ค่าที่ต้องยืนยันก่อนส่งบิลได้</div>
+  </div>
+  <div style="margin-left:auto;display:flex;align-items:center;gap:12px"><div style="display:flex;align-items:center;gap:8px;background:#E6F4EC;color:#166A45;border-radius:10px;padding:8px 12px;font-size:13px;font-weight:600"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><rect x="5" y="7" width="14" height="12" rx="2"/><path d="M12 3v4M9 12h.01M15 12h.01M9 16h6"/></svg>หุ่นซิงก์ล่าสุด 20:12 · 96 รูป</div>
+    <div style="display:flex;align-items:center;gap:10px;background:#FFFFFF;border:1px solid #E3E8E3;border-radius:12px;padding:6px 12px 6px 6px">
+      <div style="width:30px;height:30px;border-radius:50%;background:#D7E9DE"></div>
+      <div style="display:flex;flex-direction:column;line-height:1.2"><span style="font-size:13px;font-weight:600">[ชื่อผู้ให้เช่า]</span><span style="font-size:11px;color:#64736B">ผู้ให้เช่า</span></div>
+    </div>
+  </div>
+</header>
+    
+<div style="display:grid;grid-template-columns:repeat(4, minmax(0, 1fr));gap:16px">
+  <div style="background:#FFFFFF;border:1px solid #E3E8E3;border-radius:16px;padding:16px 18px;display:flex;flex-direction:column;gap:8px">
+  <div style="display:flex;align-items:center;gap:10px">
+    <div style="width:34px;height:34px;border-radius:10px;background:#E6F4EC;color:#166A45;display:flex;align-items:center;justify-content:center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M4 8h3l2-3h6l2 3h3v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg></div>
+    <div style="color:#64736B;font-size:13px">อ่านมิเตอร์แล้ว</div>
+  </div>
+  <div style="font-size:30px;font-weight:700;letter-spacing:-.02em;line-height:1.1">38 <span style='font-size:16px;color:#64736B;font-weight:500'>/ 48 ห้อง</span></div>
+  <div style="height:6px;background:#EEF1EE;border-radius:4px;overflow:hidden"><div style="width:79%;height:100%;background:#1F8A5B;border-radius:4px"></div></div>
+  <div style="color:#64736B;font-size:12px">หุ่นวิ่งรอบล่าสุด 16 ก.ย. 19:40–20:12</div>
+</div>
+  <div style="background:#FFFFFF;border:1px solid #E3E8E3;border-radius:16px;padding:16px 18px;display:flex;flex-direction:column;gap:8px">
+  <div style="display:flex;align-items:center;gap:10px">
+    <div style="width:34px;height:34px;border-radius:10px;background:#FBF1DF;color:#8A5A12;display:flex;align-items:center;justify-content:center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></svg></div>
+    <div style="color:#64736B;font-size:13px">รอยืนยันค่า</div>
+  </div>
+  <div style="font-size:30px;font-weight:700;letter-spacing:-.02em;line-height:1.1">21 <span style='font-size:16px;color:#64736B;font-weight:500'>ค่า</span></div>
+  
+  <div style="color:#64736B;font-size:12px">7 ค่าที่ OCR ไม่มั่นใจ (&lt; 0.7)</div>
+</div>
+  <div style="background:#FFFFFF;border:1px solid #E3E8E3;border-radius:16px;padding:16px 18px;display:flex;flex-direction:column;gap:8px">
+  <div style="display:flex;align-items:center;gap:10px">
+    <div style="width:34px;height:34px;border-radius:10px;background:#E7EFFB;color:#28599B;display:flex;align-items:center;justify-content:center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg></div>
+    <div style="color:#64736B;font-size:13px">บิลพร้อมส่ง</div>
+  </div>
+  <div style="font-size:30px;font-weight:700;letter-spacing:-.02em;line-height:1.1">17 <span style='font-size:16px;color:#64736B;font-weight:500'>ใบ</span></div>
+  
+  <div style="color:#64736B;font-size:12px">ส่งแล้ว 0 · รอยืนยันค่า 21 ห้อง</div>
+</div>
+  <div style="background:#FFFFFF;border:1px solid #E3E8E3;border-radius:16px;padding:16px 18px;display:flex;flex-direction:column;gap:8px">
+  <div style="display:flex;align-items:center;gap:10px">
+    <div style="width:34px;height:34px;border-radius:10px;background:#FBE7E7;color:#9B2C2C;display:flex;align-items:center;justify-content:center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18h.01"/></svg></div>
+    <div style="color:#64736B;font-size:13px">ยังไม่ได้อ่าน</div>
+  </div>
+  <div style="font-size:30px;font-weight:700;letter-spacing:-.02em;line-height:1.1">10 <span style='font-size:16px;color:#64736B;font-weight:500'>ห้อง</span></div>
+  
+  <div style="color:#64736B;font-size:12px">ชั้น 3 ทั้งชั้น · สั่งหุ่นวิ่งซ้ำได้จากแอปควบคุม</div>
+</div>
+</div>
+
+<div style="display:grid;grid-template-columns:minmax(0, 1.35fr) minmax(0, 1fr);gap:16px;margin-top:16px">
+  <section style="background:#FFFFFF;border:1px solid #E3E8E3;border-radius:16px;padding:18px 20px;display:flex;flex-direction:column;gap:12px;">
+    <div style="display:flex;align-items:center;gap:10px"><h2 style="margin:0;font-size:16px;font-weight:700">ต้องดูก่อน</h2><span style="color:#64736B;font-size:13px">สิ่งที่ถ้าไม่จัดการ บิลจะผิด</span><a href="#" style="margin-left:auto;font-size:13px;font-weight:600;text-decoration:none">ไปหน้ายืนยัน →</a></div>
+    <div style="display:flex;flex-direction:column">
+      <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #EEF1EE">
+  <div style="width:34px;height:34px;border-radius:10px;background:#FBE7E7;color:#9B2C2C;display:flex;align-items:center;justify-content:center"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18h.01"/></svg></div>
+  <div style="display:flex;flex-direction:column;flex:1;min-width:0"><div style="font-weight:600;font-size:14px">ค่าที่อ่านได้ น้อยกว่างวดก่อน</div><div style="color:#64736B;font-size:12px">ห้อง 204 · ไฟ · OCR 4,812 แต่งวดก่อนยืนยัน 4,891 — น่าจะอ่านหลักผิด</div></div>
+  <span style="display:inline-flex;align-items:center;background:#FBE7E7;color:#9B2C2C;font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px;white-space:nowrap">ต้องแก้</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9AA79F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M9 6l6 6-6 6"/></svg>
+</div>
+      <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #EEF1EE">
+  <div style="width:34px;height:34px;border-radius:10px;background:#FBF1DF;color:#8A5A12;display:flex;align-items:center;justify-content:center"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></svg></div>
+  <div style="display:flex;flex-direction:column;flex:1;min-width:0"><div style="font-weight:600;font-size:14px">OCR ไม่มั่นใจ 7 ค่า</div><div style="color:#64736B;font-size:12px">ห้อง 105, 108, 112, 201, 203, 207, 210 · ความมั่นใจ 0.41–0.68</div></div>
+  <span style="display:inline-flex;align-items:center;background:#FBF1DF;color:#8A5A12;font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px;white-space:nowrap">ดูรูปเทียบ</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9AA79F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M9 6l6 6-6 6"/></svg>
+</div>
+      <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #EEF1EE">
+  <div style="width:34px;height:34px;border-radius:10px;background:#EEF1EE;color:#5B6A62;display:flex;align-items:center;justify-content:center"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M4 8h3l2-3h6l2 3h3v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg></div>
+  <div style="display:flex;flex-direction:column;flex:1;min-width:0"><div style="font-weight:600;font-size:14px">ยังไม่มีรูป 10 ห้อง</div><div style="color:#64736B;font-size:12px">ชั้น 3 (301–310) · หุ่นยังไม่ได้วิ่งชั้นนี้ในรอบนี้</div></div>
+  <span style="display:inline-flex;align-items:center;background:#EEF1EE;color:#5B6A62;font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px;white-space:nowrap">รอหุ่น</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9AA79F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M9 6l6 6-6 6"/></svg>
+</div>
+      <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #EEF1EE">
+  <div style="width:34px;height:34px;border-radius:10px;background:#E7EFFB;color:#28599B;display:flex;align-items:center;justify-content:center"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg></div>
+  <div style="display:flex;flex-direction:column;flex:1;min-width:0"><div style="font-weight:600;font-size:14px">ผู้เช่า 2 ห้องยังไม่มีอีเมล</div><div style="color:#64736B;font-size:12px">ห้อง 110, 208 · ส่งบิลไม่ได้จนกว่าจะกรอก</div></div>
+  <span style="display:inline-flex;align-items:center;background:#E7EFFB;color:#28599B;font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px;white-space:nowrap">กรอกในทะเบียน</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9AA79F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M9 6l6 6-6 6"/></svg>
+</div>
+    </div>
+  </section>
+  <section style="background:#FFFFFF;border:1px solid #E3E8E3;border-radius:16px;padding:18px 20px;display:flex;flex-direction:column;gap:12px;">
+    <h2 style="margin:0;font-size:16px;font-weight:700">รอบบิล กันยายน 2569</h2>
+    <div style="display:flex;align-items:flex-start;gap:4px;padding:8px 0 4px">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1">
+  <div style="width:36px;height:36px;border-radius:50%;background:#1F8A5B;color:#FFFFFF;border:2px solid #1F8A5B;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px">1</div>
+  <div style="font-size:13px;font-weight:600">หุ่นถ่าย</div><div style="font-size:12px;color:#64736B">38/48 ห้อง</div>
+</div>
+      <div style="height:2px;background:#1F8A5B;flex:1;margin-top:17px"></div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1">
+  <div style="width:36px;height:36px;border-radius:50%;background:#FFFFFF;color:#1F8A5B;border:2px solid #1F8A5B;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px">2</div>
+  <div style="font-size:13px;font-weight:600">ยืนยันค่า</div><div style="font-size:12px;color:#64736B">55/76 ค่า</div>
+</div>
+      <div style="height:2px;background:#DCE3DD;flex:1;margin-top:17px"></div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1">
+  <div style="width:36px;height:36px;border-radius:50%;background:#FFFFFF;color:#1F8A5B;border:2px solid #1F8A5B;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px">3</div>
+  <div style="font-size:13px;font-weight:600">ออกบิล</div><div style="font-size:12px;color:#64736B">17 ใบ</div>
+</div>
+      <div style="height:2px;background:#DCE3DD;flex:1;margin-top:17px"></div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:6px;flex:1">
+  <div style="width:36px;height:36px;border-radius:50%;background:#FFFFFF;color:#1F8A5B;border:2px solid #1F8A5B;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px">4</div>
+  <div style="font-size:13px;font-weight:600">ส่งอีเมล</div><div style="font-size:12px;color:#64736B">0 ใบ</div>
+</div>
+    </div>
+    <div style="border-top:1px solid #EEF1EE;padding-top:12px;display:flex;flex-direction:column;gap:8px;font-size:13px">
+      <div style="display:flex;justify-content:space-between"><span style="color:#64736B">อัตราที่ใช้งวดนี้</span><span style="font-weight:600">น้ำ 18 ฿/หน่วย · ไฟ 8 ฿/หน่วย</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:#64736B">มีผลตั้งแต่</span><span>1 ม.ค. 2569 · 1 มิ.ย. 2569</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:#64736B">รูปต้นฉบับบน Pi / crop บนคลาวด์</span><span>76 / 76 รูป</span></div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:4px"><button style="display:inline-flex;align-items:center;justify-content:center;gap:8px;height:40px;padding:0 16px;border-radius:10px;font:inherit;font-size:14px;font-weight:600;cursor:pointer;background:#1F8A5B;color:#FFFFFF;border:1px solid #1F8A5B;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></svg>ยืนยันค่าที่ค้าง (21)</button><button style="display:inline-flex;align-items:center;justify-content:center;gap:8px;height:40px;padding:0 16px;border-radius:10px;font:inherit;font-size:14px;font-weight:600;cursor:pointer;background:#FFFFFF;color:#17231D;border:1px solid #D5DDD6;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>ดูบิลที่พร้อม</button></div>
+  </section>
+</div>
+
+<section style="background:#FFFFFF;border:1px solid #E3E8E3;border-radius:16px;padding:18px 20px;display:flex;flex-direction:column;gap:12px;margin-top:16px">
+  <div style="display:flex;align-items:center;gap:10px"><h2 style="margin:0;font-size:16px;font-weight:700">ห้องในรอบนี้</h2><span style="color:#64736B;font-size:13px">ค่างวดก่อน → ค่าที่อ่านได้รอบนี้ (หน่วย)</span>
+    <div style="margin-left:auto;display:flex;gap:8px"><span style="display:inline-flex;align-items:center;background:#EEF1EE;color:#5B6A62;font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px;white-space:nowrap">ทั้งหมด 48</span><span style="display:inline-flex;align-items:center;background:#FBF1DF;color:#8A5A12;font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px;white-space:nowrap">รอยืนยัน 21</span><span style="display:inline-flex;align-items:center;background:#E6F4EC;color:#166A45;font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px;white-space:nowrap">ยืนยันแล้ว 17</span><span style="display:inline-flex;align-items:center;background:#FBE7E7;color:#9B2C2C;font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px;white-space:nowrap">ยังไม่อ่าน 10</span></div></div>
+  <table style="width:100%;border-collapse:collapse;font-size:14px">
+    <thead><tr style="color:#64736B;font-size:12px;text-align:left"><th style="padding:6px 12px;font-weight:600">ห้อง</th><th style="padding:6px 12px;font-weight:600">มิเตอร์น้ำ</th><th style="padding:6px 12px;font-weight:600">มิเตอร์ไฟ</th><th style="padding:6px 12px;font-weight:600">สถานะ</th><th></th></tr></thead>
+    <tbody>
+      <tr style="border-top:1px solid #EEF1EE">
+  <td style="padding:11px 12px;font-weight:600">ห้อง 101</td>
+  <td style="padding:11px 12px"><div style="display:flex;align-items:center;gap:8px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#2F6FBF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z"/></svg><span style="color:#64736B">1,231</span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9AA79F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M5 12h14M13 6l6 6-6 6"/></svg><span style="font-weight:600">1,244</span></div></td>
+  <td style="padding:11px 12px"><div style="display:flex;align-items:center;gap:8px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#B7791F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M13 2L5 14h6l-1 8 8-12h-6z"/></svg><span style="color:#64736B">3,502</span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9AA79F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M5 12h14M13 6l6 6-6 6"/></svg><span style="font-weight:600">3,611</span></div></td>
+  <td style="padding:11px 12px"><span style="display:inline-flex;align-items:center;background:#E6F4EC;color:#166A45;font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px;white-space:nowrap">ยืนยันแล้ว</span></td>
+  <td style="padding:11px 12px;text-align:right"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9AA79F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M9 6l6 6-6 6"/></svg></td>
+</tr>
+      <tr style="border-top:1px solid #EEF1EE">
+  <td style="padding:11px 12px;font-weight:600">ห้อง 102</td>
+  <td style="padding:11px 12px"><div style="display:flex;align-items:center;gap:8px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#2F6FBF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z"/></svg><span style="color:#64736B">987</span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9AA79F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M5 12h14M13 6l6 6-6 6"/></svg><span style="font-weight:600">998</span></div></td>
+  <td style="padding:11px 12px"><div style="display:flex;align-items:center;gap:8px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#B7791F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M13 2L5 14h6l-1 8 8-12h-6z"/></svg><span style="color:#64736B">2,140</span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9AA79F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M5 12h14M13 6l6 6-6 6"/></svg><span style="font-weight:600">2,233</span></div></td>
+  <td style="padding:11px 12px"><span style="display:inline-flex;align-items:center;background:#E6F4EC;color:#166A45;font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px;white-space:nowrap">ยืนยันแล้ว</span></td>
+  <td style="padding:11px 12px;text-align:right"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9AA79F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M9 6l6 6-6 6"/></svg></td>
+</tr>
+      <tr style="border-top:1px solid #EEF1EE">
+  <td style="padding:11px 12px;font-weight:600">ห้อง 105</td>
+  <td style="padding:11px 12px"><div style="display:flex;align-items:center;gap:8px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#2F6FBF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z"/></svg><span style="color:#64736B">1,402</span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9AA79F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M5 12h14M13 6l6 6-6 6"/></svg><span style="font-weight:600">1,4?7</span></div></td>
+  <td style="padding:11px 12px"><div style="display:flex;align-items:center;gap:8px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#B7791F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M13 2L5 14h6l-1 8 8-12h-6z"/></svg><span style="color:#64736B">5,012</span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9AA79F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M5 12h14M13 6l6 6-6 6"/></svg><span style="font-weight:600">5,096</span></div></td>
+  <td style="padding:11px 12px"><span style="display:inline-flex;align-items:center;background:#FBF1DF;color:#8A5A12;font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px;white-space:nowrap">OCR ไม่มั่นใจ (น้ำ)</span></td>
+  <td style="padding:11px 12px;text-align:right"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9AA79F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M9 6l6 6-6 6"/></svg></td>
+</tr>
+      <tr style="border-top:1px solid #EEF1EE">
+  <td style="padding:11px 12px;font-weight:600">ห้อง 110</td>
+  <td style="padding:11px 12px"><div style="display:flex;align-items:center;gap:8px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#2F6FBF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z"/></svg><span style="color:#64736B">1,120</span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9AA79F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M5 12h14M13 6l6 6-6 6"/></svg><span style="font-weight:600">1,133</span></div></td>
+  <td style="padding:11px 12px"><div style="display:flex;align-items:center;gap:8px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#B7791F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M13 2L5 14h6l-1 8 8-12h-6z"/></svg><span style="color:#64736B">2,876</span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9AA79F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M5 12h14M13 6l6 6-6 6"/></svg><span style="font-weight:600">2,950</span></div></td>
+  <td style="padding:11px 12px"><span style="display:inline-flex;align-items:center;background:#E7EFFB;color:#28599B;font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px;white-space:nowrap">ไม่มีอีเมลผู้เช่า</span></td>
+  <td style="padding:11px 12px;text-align:right"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9AA79F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M9 6l6 6-6 6"/></svg></td>
+</tr>
+      <tr style="border-top:1px solid #EEF1EE">
+  <td style="padding:11px 12px;font-weight:600">ห้อง 204</td>
+  <td style="padding:11px 12px"><div style="display:flex;align-items:center;gap:8px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#2F6FBF" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z"/></svg><span style="color:#64736B">1,010</span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9AA79F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M5 12h14M13 6l6 6-6 6"/></svg><span style="font-weight:600">1,021</span></div></td>
+  <td style="padding:11px 12px"><div style="display:flex;align-items:center;gap:8px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#B7791F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M13 2L5 14h6l-1 8 8-12h-6z"/></svg><span style="color:#64736B">4,891</span><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9AA79F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M5 12h14M13 6l6 6-6 6"/></svg><span style="font-weight:600">4,812</span></div></td>
+  <td style="padding:11px 12px"><span style="display:inline-flex;align-items:center;background:#FBE7E7;color:#9B2C2C;font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px;white-space:nowrap">ค่าน้อยกว่างวดก่อน</span></td>
+  <td style="padding:11px 12px;text-align:right"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9AA79F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M9 6l6 6-6 6"/></svg></td>
+</tr>
+      <tr style="border-top:1px solid #EEF1EE">
+  <td style="padding:11px 12px;font-weight:600">ห้อง 301</td>
+  <td style="padding:11px 12px;color:#9AA79F">— ยังไม่ได้อ่าน</td>
+  <td style="padding:11px 12px;color:#9AA79F">— ยังไม่ได้อ่าน</td>
+  <td style="padding:11px 12px"><span style="display:inline-flex;align-items:center;background:#EEF1EE;color:#5B6A62;font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px;white-space:nowrap">ยังไม่ได้อ่าน</span></td>
+  <td style="padding:11px 12px;text-align:right"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9AA79F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:none"><path d="M9 6l6 6-6 6"/></svg></td>
+</tr>
+    </tbody>
+  </table>
+</section>
+
+  </main>
+</div>
+</x-dc>
+</body>
+</html>

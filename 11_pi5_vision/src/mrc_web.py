@@ -18,6 +18,7 @@ import asyncio
 import json
 import os
 import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -157,6 +158,7 @@ class Hub:
                           "tripped": self.drive_tripped, "deadman_ms": int(DRIVE_DEADMAN_S * 1000)},
                 "cleaning": self.cleaning,
                 "limits": self.limits,
+                "ip": pi_ips(),
                 "clients": len(self.clients)}
 
 
@@ -344,6 +346,15 @@ def start_daemon(port, backend, baud=115200):
     return d
 
 
+def pi_ips():
+    """IPv4 ของ Pi ทุก interface (ไว้โชว์บนหน้าเว็บ/log — IP เปลี่ยนบ่อยบน Wi-Fi อาคาร/hotspot มือถือ)"""
+    try:
+        out = subprocess.run(["hostname", "-I"], capture_output=True, text=True, timeout=2).stdout.split()
+        return [a for a in out if "." in a]
+    except Exception:                        # noqa: BLE001
+        return []
+
+
 def open_camera_or_fallback(args):
     """เปิดกล้อง USB · ถ้าไม่มี (ยังไม่เสียบ / ถอดไป) ให้รันต่อด้วยภาพนิ่งแทนที่จะตาย —
     ไม่งั้น systemd Restart=always จะวนเปิดใหม่ทุก 2 s และหน้าเว็บ/ลิงก์ ESP32 ไม่ขึ้นเลยทั้งที่ขับได้โดยไม่มีภาพ
@@ -389,7 +400,7 @@ def main():
         D.log("โหมด --no-serial: ไม่ฟัง ESP32")
     else:
         start_daemon(args.serial, backend)
-    D.log(f"เว็บ http://{args.host}:{args.port}  (ภาพสด {PREVIEW_FPS} fps)")
+    D.log(f"เว็บ http://{args.host}:{args.port}  (ภาพสด {PREVIEW_FPS} fps) · IP ของ Pi: {' '.join(pi_ips()) or 'ยังไม่มี'}")
     # timeout_graceful_shutdown: ไม่งั้น SIGTERM จะรอ /stream.mjpg ที่ browser เปิดค้างไว้ตลอดกาล
     # → process เก่าไม่ตาย ถือ /dev/ttyAMA0 ซ้อนกับตัวใหม่ แล้วแย่งอ่าน byte จนไม่มีใครได้เฟรมครบ (เจอจริง 16 ก.ย.)
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning", timeout_graceful_shutdown=2)
