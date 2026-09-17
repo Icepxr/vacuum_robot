@@ -76,6 +76,14 @@ sudo cp systemd/mrc-web.service /etc/systemd/system/ && sudo systemctl enable --
 ```
 
 **16 ก.ย. — โหมดขับเอง:** หน้า **`/drive`** rev.2 (ดีไซน์ใหม่: viewport มุมมน · HUD แก้ว · จอย+วงโค้งทิศ · dial ความเร็ว · dock ดูด/แปรง/ถ่าย · ปุ่มหยุดฉุกเฉินกลม) + **ตั้งค่า 7 แท็บ** (ขับ: เพดาน/ความไวหมุน/ramp/deadzone/กลับทิศ/ด้าน+ขนาดจอย/ดูดอัตโนมัติ · กล้อง: fps/ตาราง/กระจก/**ลากกรอบ OCR บนภาพ → `POST /api/roi`** · ทำความสะอาด · การเตือน เสียง/สั่น · จอ: สีเน้น/ความหนาแน่น/ปุ่มใหญ่/กันจอดับ · ปุ่ม · สถานะ) เก็บใน localStorage · `/` = หน้าวินิจฉัยสำหรับช่าง
+## หา Pi ให้เจอ — ใช้ชื่อ ไม่ใช้ IP (17 ก.ย. 2026)
+
+Pi ต่อ **hotspot iPhone (`دياس`)** เป็นวงหลัก (autoconnect-priority 10 · Wi-Fi อาคาร `JumboPlus_ISB_1415` เป็นสำรอง priority 0)
+- หน้าขับ: **`http://uchida-pi5.local:8000/drive`** · ssh: `ssh uchida@uchida-pi5.local` — mDNS ใช้ได้บน hotspot (บนวงมหาลัยถูกกัน ใช้ไม่ได้)
+- IP ที่ได้จาก iPhone มักเป็น `172.20.10.2` แต่ DHCP ไม่รับประกัน → อย่าจำเลข ใช้ชื่อ
+- ลำดับเปิดใช้: เปิด Personal Hotspot บน iPhone (เปิดหน้านั้นค้างไว้จน Pi ต่อ) → เปิด Pi → มือถือ/Mac ต่อ hotspot เดียวกัน → เปิดหน้าขับ · เว็บขึ้นเองใน ~50 s (systemd)
+- เพิ่ม Wi-Fi ใหม่: `bash ~/mrc/scripts/wifi_add.sh` (ถามชื่อ+รหัสบนจอ) · `/api/status` มีฟิลด์ `ip`
+
 ## รันเป็น service (systemd) — ทดสอบบน Pi แล้ว 16 ก.ย. 2026 ✅
 
 ติดตั้งไว้แล้วบน Pi ตัวจริง (`enable`) → **เสียบไฟ Pi แล้วเว็บขึ้นเองที่ `http://<ip>:8000/drive` โดยไม่ต้อง ssh**
