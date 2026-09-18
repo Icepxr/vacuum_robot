@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#2e1065">
+  <title>ARIA — ต้นแบบหลังบ้านหอพัก</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="เมนูหลัก">
+      <div class="brand"><div class="brand-symbol" aria-hidden="true">✦</div><div><strong>ARIA</strong><span>Metering Assistant</span></div></div>
+      <div class="side-label">WORKSPACE</div>
+      <nav class="side-nav" id="side-nav">
+        <button type="button" data-page="home"><span aria-hidden="true">◫</span> หน้าหลัก</button>
+        <button type="button" data-page="review"><span aria-hidden="true">◉</span> ยืนยันค่ามิเตอร์ <em id="nav-review-count"></em></button>
+        <button type="button" data-page="bills"><span aria-hidden="true">▤</span> บิล</button>
+        <button type="button" data-page="rooms"><span aria-hidden="true">▦</span> ห้องและมิเตอร์</button>
+        <button type="button" data-page="settings"><span aria-hidden="true">⚙</span> ตั้งค่า</button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="side-device"><span class="device-dot"></span><div><strong>MRC-001</strong><small>ข้อมูลหุ่นล่าสุด: 16 ก.ย. 20:12</small></div></div>
+        <div class="sidebar-note">ต้นแบบข้อมูลตัวอย่าง<br>ไม่มีการเชื่อมต่อ Pi หรือส่งอีเมล</div>
+      </div>
+    </aside>
+    <div class="main-area">
+      <header class="topbar">
+        <div class="top-left"><span class="top-brand">ARIA</span><span class="top-divider">/</span><span id="top-page-name">หน้าหลัก</span></div>
+        <div class="top-right"><span class="demo-badge">● DEMO · 10 ห้อง</span><span class="cycle-tag">รอบกันยายน 2569</span><span class="avatar" aria-label="ผู้ให้เช่าตัวอย่าง">อ</span></div>
+      </header>
+      <main id="page-content" tabindex="-1"></main>
+    </div>
+  </div>
+  <div id="modal-root"></div>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>

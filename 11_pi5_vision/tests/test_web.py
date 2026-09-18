@@ -247,3 +247,33 @@ def test_camera_fallback_keeps_service_alive(tmp_path, monkeypatch):
     W.hub.backend = b
     assert W.hub.status()["cam_ok"] is False
     W.hub.cam_fallback = False
+
+
+def test_camera_hotplug_swaps_backend(tmp_path, monkeypatch):
+    """เริ่มโดยไม่มีกล้อง → เสียบทีหลัง → camera_hotplug สลับ backend ให้ hub + daemon และ cam_ok กลับเป็น True"""
+    import asyncio, types
+    monkeypatch.setattr(W, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(W, "IMAGE_DIR", tmp_path / "images")
+    monkeypatch.setattr(W, "CAMERA_RETRY_S", 0.01)
+    calls = {"n": 0}
+    class FakeCam:
+        def __init__(self, *a, **k):
+            calls["n"] += 1
+            if calls["n"] < 3: raise RuntimeError("ยังไม่เสียบ")
+        def latest(self): return b"frame"
+        def close(self): pass
+    monkeypatch.setattr(W.D, "UsbCameraBackend", FakeCam)
+    args = types.SimpleNamespace(camera=0, engine="tesseract", run_id="t")
+    W.hub.backend = W.open_camera_or_fallback(args)          # ครั้งที่ 1 ล้ม → fallback
+    W.hub.daemon = types.SimpleNamespace(backend=W.hub.backend)
+    assert W.hub.cam_fallback is True
+    async def run():
+        t = asyncio.create_task(W.camera_hotplug())
+        for _ in range(100):
+            await asyncio.sleep(0.01)
+            if not W.hub.cam_fallback: break
+        t.cancel()
+    asyncio.run(run())
+    assert W.hub.cam_fallback is False and isinstance(W.hub.backend, FakeCam) and W.hub.daemon.backend is W.hub.backend
+    assert calls["n"] == 3
+    W.hub.daemon = None; W.hub.backend = None

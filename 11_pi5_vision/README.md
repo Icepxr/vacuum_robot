@@ -30,7 +30,7 @@ python src/meter_reader.py --source folder --path ./photos --debug-dir ./debug
 
 ## บน Pi 5
 
-> **Pi 5 ตัวจริง (`uchida@10.137.154.184`) เป็น Ubuntu 24.04 + กล้อง USB Logitech BRIO** — ไม่ใช่ Raspberry Pi OS + CSI ตามที่เคยเขียน (เหตุผล: ต้องใช้ ROS เทอมหน้า · ดู C22 ในไฟล์ 10) · picamera2 ใช้บน Ubuntu ไม่ได้ ให้ใช้ `--source usb` (OpenCV/V4L2) แทน
+> **Pi 5 ตัวจริง (`uchida@uchida-pi5.local` (บน hotspot iPhone)) เป็น Ubuntu 24.04 + กล้อง USB Logitech BRIO** — ไม่ใช่ Raspberry Pi OS + CSI ตามที่เคยเขียน (เหตุผล: ต้องใช้ ROS เทอมหน้า · ดู C22 ในไฟล์ 10) · picamera2 ใช้บน Ubuntu ไม่ได้ ให้ใช้ `--source usb` (OpenCV/V4L2) แทน
 
 ```bash
 # บนโน้ตบุ๊ก: ส่งโค้ดขึ้น Pi (~/mrc) แล้วรัน setup — ดู scripts/

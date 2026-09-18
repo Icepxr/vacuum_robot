@@ -66,6 +66,7 @@ class Hub:
         self.cleaning = {"suction": 0, "brush": 0}
         # C28: เพดานความเร็วเป็นของผู้ใช้ (ตั้งจากหน้าเว็บ → $L) · Pi แค่ clamp ตามค่าเดียวกันและจำไว้ให้ client ใหม่
         self.cam_fallback = False                # True = เปิดกล้องไม่ได้ ใช้ภาพนิ่งแทน → cam_ok False ให้หน้าเว็บบอกตรงๆ
+        self.cam_args = None                     # args ของกล้อง (index/engine/run_id) ให้ camera_hotplug ลองเปิดใหม่
         self.limits = {"v_max": V_MAX_MM_S, "w_max": W_MAX_MRAD_S, "v_hw_max": V_HW_MAX_MM_S, "w_hw_max": W_HW_MAX_MRAD_S}
 
     # ── ขับเอง ──
@@ -328,11 +329,36 @@ async def sys_ticker():
             await hub.broadcast(hub.status())
 
 
+CAMERA_RETRY_S = 5.0
+
+async def camera_hotplug():
+    """ไม่มีกล้องตอนสตาร์ท (cam_fallback) → ลองเปิดใหม่ทุก 5 s · เปิดได้ก็สลับ backend ให้ daemon/stream ทันที
+    (เจอจริง 18 ก.ย.: เสียบ BRIO หลัง service ขึ้น → ไม่มีภาพจนกว่าจะ restart)"""
+    while True:
+        await asyncio.sleep(CAMERA_RETRY_S)
+        if not hub.cam_fallback or hub.cam_args is None:
+            continue
+        try:
+            cam = await asyncio.to_thread(D.UsbCameraBackend, hub.cam_args.camera,
+                                          engine=hub.cam_args.engine, run_id=hub.cam_args.run_id)
+        except RuntimeError:
+            continue                          # ยังไม่เสียบ — เงียบ ไม่ spam log
+        old = hub.backend
+        hub.backend = cam
+        if hub.daemon: hub.daemon.backend = cam
+        hub.cam_fallback = False
+        try: old.close()
+        except Exception: pass               # noqa: BLE001
+        D.log("กล้องเสียบแล้ว → สลับมาภาพสด")
+        hub.on_event({"t": "log", "level": "good", "msg": "กล้องเสียบแล้ว — ภาพสดกลับมา"})
+
+
 @app.on_event("startup")
 async def _startup():
     hub.loop = asyncio.get_running_loop()
     asyncio.create_task(sys_ticker())
     asyncio.create_task(hub.drive_loop())
+    asyncio.create_task(camera_hotplug())
 
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
@@ -364,6 +390,7 @@ def open_camera_or_fallback(args):
     except RuntimeError as e:
         D.log(f"⚠ {e} — รันต่อโดยไม่มีกล้อง")
     hub.cam_fallback = True
+    hub.cam_args = args
     imgs = sorted(IMAGE_DIR.glob("*.jpg"), key=lambda p: p.stat().st_mtime) if IMAGE_DIR.exists() else []
     if imgs:
         D.log(f"ใช้รูปล่าสุดแทนภาพสด: {imgs[-1].name}")

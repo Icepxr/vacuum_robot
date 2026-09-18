@@ -5,7 +5,7 @@
 #   bash scripts/deploy_to_pi.sh --status        # rsync + setup_pi.sh status
 # ตั้ง PI=user@ip เพื่อเปลี่ยนปลายทาง (default ด้านล่าง)
 set -euo pipefail
-PI="${PI:-uchida@10.137.154.184}"
+PI="${PI:-uchida@uchida-pi5.local}"   # 17 ก.ย.: ชื่อ mDNS บน hotspot iPhone — IP เปลี่ยนได้ อย่าฝังเลข
 SRC="$(cd "$(dirname "$0")/.." && pwd)/"
 rsync -az --delete \
     --exclude '.venv' --exclude 'data/' --exclude 'logs/' --exclude '__pycache__' --exclude '*.pyc' --exclude 'debug/' \
