@@ -413,7 +413,7 @@ def main():
     ap.add_argument("--no-serial", action="store_true", help="ไม่มี ESP32 — ภาพสด/ถ่ายจากเว็บอย่างเดียว")
     ap.add_argument("--camera", type=int, default=0)
     ap.add_argument("--image", help="ใช้รูปนี้แทนกล้อง")
-    ap.add_argument("--engine", choices=["tesseract", "ssocr"], default="tesseract")
+    ap.add_argument("--engine", choices=["sevenseg", "tesseract", "ssocr"], default="sevenseg")   # C30: 7-seg ก่อน (18 ก.ย.)
     ap.add_argument("--run-id", default=time.strftime("run_%Y%m%d_%H%M%S"))
     args = ap.parse_args()
 

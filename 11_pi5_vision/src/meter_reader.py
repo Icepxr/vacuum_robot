@@ -100,6 +100,7 @@ def load_config():
         "threshold": "otsu",      # "otsu" | "adaptive" | "none"
         "scale": 2.0,             # ขยายก่อน OCR ช่วยกับตัวเลขเล็ก
         "expected_digits": None,  # ใส่จำนวนหลักถ้ารู้ ช่วยกรองผลที่เพี้ยน
+        "ink": "red",             # สีหมึกสำหรับ engine sevenseg: "red" (ปากกาแดง/ชมพู) | "dark" (ดำ/จอ LCD บนพื้นสว่าง)
         "decimal_places": None,   # ใส่ถ้ารู้รูปแบบแน่นอน แล้วเราหารเอง ไม่ให้ OCR เดาจุด
     }
     if CONFIG_PATH.exists():
@@ -218,7 +219,27 @@ def ocr_ssocr(binimg):
         tmp.unlink(missing_ok=True)
 
 
-OCR_ENGINES = {"tesseract": ocr_tesseract, "ssocr": ocr_ssocr}
+def ocr_sevenseg(cropped_bgr, cfg=None):
+    """ตัวเลข 7-segment / เขียนมือเลียนแบบ (sevenseg.py) — รับภาพสี (ต้องรู้สีหมึก cfg["ink"]) ไม่ใช่ภาพ binary
+    18 ก.ย. 2026: ภาพมิเตอร์จำลอง 1509 ปากกาแดง 5/5 ภาพถูก · tesseract 0/5"""
+    import sevenseg
+    r = sevenseg.read(cropped_bgr, ink=(cfg or {}).get("ink", "red"))
+    # ถ้าถอดรหัสไม่ครบทุกหลัก ให้ตอบว่า "อ่านไม่ออก" ดีกว่าตอบเลขครึ่งเดียว (18 ก.ย.: กล้องหันผิดทาง เจอสายไฟแดง → '?1?' → เคยคืน 1.0)
+    if not r["ok"]:
+        return "", 0.0
+    return r["text"], 0.9
+ocr_sevenseg.needs_color = True
+
+
+OCR_ENGINES = {"sevenseg": ocr_sevenseg, "tesseract": ocr_tesseract, "ssocr": ocr_ssocr}
+
+
+def run_engine(engine, binimg, cropped_bgr, cfg):
+    """เรียก engine ให้ถูกชนิดภาพ: sevenseg ต้องการภาพสี · tesseract/ssocr ต้องการ binary"""
+    fn = OCR_ENGINES[engine]
+    if getattr(fn, "needs_color", False):
+        return fn(cropped_bgr, cfg)
+    return fn(binimg)
 
 
 def parse_value(raw, expected_digits=None, decimal_places=None):
@@ -319,7 +340,7 @@ def process_one(img, cfg, engine, run_id, meter_type, name=None, debug_dir=None)
     raw, conf, value, err = "", 0.0, None, None
     try:
         binimg, cropped = preprocess(img, cfg)
-        raw, conf = OCR_ENGINES[engine](binimg)
+        raw, conf = run_engine(engine, binimg, cropped, cfg)
         value = parse_value(raw, cfg.get("expected_digits"), cfg.get("decimal_places"))
         if debug_dir:
             Path(debug_dir).mkdir(parents=True, exist_ok=True)
@@ -339,7 +360,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--source", choices=["picamera2", "usb", "folder"], default="folder")
     ap.add_argument("--path", help="โฟลเดอร์รูป เมื่อ --source folder")
-    ap.add_argument("--engine", choices=list(OCR_ENGINES), default="tesseract")
+    ap.add_argument("--engine", choices=list(OCR_ENGINES), default="sevenseg")
     ap.add_argument("--meter-type", default="water", help="water | electric")
     ap.add_argument("--run-id", default=datetime.now().strftime("run_%Y%m%d_%H%M%S"))
     ap.add_argument("--debug-dir", help="เซฟภาพหลัง threshold ไว้ดูตอนปรับจูน")

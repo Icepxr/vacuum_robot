@@ -48,7 +48,7 @@ class UsbCameraBackend:
     """BRIO ผ่าน OpenCV/V4L2 · MJPG 1080p เปิดค้างใน thread · เก็บเฟรม BGR ล่าสุด 1 เฟรม
     ตัวเลข: cap.read() ≈ 61 ms · imwrite 14 ms · resize 6 ms [วัดจริง 11 ก.ย. — ไฟล์ 19 §19.4.1]"""
 
-    def __init__(self, index=0, size=(1920, 1080), engine="tesseract",
+    def __init__(self, index=0, size=(1920, 1080), engine="sevenseg",
                  run_id=None, meter_type="water"):
         import cv2                                   # นำเข้าตรงนี้ให้ import โมดูลได้บนเครื่องที่ไม่มี cv2
         import meter_reader as MR
@@ -102,8 +102,8 @@ class UsbCameraBackend:
         MR = self.MR
         raw, conf, value, err = "", 0.0, None, None
         try:
-            binimg, _ = MR.preprocess(frame, self.cfg)
-            raw, conf = MR.OCR_ENGINES[self.engine](binimg)
+            binimg, cropped = MR.preprocess(frame, self.cfg)
+            raw, conf = MR.run_engine(self.engine, binimg, cropped, self.cfg)
             value = MR.parse_value(raw, self.cfg.get("expected_digits"), self.cfg.get("decimal_places"))
         except Exception as e:                       # noqa: BLE001 — OCR พังต้องไม่ล้ม daemon
             err = f"{type(e).__name__}: {e}"
@@ -369,7 +369,7 @@ def main():
     ap.add_argument("--baud", type=int, default=115200)
     ap.add_argument("--camera", type=int, default=0, help="index ของกล้อง USB")
     ap.add_argument("--image", help="ใช้รูปนี้แทนกล้อง (ทดสอบลิงก์)")
-    ap.add_argument("--engine", choices=["tesseract", "ssocr"], default="tesseract")
+    ap.add_argument("--engine", choices=["sevenseg", "tesseract", "ssocr"], default="sevenseg")
     ap.add_argument("--meter-type", default="water")
     ap.add_argument("--run-id", default=time.strftime("run_%Y%m%d_%H%M%S"))
     ap.add_argument("--selftest", action="store_true", help="ทดสอบกล้อง→SD→OCR โดยไม่แตะ serial")
