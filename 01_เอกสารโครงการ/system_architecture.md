@@ -168,7 +168,7 @@
 | 16 | `BRUSH_PWM` | OUT | LEDC ch5, T1, 20 kHz | เกต MOSFET แปรง · R 100 Ω + pull-down 10 kΩ + SS34 |
 | **เสายกกล้อง** ||||
 | 17 | `SERVO_A` | OUT | LEDC ch6, T2, 50 Hz | MG996R ตัวที่ 1 · pull-down 10 kΩ |
-| 18 | `SERVO_B` | OUT | LEDC ch7, T2, 50 Hz | MG996R ตัวที่ 2 · pull-down 10 kΩ |
+| 18 | `SERVO_B` | OUT | LEDC ch7, T2, 50 Hz | MG996R ตัวที่ 2 = **กล้องแกน X** (19 ก.ย. C30 — ไม่ใช่ตัวขนานยกเสาตาม §6.4 แล้ว) · pull-down 10 kΩ · `src/robot/servo_x.cpp` |
 | **จอ TFT GC9A01 (SPI)** ||||
 | 38 | `TFT_SCK` | OUT | SPI2 | |
 | 39 | `TFT_MOSI` | OUT | SPI2 | |

@@ -19,6 +19,7 @@
 #include "mission.h"   // ภารกิจ 1 รอบแบบ script — ขั้น D: mis …
 #include "manual.h"    // โหมดขับเองจาก Pi — ขั้น E: $V/$S/$E/$C
 #include "wdt.h"       // Task WDT 1 s (C29) — loop() ค้าง → รีบูต → ล้อ coast
+#include "servo_x.h"   // เซอร์โวตัวที่ 2 แกน X ของกล้อง (GPIO18 · C30)
 
 // ── จุดต่อของแต่ละโมดูล (นิยามอยู่ท้าย src/<ชุด>/main.cpp) ────
 void motorSetup();  void motorTick();  void motorCommand(const String&);
@@ -92,6 +93,7 @@ static void stopAllSystems(const char* why) {
   motorStop(why);
   blowerStop(why);
   servoStop(why);
+  servoXRelease(why);
 }
 
 // คืน true ถ้าอนุญาตให้ส่งคำสั่งต่อ · soft = อนุญาตให้ข้ามกติกา R4 ได้ด้วย `force`
@@ -201,6 +203,7 @@ static void route(String line) {
 
   if (line == "stop" || line == "!") { stopAllSystems("ผู้ใช้สั่ง stop"); return; }
   if (line == "?")  { printMergedHelp(); return; }
+  if (line == "sx" || line.startsWith("sx ")) { servoXCommand(line.substring(2)); return; }   // เซอร์โว X: sx <us> | sx off | sx st
   if (line == "il") { printInterlock(); return; }
   if (line == "cap") { commRequestCapture(); return; }
   if (line == "cs")  { commPrintStatus(); return; }
@@ -268,6 +271,7 @@ void setup() {
   // เรียง blower ก่อน เพราะ setup ของมันเป็นตัวเดียวที่ผูก LEDC ค้างไว้ (ช่องแปรง)
   blowerSetup();
   servoSetup();
+  servoXSetup();
   motorSetup();
   commSetup();   // UART0 ไป Pi 5 — ไม่แตะขาของสามชุดข้างบน (43/44 จองไว้ตาม §3.2)
   missionSetup();
@@ -308,6 +312,7 @@ void loop() {
   motorTick();
   blowerTick();
   servoTick();
+  servoXTick();
   commTick();
   missionTick();   // หลัง commTick เพื่อให้เห็น $K ในรอบเดียวกัน
   manualTick();    // เขียน duty ล้อทุก 10 ms ตาม setpoint จาก $V (หรือ 0 เมื่อ deadman)

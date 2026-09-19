@@ -12,7 +12,10 @@
 #include "comm.h"
 #include "comm_codec.h"   // crc8 / checkFrame — ทดสอบบน host ได้
 #include "manual.h"
-void robotEmergencyStop(const char*); bool missionRunning(); bool servoAttachedNow();
+#include "servo_x.h"
+void robotEmergencyStop(const char*);
+int servoCurrentUs();
+bool blowerOnNow(); bool brushOnNow(); uint32_t brushOnSinceMsNow(); bool missionRunning(); bool servoAttachedNow();
 
 namespace {
 
@@ -99,13 +102,22 @@ void handleLine(char* line, size_t len) {
       ack(rseq);
       return;
     }
+    case 'X': {                                   // $X,<seq>,<us> — เซอร์โวแกน X ของกล้อง (0 = ปล่อยสัญญาณ) · C30
+      if (n < 2) { nack(rseq, "BAD_ARGS"); return; }
+      const int us = (int)f[1];
+      if (us == 0) { servoXRelease("Pi สั่ง $X,0"); ack(rseq); return; }
+      if (brushOnNow() && millis() - brushOnSinceMsNow() < 1000) { nack(rseq, "BRUSH_SPINUP"); return; }   // R1: ราง 5 V — inrush แปรงยังไม่วัด (C30)
+      if (!servoXMoveTo(us)) { nack(rseq, "OUT_OF_RANGE"); return; }
+      ack(rseq);
+      return;
+    }
     case 'M': case 'R': nack(rseq, "NOT_IMPLEMENTED"); return;
     default:  nack(rseq, "UNKNOWN"); return;
   }
 }
 
 // ── #T telemetry 10 Hz — ฟิลด์ตาม §7.2 · ที่ยังไม่มีส่ง 0 ──
-//  #T,<ms>,<state>,<v_mm_s>,<w_mrad_s>,<dutyL‰>,<dutyR‰>,<us_l=0>,<us_r=0>,<vbat_mV=0>,<servo_i_mA=0>,<mast>,<flags>
+//  #T,<ms>,<state>,<v_mm_s>,<w_mrad_s>,<dutyL‰>,<dutyR‰>,<us_mast>,<us_x>,<vbat_mV=0>,<servo_i_mA=0>,<mast>,<flags>
 //  state: 0 IDLE · 1 MANUAL · 2 MISSION · mast: 0 ปล่อย PWM · 2 จับสัญญาณ · flags 0x02 = comm-lost (deadman) · 0x04 = R2 spin-up hold
 //  ⚠ ช่อง enc_l/enc_r ของ §7.2 ส่ง duty ‰ ไปก่อน (ยังไม่มี PCNT ในเฟิร์มแวร์รวม) — Pi ต้องรู้ (C27)
 constexpr uint32_t TELE_PERIOD_MS = 100;
@@ -116,9 +128,10 @@ void sendTelemetry() {
   const int st = missionRunning() ? 2 : (manualActive() ? 1 : 0);
   const mrc::WheelCmd w = manualOut();
   char b[96];
-  snprintf(b, sizeof b, "T,%lu,%d,%d,%d,%d,%d,0,0,0,0,%d,%u",
+  snprintf(b, sizeof b, "T,%lu,%d,%d,%d,%d,%d,%d,%d,0,0,%d,%u",
            (unsigned long)millis(), st, manualActive() ? manualV() : 0, manualActive() ? manualW() : 0,
-           w.l, w.r, servoAttachedNow() ? 2 : 0, (unsigned)flags);
+           w.l, w.r, servoAttachedNow() ? servoCurrentUs() : 0, servoXCurrentUs(),   // us_l = เสา · us_r = แกน X (0 = ปล่อย) · C30
+           servoAttachedNow() ? 2 : 0, (unsigned)flags);
   sendFrame('#', b);
 }
 

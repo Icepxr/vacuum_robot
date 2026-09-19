@@ -90,7 +90,7 @@ STATE_NAMES = {0: "IDLE", 1: "MANUAL", 2: "MISSION"}
 
 def parse_tele(fr: Frame):
     """#T,<ms>,<state>,<v>,<w>,<duty_l>,<duty_r>,<us_l>,<us_r>,<vbat_mV>,<servo_i_mA>,<mast>,<flags> → dict หรือ None
-    ⚠ ช่อง enc_l/enc_r ของ §7.2 ตอนนี้ ESP32 ส่ง duty ‰ (ยังไม่มี PCNT ในเฟิร์มแวร์รวม — C27)"""
+    ⚠ ช่อง enc_l/enc_r ของ §7.2 ตอนนี้ ESP32 ส่ง duty ‰ (ยังไม่มี PCNT ในเฟิร์มแวร์รวม — C27) · us_l = เสา · us_r = แกน X (0 = ปล่อย · C30)"""
     if fr is None or fr.kind != "#" or fr.type != "T" or len(fr.fields) < 1 + len(TELE_FIELDS):
         return None
     try:
@@ -109,6 +109,7 @@ def cmd_stop(seq: int) -> bytes:                                   return encode
 def cmd_estop(seq: int) -> bytes:                                  return encode("$", "E", seq)
 def cmd_clean(seq: int, suction_pct: int, brush_pct: int) -> bytes: return encode("$", "C", seq, int(suction_pct), int(brush_pct))
 def cmd_ping(seq: int) -> bytes:                                   return encode("$", "P", seq)
+def cmd_servo_x(seq: int, us: int) -> bytes:                        return encode("$", "X", seq, int(us))   # C30 เซอร์โวแกน X · 0 = ปล่อย
 def cmd_limits(seq: int, v_max_mm_s: int, w_max_mrad_s: int) -> bytes: return encode("$", "L", seq, int(v_max_mm_s), int(w_max_mrad_s))   # C28 เพดานที่ผู้ใช้ตั้ง
 
 

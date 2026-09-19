@@ -451,6 +451,7 @@ void blowerHelp()                     { printHelp(); }
 void blowerStatus()                   { printStatus(); }
 bool blowerOnNow()                    { return blowerOn; }
 bool brushOnNow()                     { return brushDuty > 0; }
+uint32_t brushOnSinceMsNow()          { return brushOnSinceMs; }   // ให้ comm.cpp เช็คช่วง inrush แปรง (R1 · C30)
 
 #ifndef ROBOT_MERGED
 void setup() { blowerSetup(); }

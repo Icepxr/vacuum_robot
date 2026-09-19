@@ -47,6 +47,13 @@
   document.querySelectorAll("#swatches button").forEach((b) => b.onclick = () => { cfg.accent = b.dataset.accent; save(); applyCfg(); });
   $("cfg-reset").onclick = () => { cfg = { ...DEFAULTS }; save(); applyCfg(); toast("คืนค่าเริ่มต้นแล้ว", "good"); };
 
+  // ── เซอร์โวแกน X ของกล้อง (C30) — ส่งตอนปล่อยสไลเดอร์/กดปุ่ม ไม่ส่งซ้ำ ──
+  const xus = $("xus"), xout = $("xus-out");
+  const sendX = (us) => { send({ t: "x", us }); if (us) { xus.value = us; xout.value = `${us} µs`; } else xout.value = "ปล่อย"; };
+  xus.oninput = () => xout.value = `${xus.value} µs`;
+  xus.onchange = () => sendX(+xus.value);
+  document.querySelectorAll("[data-xus]").forEach((b) => b.onclick = () => sendX(+b.dataset.xus));
+
   // ── ภาพสด ──
   const cam = $("cam"); let streamFps = 0;
   function startStream() { streamFps = cfg.fps; cam.src = `/stream.mjpg?fps=${cfg.fps}&t=${Date.now()}`; }
@@ -78,7 +85,7 @@
     try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); const o = actx.createOscillator(), g = actx.createGain();
       o.frequency.value = kind === "bad" ? 220 : kind === "good" ? 880 : 520; g.gain.value = 0.05; o.connect(g); g.connect(actx.destination); o.start(); o.stop(actx.currentTime + (kind === "bad" ? 0.25 : 0.08)); } catch (e) {}
   }
-  const NACK_TH = { MAST_UP: "เปิดแปรงตอนเสายกไม่ได้ (ราง 5 V) — พับเสาก่อน", IN_MISSION: "หุ่นกำลังเดินภารกิจอัตโนมัติ", SUCTION_SPINUP: "เพิ่งเปิดดูด รอ 1 วิ ก่อนออกตัว", NOT_STOPPED: "หยุดล้อก่อนเปิดดูด", NOT_IMPLEMENTED: "ยังไม่รองรับคำสั่งนี้", BAD_ARGS: "คำสั่งผิดรูปแบบ" };
+  const NACK_TH = { MAST_UP: "เปิดแปรงตอนเสายกไม่ได้ (ราง 5 V) — พับเสาก่อน", SERVO_MOVING: "รอกล้องแกน X หยุดก่อนเปิดแปรง (ราง 5 V)", BRUSH_SPINUP: "เพิ่งเปิดแปรง รอ 1 วิ ก่อนขยับแกน X", OUT_OF_RANGE: "ตำแหน่งนอกช่วง 500–2500 µs", IN_MISSION: "หุ่นกำลังเดินภารกิจอัตโนมัติ", SUCTION_SPINUP: "เพิ่งเปิดดูด รอ 1 วิ ก่อนออกตัว", NOT_STOPPED: "หยุดล้อก่อนเปิดดูด", NOT_IMPLEMENTED: "ยังไม่รองรับคำสั่งนี้", BAD_ARGS: "คำสั่งผิดรูปแบบ" };
 
   let lastTele = null, lastSys = null, capCount = 0, staleT;
   function handle(ev) {
@@ -109,7 +116,7 @@
   function renderKv() {
     const t = lastTele || {}, s = lastSys || { cleaning: {}, drive: {} };
     const rows = [["โหมด", t.state_name || "—"], ["ความเร็วสั่ง", t.v != null ? `${t.v} mm/s · หมุน ${t.w} mrad/s` : "—"], ["ล้อซ้าย / ขวา", t.duty_l != null ? `${t.duty_l} / ${t.duty_r} ‰` : "—"],
-      ["เสายกกล้อง", t.mast === 2 ? "จับสัญญาณ (ยก/ค้าง)" : t.mast === 0 ? "พับ" : "—"], ["ดูด / แปรง", `${s.cleaning.suction ?? "—"} % / ${s.cleaning.brush ?? "—"} %`],
+      ["เสายกกล้อง", t.mast === 2 ? `จับสัญญาณ ${t.us_l} µs` : t.mast === 0 ? "พับ" : "—"], ["กล้องแกน X", t.us_r ? `${t.us_r} µs` : "ปล่อย"], ["ดูด / แปรง", `${s.cleaning.suction ?? "—"} % / ${s.cleaning.brush ?? "—"} %`],
       ["แบตเตอรี่", t.vbat_mV ? `${(t.vbat_mV / 1000).toFixed(2)} V` : "ยังไม่มี ADC ในเฟิร์มแวร์"], ["deadman Pi", `${s.drive.tripped ?? 0} ครั้ง`], ["Pi", `${s.cpu_temp_c ?? "—"} °C · SD ว่าง ${s.disk_free_mb ?? "—"} MB`]];
     $("kv").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
   }

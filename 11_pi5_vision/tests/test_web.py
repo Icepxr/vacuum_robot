@@ -277,3 +277,14 @@ def test_camera_hotplug_swaps_backend(tmp_path, monkeypatch):
     assert W.hub.cam_fallback is False and isinstance(W.hub.backend, FakeCam) and W.hub.daemon.backend is W.hub.backend
     assert calls["n"] == 3
     W.hub.daemon = None; W.hub.backend = None
+
+
+def test_servo_x_command_frames(web):
+    """C30: {"t":"x","us":1800} → $X,<seq>,1800 · us 0 = ปล่อย"""
+    c, master, backend, hub = web
+    with c.websocket_connect("/ws") as ws:
+        ws.receive_json(); ws.receive_json()
+        ws.send_json({"t": "x", "us": 1800})
+        fr = P.decode(read_line(master)); assert fr.type == "X" and fr.fields[2] == "1800"
+        ws.send_json({"t": "x", "us": 0})
+        fr = P.decode(read_line(master)); assert fr.type == "X" and fr.fields[2] == "0"

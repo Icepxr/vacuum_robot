@@ -153,7 +153,7 @@ class Hub:
         return {"t": "sys", "ts": time.time(), "uptime_s": round(time.time() - self.started),
                 "cam_ok": cam_ok, "cam_fallback": self.cam_fallback, "cpu_temp_c": temp, "disk_free_mb": du.free // 2**20,
                 "pending_sync": pending, "link": link, "last_capture": self.last_capture,
-                "esp32_supports": ["CAPTURE_REQ", "$K", "$V", "$S", "$E", "$C", "$P", "$L", "#T"],
+                "esp32_supports": ["CAPTURE_REQ", "$K", "$V", "$S", "$E", "$C", "$P", "$L", "$X", "#T"],
                 "tele": (self.daemon.tele if self.daemon else None),
                 "drive": {"v": self.drive_v, "w": self.drive_w, "active": self.drive_last_mono is not None,
                           "tripped": self.drive_tripped, "deadman_ms": int(DRIVE_DEADMAN_S * 1000)},
@@ -309,6 +309,8 @@ async def ws_endpoint(ws: WebSocket):
                 d.send_clean(hub.cleaning["suction"], hub.cleaning["brush"])
             elif t == "ping" and d is not None:
                 d.send_ping()
+            elif t == "x" and d is not None:         # {"t":"x","us":500-2500|0} เซอร์โวแกน X ของกล้อง (C30) · ESP32 ตรวจช่วง/R1 เอง
+                d.send_servo_x(int(cmd.get("us", 0)))
             elif t == "limits":                      # {"t":"limits","v_max":mm/s,"w_max":mrad/s} — C28 ผู้ใช้ตั้งเพดานเอง
                 lim = hub.set_limits(cmd.get("v_max", hub.limits["v_max"]), cmd.get("w_max", hub.limits["w_max"]))
                 hub.on_event({"t": "limits", **lim})

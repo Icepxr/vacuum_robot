@@ -13,6 +13,7 @@
 // ที่ยกออก (C28): G2 MAST_UP ใน $V และการหยุดล้อเมื่อเสายก (ไฟล์ 08: ห่างขีดพลิก 24 เท่า) ·
 //   G14 เปลี่ยนจาก "ห้ามเกิน 150" เป็น "เพดานที่ผู้ใช้ตั้งเอง ($L)" clamp ที่ฮาร์ดแวร์ 716 mm/s เท่านั้น
 #include "manual.h"
+#include "servo_x.h"
 
 void motorSetLR(int l, int r); void motorStop(const char*);
 bool servoAttachedNow();
@@ -68,6 +69,7 @@ void manualHalt(const char* why) {
 const char* manualSetCleaning(int suctionPct, int brushPct) {
   if (missionRunning()) return "IN_MISSION";
   if (brushPct > 0 && servoAttachedNow()) return "MAST_UP";          // R1
+  if (brushPct > 0 && !brushOnNow() && servoXMoving()) return "SERVO_MOVING";   // R1 กับเซอร์โว X (C30) — เฉพาะตอนเริ่มแปรงขณะ X เดินอยู่
   if (brushPct > 100) brushPct = 100;                                 // เพดานจริงอยู่ใน brushSet() ตาม BRUSH_DUTY_MAX_PCT
   const bool suctionOn = suctionPct > 0;
   if (suctionOn && !blowerOnNow()) {
