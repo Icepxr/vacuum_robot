@@ -8,7 +8,7 @@
   const V_HW_MAX = 716, W_HW_MAX = 7950;
   const DEFAULTS = { vMax: 150, wMax: 1500, maxPct: 50, turnGain: 1000, rampMs: 250, deadzone: 0.12, turnScale: true, invY: false, invX: false,
     joySide: "left", joySize: "m", autoSuction: false, fps: 10, gridOn: false, roiOn: true, mirror: false,
-    suctionPct: 100, brushPct: 24, suctionIdleOff: 0, sound: true, vibrate: true, toastSec: 3, staleSec: 2,
+    suctionPct: 100, brushPct: 60, suctionIdleOff: 0, sound: true, vibrate: true, toastSec: 3, staleSec: 2,
     accent: "mint", density: "comfortable", bigButtons: false, wakeLock: true };
   let cfg = { ...DEFAULTS };
   try { Object.assign(cfg, JSON.parse(localStorage.getItem("mrc.drive.cfg") || "{}")); } catch (e) {}

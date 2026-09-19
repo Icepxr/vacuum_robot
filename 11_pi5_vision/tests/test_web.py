@@ -181,9 +181,9 @@ def test_estop_and_clean_frames(web):
         ws.receive_json(); ws.receive_json()
         ws.send_json({"t": "estop"})
         assert P.decode(read_line(master)).type == "E"
-        ws.send_json({"t": "clean", "suction": 100, "brush": 60})   # brush เกิน 40 → clamp
+        ws.send_json({"t": "clean", "suction": 100, "brush": 130})  # C30: แปรงตั้งได้ถึง 100 · เกิน 100 → clamp 100
         fr = P.decode(read_line(master))
-        assert fr.type == "C" and fr.fields[2:] == ["100", "40"]
+        assert fr.type == "C" and fr.fields[2:] == ["100", "100"]
 
 
 def test_tele_from_esp32_reaches_ws_and_status(web):
