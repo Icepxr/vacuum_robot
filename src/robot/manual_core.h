@@ -21,7 +21,7 @@ struct ManualCfg {
   int      slew_permille_per_tick = 15;   // ต่อ tick 10 ms → 0→210 ใน ~140 ms (rampTo เดิม 300 ms แต่ blocking)
   uint32_t deadman_ms      = 300;    // G8
   int      deadband_permille = 40;   // ต่ำกว่านี้ล้อไม่หมุนอยู่ดี (M1 วัดว่า 25 % duty ยังหมุน — deadband จริงยังไม่วัด) → ตัดเป็น 0
-  int      permille_start  = 200;    // พื้น duty ต่ำสุดที่ "สั่งแล้วต้องขยับ" (C31 19 ก.ย.: หมุนซ้าย-ขวาไม่ไป — duty หมุนตัว ~126 ‰ ต่ำกว่าแรงเสียดทานสถิต)
+  int      permille_start  = 250;    // พื้น duty ต่ำสุดที่ "สั่งแล้วต้องขยับ" (C31 รอบ 2: 200 ยังเบา → 250 = 25 % ที่ M1 วัดว่าหมุนแน่ไร้โหลด) (C31 19 ก.ย.: หมุนซ้าย-ขวาไม่ไป — duty หมุนตัว ~126 ‰ ต่ำกว่าแรงเสียดทานสถิต)
                                      // คำสั่งที่ไม่ใช่ 0 และต่ำกว่านี้ถูกยกขึ้นเป็นค่านี้ [ประมาณการ: M1 25 % หมุนเปล่า · มีโหลดยังไม่วัด]
 };
 
@@ -40,7 +40,11 @@ class Manual {
     if (v_max_mm_s > cfg_.v_hw_max_mm_s)   { v_max_mm_s = cfg_.v_hw_max_mm_s;   exact = false; }
     if (w_max_mrad_s > cfg_.w_hw_max_mrad_s) { w_max_mrad_s = cfg_.w_hw_max_mrad_s; exact = false; }
     cfg_.v_max_mm_s = v_max_mm_s; cfg_.w_max_mrad_s = w_max_mrad_s;
-    long pm = (long)v_max_mm_s * cfg_.permille_per_mps / 1000 * 5 / 4;
+    // เพดาน duty ต้องรองรับทั้งเดินตรง (v_max) และหมุนตัว (ω_max × track/2) — C31 รอบ 2: เดิมคิดจาก v_max อย่างเดียว
+    // ทำให้ที่ v_max 150 การหมุนถูกตัดที่ 262 ‰ (26 % duty) แม้ตั้ง ω 3000 → ล้อไถลข้างไม่ไหว
+    const long v_turn = (long)w_max_mrad_s * cfg_.track_mm / 2000;              // mm/s ต่อล้อตอนหมุนอยู่กับที่
+    const long v_ref = v_max_mm_s > v_turn ? v_max_mm_s : v_turn;
+    long pm = v_ref * cfg_.permille_per_mps / 1000 * 5 / 4;
     if (pm > 1000) pm = 1000;
     if (pm < 0) pm = 0;
     cfg_.permille_max = (int)pm;

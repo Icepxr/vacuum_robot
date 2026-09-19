@@ -6,7 +6,7 @@
   // C28: เพดานความเร็วเป็นของผู้ใช้ (cfg.vMax/wMax → {t:"limits"} → Pi → $L) · ESP32 clamp แค่ที่ฮาร์ดแวร์ 716 mm/s
   let V_MAX = 150;                                     // = cfg.vMax หลัง applyCfg
   const V_HW_MAX = 716, W_HW_MAX = 7950;
-  const DEFAULTS = { vMax: 150, wMax: 3000, maxPct: 50, turnGain: 2000, tiltMin: 500, tiltMax: 2500, liftMin: 1000, liftMax: 2000, camPad: true, rampMs: 250, deadzone: 0.12, turnScale: true, invY: false, invX: false,
+  const DEFAULTS = { vMax: 300, wMax: 3000, maxPct: 50, turnGain: 2000, tiltMin: 500, tiltMax: 2500, liftMin: 1000, liftMax: 2000, camPad: true, rampMs: 250, deadzone: 0.12, turnScale: true, invY: false, invX: false,
     joySide: "left", joySize: "m", autoSuction: false, fps: 10, gridOn: false, roiOn: true, mirror: false,
     suctionPct: 100, brushPct: 60, suctionIdleOff: 0, sound: true, vibrate: true, toastSec: 3, staleSec: 2,
     accent: "mint", density: "comfortable", bigButtons: false, wakeLock: true };
@@ -21,7 +21,7 @@
     clearTimeout(limitsT); limitsT = setTimeout(() => send({ t: "limits", v_max: cfg.vMax, w_max: cfg.wMax }), 250);
   }
   function applyCfg() {
-    cfg.vMax = Math.max(50, Math.min(V_HW_MAX, +cfg.vMax || 150)); cfg.wMax = Math.max(500, Math.min(W_HW_MAX, +cfg.wMax || 3000));
+    cfg.vMax = Math.max(50, Math.min(V_HW_MAX, +cfg.vMax || 300)); cfg.wMax = Math.max(500, Math.min(W_HW_MAX, +cfg.wMax || 3000));
     if (cfg.turnGain > cfg.wMax) cfg.turnGain = cfg.wMax;
     V_MAX = cfg.vMax;
     if (cfg.tiltMin >= cfg.tiltMax) cfg.tiltMax = cfg.tiltMin + 10; if (cfg.liftMin >= cfg.liftMax) cfg.liftMax = cfg.liftMin + 10;
@@ -39,7 +39,7 @@
     if (streamFps !== cfg.fps) startStream();
     wake();
   }
-  const fmtOut = (k, v) => ({ tiltMin: `${v} µs`, tiltMax: `${v} µs`, liftMin: `${v} µs`, liftMax: `${v} µs`, vMax: `${v} mm/s${v > 150 ? " ⚠ เกินค่าเริ่มต้น" : ""}`, wMax: `${v} mrad/s`, maxPct: `${v}% · ${Math.round(V_MAX * v / 100)} mm/s`, turnGain: `${v}`, rampMs: `${v} ms`, deadzone: `${v}`, fps: `${v} fps`,
+  const fmtOut = (k, v) => ({ tiltMin: `${v} µs`, tiltMax: `${v} µs`, liftMin: `${v} µs`, liftMax: `${v} µs`, vMax: `${v} mm/s${v > 300 ? " ⚠ เกินค่าเริ่มต้น" : ""}`, wMax: `${v} mrad/s`, maxPct: `${v}% · ${Math.round(V_MAX * v / 100)} mm/s`, turnGain: `${v}`, rampMs: `${v} ms`, deadzone: `${v}`, fps: `${v} fps`,
     suctionPct: `${v}%`, brushPct: `${v}%`, suctionIdleOff: v ? `${v} s` : "ไม่ปิด", toastSec: `${v} s`, staleSec: `${v} s` })[k] ?? v;
   document.querySelectorAll("[data-cfg]").forEach((el) => el.addEventListener("input", () => {
     const k = el.dataset.cfg; cfg[k] = el.type === "checkbox" ? el.checked : (el.tagName === "SELECT" ? el.value : +el.value);

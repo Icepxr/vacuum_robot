@@ -153,10 +153,10 @@ def test_drive_repeats_V_at_10hz_then_deadman_sends_S(web):
         assert hub.drive_tripped == 1
 
 
-def test_drive_clamped_to_user_limits_default_150(web):
+def test_drive_clamped_to_user_limits_default(web):
     c, master, backend, hub = web
     hub.drive(999, -9999)
-    assert (hub.drive_v, hub.drive_w) == (150, -3000)
+    assert (hub.drive_v, hub.drive_w) == (300, -3000)
 
 
 def test_user_limits_raise_cap_and_send_L_clamped_at_hw(web):
