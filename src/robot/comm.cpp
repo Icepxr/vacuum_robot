@@ -14,7 +14,7 @@
 #include "manual.h"
 #include "servo_x.h"
 void robotEmergencyStop(const char*);
-int servoCurrentUs();
+int servoCurrentUs(); bool servoSetTarget(int us); void servoStop(const char*);
 bool blowerOnNow(); bool brushOnNow(); uint32_t brushOnSinceMsNow(); bool missionRunning(); bool servoAttachedNow();
 
 namespace {
@@ -111,7 +111,18 @@ void handleLine(char* line, size_t len) {
       ack(rseq);
       return;
     }
-    case 'M': case 'R': nack(rseq, "NOT_IMPLEMENTED"); return;
+    case 'M': {                                   // $M,<seq>,<us> — เสายกกล้อง (เซอร์โว 1 · scissor) ไม่บล็อก · 0 = ปล่อยสัญญาณ · C30
+      if (n < 2) { nack(rseq, "BAD_ARGS"); return; }
+      if (missionRunning()) { nack(rseq, "IN_MISSION"); return; }
+      const int us = (int)f[1];
+      if (us == 0) { servoStop("Pi สั่ง $M,0"); ack(rseq); return; }
+      if (us < 500 || us > 2500) { nack(rseq, "OUT_OF_RANGE"); return; }
+      if (brushOnNow() && millis() - brushOnSinceMsNow() < 1000) { nack(rseq, "BRUSH_SPINUP"); return; }   // R1 ราง 5 V
+      if (!servoSetTarget(us)) { nack(rseq, "SERVO_FAIL"); return; }
+      ack(rseq);
+      return;
+    }
+    case 'R': nack(rseq, "NOT_IMPLEMENTED"); return;
     default:  nack(rseq, "UNKNOWN"); return;
   }
 }

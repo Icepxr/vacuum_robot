@@ -92,15 +92,15 @@ def test_ws_capture_from_web(web):
 
 
 def test_ws_unsupported_command_gets_honest_nack(web):
-    """คำสั่งที่ ESP32 ยังไม่รับ (ยกเสาจาก Pi = $M) ต้องได้ nack ตรงๆ ไม่แกล้งส่ง"""
+    """คำสั่งที่ไม่รู้จักต้องได้ nack ตรงๆ ไม่แกล้งส่ง (เดิมใช้ mast — ตอนนี้ $M รองรับแล้ว C30)"""
     c, master, backend, hub = web
     with c.websocket_connect("/ws") as ws:
         ws.receive_json(); ws.receive_json()
-        ws.send_json({"t": "mast", "up": 1})
+        ws.send_json({"t": "teleport", "up": 1})
         ev = ws.receive_json()
         while ev["t"] in ("sys", "log", "tele"):
             ev = ws.receive_json()
-        assert ev["t"] == "nack" and ev["cmd"] == "mast"
+        assert ev["t"] == "nack" and ev["cmd"] == "teleport"
         assert read_line(master, timeout=0.3) == b""      # ไม่มีอะไรออกไป ESP32
 
 
@@ -288,3 +288,14 @@ def test_servo_x_command_frames(web):
         fr = P.decode(read_line(master)); assert fr.type == "X" and fr.fields[2] == "1800"
         ws.send_json({"t": "x", "us": 0})
         fr = P.decode(read_line(master)); assert fr.type == "X" and fr.fields[2] == "0"
+
+
+def test_mast_command_frames(web):
+    """C30: {"t":"m","us":1400} → $M,<seq>,1400 · 0 = ปล่อย"""
+    c, master, backend, hub = web
+    with c.websocket_connect("/ws") as ws:
+        ws.receive_json(); ws.receive_json()
+        ws.send_json({"t": "m", "us": 1400})
+        fr = P.decode(read_line(master)); assert fr.type == "M" and fr.fields[2] == "1400"
+        ws.send_json({"t": "m", "us": 0})
+        fr = P.decode(read_line(master)); assert fr.type == "M" and fr.fields[2] == "0"

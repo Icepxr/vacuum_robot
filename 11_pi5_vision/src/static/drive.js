@@ -6,7 +6,7 @@
   // C28: เพดานความเร็วเป็นของผู้ใช้ (cfg.vMax/wMax → {t:"limits"} → Pi → $L) · ESP32 clamp แค่ที่ฮาร์ดแวร์ 716 mm/s
   let V_MAX = 150;                                     // = cfg.vMax หลัง applyCfg
   const V_HW_MAX = 716, W_HW_MAX = 7950;
-  const DEFAULTS = { vMax: 150, wMax: 1500, maxPct: 50, turnGain: 1000, rampMs: 250, deadzone: 0.12, turnScale: true, invY: false, invX: false,
+  const DEFAULTS = { vMax: 150, wMax: 1500, maxPct: 50, turnGain: 1000, tiltMin: 500, tiltMax: 2500, liftMin: 1000, liftMax: 2000, camPad: true, rampMs: 250, deadzone: 0.12, turnScale: true, invY: false, invX: false,
     joySide: "left", joySize: "m", autoSuction: false, fps: 10, gridOn: false, roiOn: true, mirror: false,
     suctionPct: 100, brushPct: 60, suctionIdleOff: 0, sound: true, vibrate: true, toastSec: 3, staleSec: 2,
     accent: "mint", density: "comfortable", bigButtons: false, wakeLock: true };
@@ -24,6 +24,8 @@
     cfg.vMax = Math.max(50, Math.min(V_HW_MAX, +cfg.vMax || 150)); cfg.wMax = Math.max(500, Math.min(W_HW_MAX, +cfg.wMax || 1500));
     if (cfg.turnGain > cfg.wMax) cfg.turnGain = cfg.wMax;
     V_MAX = cfg.vMax;
+    if (cfg.tiltMin >= cfg.tiltMax) cfg.tiltMax = cfg.tiltMin + 10; if (cfg.liftMin >= cfg.liftMax) cfg.liftMax = cfg.liftMin + 10;
+    root.dataset.campad = cfg.camPad ? 1 : 0; camApplyLimits();
     root.dataset.accent = cfg.accent; root.dataset.density = cfg.density; root.dataset.big = cfg.bigButtons ? 1 : 0;
     root.dataset.joyside = cfg.joySide; root.dataset.mirror = cfg.mirror ? 1 : 0;
     root.style.setProperty("--joy", { s: "120px", m: "160px", l: "210px" }[cfg.joySize] || "160px");
@@ -37,7 +39,7 @@
     if (streamFps !== cfg.fps) startStream();
     wake();
   }
-  const fmtOut = (k, v) => ({ vMax: `${v} mm/s${v > 150 ? " ⚠ เกินค่าเริ่มต้น" : ""}`, wMax: `${v} mrad/s`, maxPct: `${v}% · ${Math.round(V_MAX * v / 100)} mm/s`, turnGain: `${v}`, rampMs: `${v} ms`, deadzone: `${v}`, fps: `${v} fps`,
+  const fmtOut = (k, v) => ({ tiltMin: `${v} µs`, tiltMax: `${v} µs`, liftMin: `${v} µs`, liftMax: `${v} µs`, vMax: `${v} mm/s${v > 150 ? " ⚠ เกินค่าเริ่มต้น" : ""}`, wMax: `${v} mrad/s`, maxPct: `${v}% · ${Math.round(V_MAX * v / 100)} mm/s`, turnGain: `${v}`, rampMs: `${v} ms`, deadzone: `${v}`, fps: `${v} fps`,
     suctionPct: `${v}%`, brushPct: `${v}%`, suctionIdleOff: v ? `${v} s` : "ไม่ปิด", toastSec: `${v} s`, staleSec: `${v} s` })[k] ?? v;
   document.querySelectorAll("[data-cfg]").forEach((el) => el.addEventListener("input", () => {
     const k = el.dataset.cfg; cfg[k] = el.type === "checkbox" ? el.checked : (el.tagName === "SELECT" ? el.value : +el.value);
@@ -47,12 +49,29 @@
   document.querySelectorAll("#swatches button").forEach((b) => b.onclick = () => { cfg.accent = b.dataset.accent; save(); applyCfg(); });
   $("cfg-reset").onclick = () => { cfg = { ...DEFAULTS }; save(); applyCfg(); toast("คืนค่าเริ่มต้นแล้ว", "good"); };
 
-  // ── เซอร์โวแกน X ของกล้อง (C30) — ส่งตอนปล่อยสไลเดอร์/กดปุ่ม ไม่ส่งซ้ำ ──
-  const xus = $("xus"), xout = $("xus-out");
-  const sendX = (us) => { send({ t: "x", us }); if (us) { xus.value = us; xout.value = `${us} µs`; } else xout.value = "ปล่อย"; };
-  xus.oninput = () => xout.value = `${xus.value} µs`;
-  xus.onchange = () => sendX(+xus.value);
-  document.querySelectorAll("[data-xus]").forEach((b) => b.onclick = () => sendX(+b.dataset.xus));
+  // ── แผงกล้อง (C30): มุม → $X (เซอร์โว 2) · สูง → $M (เสา scissor) — ส่งขณะลาก ≤10 ครั้ง/วิ + ค่าสุดท้ายตอนปล่อย ──
+  // ค่าจริงมาจาก #T (us_r = มุม · us_l = เสา) → สไลเดอร์วิ่งตามเมื่อไม่ได้จับอยู่ · 0 = ปล่อยสัญญาณ
+  const camAx = { tilt: { el: $("cam-tilt"), lbl: $("cam-tilt-v"), cmd: "x", drag: false, last: 0, t: null },
+                  lift: { el: $("cam-lift"), lbl: $("cam-lift-v"), cmd: "m", drag: false, last: 0, t: null } };
+  function camSend(a, us) { const now = performance.now(); clearTimeout(a.t);
+    if (now - a.last >= 100) { a.last = now; send({ t: a.cmd, us }); } else a.t = setTimeout(() => { a.last = performance.now(); send({ t: a.cmd, us }); }, 100 - (now - a.last)); }
+  for (const a of Object.values(camAx)) {
+    a.el.addEventListener("pointerdown", () => a.drag = true);
+    a.el.addEventListener("input", () => { a.lbl.textContent = `${a.el.value}`; camSend(a, +a.el.value); });
+    a.el.addEventListener("change", () => { a.drag = false; clearTimeout(a.t); send({ t: a.cmd, us: +a.el.value }); });
+    a.el.addEventListener("pointerup", () => a.drag = false); a.el.addEventListener("pointercancel", () => a.drag = false);
+  }
+  function camApplyLimits() { camAx.tilt.el.min = cfg.tiltMin; camAx.tilt.el.max = cfg.tiltMax; camAx.lift.el.min = cfg.liftMin; camAx.lift.el.max = cfg.liftMax; }
+  function camFromTele(t) {
+    if (!camAx.tilt.drag) { if (t.us_r) camAx.tilt.el.value = t.us_r; camAx.tilt.lbl.textContent = t.us_r ? `${t.us_r}` : "ปล่อย"; }
+    if (!camAx.lift.drag) { if (t.us_l) camAx.lift.el.value = t.us_l; camAx.lift.lbl.textContent = t.us_l ? `${t.us_l}` : "ปล่อย"; }
+  }
+  document.querySelectorAll("[data-cam]").forEach((b) => b.onclick = () => {
+    const k = b.dataset.cam;
+    if (k === "mid") send({ t: "x", us: Math.round((cfg.tiltMin + cfg.tiltMax) / 2) });
+    else if (k === "down") send({ t: "m", us: cfg.liftMin });
+    else { send({ t: "x", us: 0 }); send({ t: "m", us: 0 }); }
+  });
 
   // ── ภาพสด ──
   const cam = $("cam"); let streamFps = 0;
@@ -85,7 +104,7 @@
     try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); const o = actx.createOscillator(), g = actx.createGain();
       o.frequency.value = kind === "bad" ? 220 : kind === "good" ? 880 : 520; g.gain.value = 0.05; o.connect(g); g.connect(actx.destination); o.start(); o.stop(actx.currentTime + (kind === "bad" ? 0.25 : 0.08)); } catch (e) {}
   }
-  const NACK_TH = { MAST_UP: "เปิดแปรงตอนเสายกไม่ได้ (ราง 5 V) — พับเสาก่อน", SERVO_MOVING: "รอกล้องแกน X หยุดก่อนเปิดแปรง (ราง 5 V)", BRUSH_SPINUP: "เพิ่งเปิดแปรง รอ 1 วิ ก่อนขยับแกน X", OUT_OF_RANGE: "ตำแหน่งนอกช่วง 500–2500 µs", IN_MISSION: "หุ่นกำลังเดินภารกิจอัตโนมัติ", SUCTION_SPINUP: "เพิ่งเปิดดูด รอ 1 วิ ก่อนออกตัว", NOT_STOPPED: "หยุดล้อก่อนเปิดดูด", NOT_IMPLEMENTED: "ยังไม่รองรับคำสั่งนี้", BAD_ARGS: "คำสั่งผิดรูปแบบ" };
+  const NACK_TH = { MAST_UP: "เปิดแปรงตอนเสายกไม่ได้ (ราง 5 V) — พับเสาก่อน", SERVO_MOVING: "รอมุมกล้องหยุดก่อนเปิดแปรง (ราง 5 V)", BRUSH_SPINUP: "เพิ่งเปิดแปรง รอ 1 วิ ก่อนขยับกล้อง/เสา", OUT_OF_RANGE: "ตำแหน่งนอกช่วง 500–2500 µs", SERVO_FAIL: "ผูกสัญญาณเซอร์โวไม่ได้", IN_MISSION: "หุ่นกำลังเดินภารกิจอัตโนมัติ", SUCTION_SPINUP: "เพิ่งเปิดดูด รอ 1 วิ ก่อนออกตัว", NOT_STOPPED: "หยุดล้อก่อนเปิดดูด", NOT_IMPLEMENTED: "ยังไม่รองรับคำสั่งนี้", BAD_ARGS: "คำสั่งผิดรูปแบบ" };
 
   let lastTele = null, lastSys = null, capCount = 0, staleT;
   function handle(ev) {
@@ -100,6 +119,7 @@
         setMode(ev.state_name === "MANUAL" ? "ขับเอง" : ev.state_name === "MISSION" ? "ภารกิจอัตโนมัติ" : "พร้อม", ev.state_name === "MANUAL" ? "" : ev.state_name === "MISSION" ? "mission" : "idle");
         chip("bat", ev.vbat_mV ? `แบต <b>${(ev.vbat_mV / 1000).toFixed(1)} V</b>` : "แบต —");
         $("mast").hidden = ev.mast !== 2;                                        // C28: เสายกไม่ห้ามขับ — แค่บอกให้เห็น
+        camFromTele(ev);
         if (ev.spinup_hold && !$("spin").matches(":not([hidden])")) beep("warn");
         $("spin").hidden = !ev.spinup_hold;
         if (ev.comm_lost) toast("ESP32 หยุดเอง: ไม่ได้คำสั่งใน 300 ms", "warn"); break;

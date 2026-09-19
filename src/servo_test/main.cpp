@@ -51,6 +51,7 @@ static int  currentUs = US_CENTER;
 // หลังปล่อยสัญญาณ ผู้ใช้หมุนฮอร์นด้วยมือได้ → โค้ดไม่รู้ตำแหน่งจริงอีกต่อไป
 // ถ้าผูกกลับด้วยค่าเก่า เซอร์โวจะวิ่งกลับด้วยความเร็วเต็ม = สิ่งที่ทั้งไฟล์นี้พยายามเลี่ยง
 static bool positionUnknown = false;
+static int  tickTargetUs = -1;  // เป้าของโหมดไม่บล็อก ($M จาก Pi) · -1 = ไม่มีเป้า — ดู servoSetTarget/servoTick ด้านล่าง
 
 // ── ตัวช่วย ───────────────────────────────────────────────────
 
@@ -66,6 +67,7 @@ static void servoDetach(const char* why) {
     digitalWrite(PIN_SERVO, LOW);
     attached = false;
     positionUnknown = true;
+    tickTargetUs = -1;
     Serial.printf("[ปล่อย] %s — เซอร์โวไม่มีสัญญาณแล้ว หมุนด้วยมือได้\n", why);
     Serial.println("        คำสั่งถัดไปต้องระบุตำแหน่งเอง (us <ค่า>) เพราะโค้ดไม่รู้ว่าฮอร์นอยู่ตรงไหนแล้ว");
   } else {
@@ -298,9 +300,41 @@ void servoSetup() {
   printHelp();
 }
 
-// เซอร์โวไม่มีตัวจับเวลาเฝ้าเหมือนอีกสองระบบ เพราะทุก routine เป็นแบบ blocking
-// และจบด้วยการ detach เสมอ — ฟังก์ชันนี้มีไว้ให้ชั้นบนเรียกได้เหมือนกันทั้งสามระบบ
-void servoTick() {}
+// ── โหมดไม่บล็อกสำหรับ Pi ($M · 19 ก.ย. 2026 C30) ──
+// ชุดทดสอบ/ภารกิจยังใช้ slewTo แบบ blocking เหมือนเดิม · เส้นทางนี้ตั้ง "เป้า" แล้วให้ servoTick() เดินทีละขั้น
+// อัตราเดียวกับ slewTo (10 us/24 ms) — กลไกยกชนได้ ห้ามเร็วกว่านี้จนกว่าจะทดสอบ
+static uint32_t tickLastMs = 0;
+
+bool servoSetTarget(int us) {
+  us = constrain(us, US_MIN, US_MAX);
+  if (!attached || positionUnknown) {
+    // ไม่รู้ตำแหน่งฮอร์น (เพิ่งบูต/เพิ่งปล่อย) → ผูกที่ค่าที่ขอทันที ไม่หยุดรอ Enter แบบ servoAttachAt
+    // (คอนโซลไม่มีคนนั่งอยู่ตอนขับจากมือถือ · ถ้ารอ Serial ใน loop() = WDT รีบูต) · เซอร์โวจะกระโดดครั้งเดียว
+    positionUnknown = false;
+    if (!attached) {
+      if (!ledcAttach(PIN_SERVO, SERVO_FREQ_HZ, SERVO_RES)) return false;
+      attached = true;
+    }
+    currentUs = us;
+    ledcWrite(PIN_SERVO, usToDuty(us));
+    tickTargetUs = -1;
+    return true;
+  }
+  tickTargetUs = us;
+  return true;
+}
+bool servoTickMoving() { return attached && tickTargetUs >= 0 && tickTargetUs != currentUs; }
+
+void servoTick() {
+  if (!attached || tickTargetUs < 0) return;
+  if (tickTargetUs == currentUs) { tickTargetUs = -1; return; }
+  const uint32_t now = millis();
+  if (now - tickLastMs < SLEW_STEP_MS) return;
+  tickLastMs = now;
+  const int d = tickTargetUs - currentUs;
+  currentUs += (d > SLEW_US_PER_STEP) ? SLEW_US_PER_STEP : (d < -SLEW_US_PER_STEP) ? -SLEW_US_PER_STEP : d;
+  ledcWrite(PIN_SERVO, usToDuty(currentUs));
+}
 
 void servoLoop() {
   static String buf;

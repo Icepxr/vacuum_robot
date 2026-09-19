@@ -37,6 +37,12 @@
     <div id="knob" class="joy-knob"></div>
   </div>
 
+  <div class="campad" id="campad">
+    <div class="campad-h">กล้อง</div>
+    <div class="campad-row"><span>มุม</span><input id="cam-tilt" type="range" min="500" max="2500" step="10" value="1500" aria-label="มุมกล้อง"><b id="cam-tilt-v">—</b></div>
+    <div class="campad-row"><span>สูง</span><input id="cam-lift" type="range" min="1000" max="2000" step="10" value="1000" aria-label="ความสูงเสา"><b id="cam-lift-v">—</b></div>
+    <div class="campad-btns"><button type="button" data-cam="mid">กลาง</button><button type="button" data-cam="down">พับ</button><button type="button" data-cam="release">ปล่อย</button></div>
+  </div>
   <div class="dial" id="dial">
     <div class="dial-num"><b id="spdnum">75</b><small>mm/s</small></div>
     <input id="spd" class="dial-slider" type="range" min="10" max="100" value="50" step="5" aria-label="ความเร็ว">
@@ -86,11 +92,11 @@
   </div>
 
   <div class="pane" data-pane="cam">
-    <div class="row col">
-      <span>กล้องแกน X <small>เซอร์โวตัวที่ 2 (GPIO18) · 500–2500 µs · เดิน 10 µs/24 ms · "ปล่อย" = ไม่มีสัญญาณ หมุนมือได้</small></span>
-      <input id="xus" type="range" min="500" max="2500" step="10" value="1500" aria-label="ตำแหน่งแกน X"><output id="xus-out">1500 µs</output>
-      <div class="btns"><button class="btn" type="button" data-xus="900">ซ้าย</button><button class="btn" type="button" data-xus="1500">กลาง</button><button class="btn" type="button" data-xus="2100">ขวา</button><button class="btn" type="button" data-xus="0">ปล่อย</button></div>
-    </div>
+    <label class="row"><span>มุมกล้อง — ขีดต่ำ <small>µs ของเซอร์โวมุม (GPIO18) · ตั้งให้ตรงที่กลไกไม่ชน</small></span><input data-cfg="tiltMin" type="range" min="500" max="2500" step="10"><output></output></label>
+    <label class="row"><span>มุมกล้อง — ขีดสูง</span><input data-cfg="tiltMax" type="range" min="500" max="2500" step="10"><output></output></label>
+    <label class="row"><span>เสา — พับสุด <small>µs ของเซอร์โว scissor · ⚠ นอกช่วงจริง = เฟือง/ก้านชน ตั้งจากที่วัดจริงเท่านั้น</small></span><input data-cfg="liftMin" type="range" min="500" max="2500" step="10"><output></output></label>
+    <label class="row"><span>เสา — ยกสุด</span><input data-cfg="liftMax" type="range" min="500" max="2500" step="10"><output></output></label>
+    <label class="row"><span>แผงกล้องบนหน้าจอ <small>สไลเดอร์มุม/ความสูง</small></span><input data-cfg="camPad" type="checkbox"></label>
     <label class="row"><span>เฟรมเรตภาพสด <small>ลดลงถ้าภาพกระตุกบน Wi-Fi</small></span><input data-cfg="fps" type="range" min="2" max="15" step="1"><output></output></label>
     <label class="row"><span>เส้นตารางช่วยเล็ง</span><input data-cfg="gridOn" type="checkbox"></label>
     <label class="row"><span>แสดงกรอบที่ OCR อ่าน</span><input data-cfg="roiOn" type="checkbox"></label>

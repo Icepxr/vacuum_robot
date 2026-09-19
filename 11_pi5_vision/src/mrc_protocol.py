@@ -109,6 +109,7 @@ def cmd_stop(seq: int) -> bytes:                                   return encode
 def cmd_estop(seq: int) -> bytes:                                  return encode("$", "E", seq)
 def cmd_clean(seq: int, suction_pct: int, brush_pct: int) -> bytes: return encode("$", "C", seq, int(suction_pct), int(brush_pct))
 def cmd_ping(seq: int) -> bytes:                                   return encode("$", "P", seq)
+def cmd_mast(seq: int, us: int) -> bytes:                           return encode("$", "M", seq, int(us))   # C30 เสา scissor ไม่บล็อก · 0 = ปล่อย
 def cmd_servo_x(seq: int, us: int) -> bytes:                        return encode("$", "X", seq, int(us))   # C30 เซอร์โวแกน X · 0 = ปล่อย
 def cmd_limits(seq: int, v_max_mm_s: int, w_max_mrad_s: int) -> bytes: return encode("$", "L", seq, int(v_max_mm_s), int(w_max_mrad_s))   # C28 เพดานที่ผู้ใช้ตั้ง
 

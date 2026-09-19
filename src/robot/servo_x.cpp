@@ -8,8 +8,8 @@ constexpr uint8_t  RES_BITS      = 14;      // ไฟล์ 17: 16 บิตต�
 constexpr int      DUTY_MAX      = (1 << RES_BITS) - 1;
 constexpr float    PERIOD_US     = 1000000.0f / FREQ_HZ;
 constexpr int      US_MIN = 500, US_MAX = 2500, US_CENTER = 1500;   // ช่วงเดียวกับ servo_test (ยังไม่วัดขีดจริงของตัวนี้)
-constexpr int      SLEW_US       = 10;
-constexpr uint32_t SLEW_MS       = 24;
+constexpr int      SLEW_US       = 25;      // มุมกล้อง = โหลดเบา ให้ตามนิ้วทัน: 25 us/12 ms ≈ 2,083 us/s → เต็มช่วง ~1 s [ยังไม่ทดสอบกับกลไกจริง]
+constexpr uint32_t SLEW_MS       = 12;
 
 bool     attached = false;
 int      curUs = 0, targetUs = 0;
