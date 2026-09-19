@@ -49,28 +49,46 @@
   document.querySelectorAll("#swatches button").forEach((b) => b.onclick = () => { cfg.accent = b.dataset.accent; save(); applyCfg(); });
   $("cfg-reset").onclick = () => { cfg = { ...DEFAULTS }; save(); applyCfg(); toast("คืนค่าเริ่มต้นแล้ว", "good"); };
 
-  // ── แผงกล้อง (C30): มุม → $X (เซอร์โว 2) · สูง → $M (เสา scissor) — ส่งขณะลาก ≤10 ครั้ง/วิ + ค่าสุดท้ายตอนปล่อย ──
-  // ค่าจริงมาจาก #T (us_r = มุม · us_l = เสา) → สไลเดอร์วิ่งตามเมื่อไม่ได้จับอยู่ · 0 = ปล่อยสัญญาณ
-  const camAx = { tilt: { el: $("cam-tilt"), lbl: $("cam-tilt-v"), cmd: "x", drag: false, last: 0, t: null },
-                  lift: { el: $("cam-lift"), lbl: $("cam-lift-v"), cmd: "m", drag: false, last: 0, t: null } };
-  function camSend(a, us) { const now = performance.now(); clearTimeout(a.t);
-    if (now - a.last >= 100) { a.last = now; send({ t: a.cmd, us }); } else a.t = setTimeout(() => { a.last = performance.now(); send({ t: a.cmd, us }); }, 100 - (now - a.last)); }
-  for (const a of Object.values(camAx)) {
-    a.el.addEventListener("pointerdown", () => a.drag = true);
-    a.el.addEventListener("input", () => { a.lbl.textContent = `${a.el.value}`; camSend(a, +a.el.value); });
-    a.el.addEventListener("change", () => { a.drag = false; clearTimeout(a.t); send({ t: a.cmd, us: +a.el.value }); });
-    a.el.addEventListener("pointerup", () => a.drag = false); a.el.addEventListener("pointercancel", () => a.drag = false);
+  // ── แผงกล้อง (C30 rev.2): ปุ่ม ▲▼ กดค้าง = เดินต่อเนื่อง · แตะ = ขยับ 1 ขั้น ──
+  // มุม → $X (เซอร์โว 2 · เดิน 25 us/12 ms ในเฟิร์มแวร์) · เสา → $M (scissor · 10 us/24 ms)
+  // ขณะกดค้าง ส่งเป้าใหม่ทุก 100 ms = ตำแหน่งล่าสุด ± step (step ≈ ระยะที่เฟิร์มแวร์เดินได้ใน 100 ms → ไม่วิ่งนำ ปล่อยแล้วหยุดใน ≤1 ขั้น)
+  // ตำแหน่งจริงมาจาก #T (us_r = มุม · us_l = เสา · 0 = ปล่อย) → แถบ + ตัวเลข
+  const camAx = {
+    tilt: { cmd: "x", tele: "us_r", step: 150, bar: $("tilt-bar"), lbl: $("tilt-v"), col: $("tilt-bar").parentElement.parentElement, us: 0, target: null, min: () => cfg.tiltMin, max: () => cfg.tiltMax, start: () => Math.round((cfg.tiltMin + cfg.tiltMax) / 2), name: "มุมกล้อง" },
+    lift: { cmd: "m", tele: "us_l", step: 40,  bar: $("lift-bar"), lbl: $("lift-v"), col: $("lift-bar").parentElement.parentElement, us: 0, target: null, min: () => cfg.liftMin, max: () => cfg.liftMax, start: () => cfg.liftMin, name: "เสา" },
+  };
+  function camGoto(a, us) { us = Math.max(a.min(), Math.min(a.max(), Math.round(us))); a.target = us; send({ t: a.cmd, us }); a.lbl.textContent = `${us}`; }
+  function camNudge(a, dir) {
+    if (!a.us && a.target == null) {                       // ยังไม่ผูกสัญญาณ — ไม่รู้ว่าฮอร์นอยู่ไหน: เริ่มที่ค่าปลอดภัยของแกนนั้นก่อน
+      camGoto(a, a.start()); toast(`${a.name}: ผูกสัญญาณที่ ${a.target} µs ก่อน แล้วค่อยกดอีกครั้ง`, "warn"); return;
+    }
+    const base = a.target != null ? a.target : a.us;
+    camGoto(a, base + dir * a.step);
   }
-  function camApplyLimits() { camAx.tilt.el.min = cfg.tiltMin; camAx.tilt.el.max = cfg.tiltMax; camAx.lift.el.min = cfg.liftMin; camAx.lift.el.max = cfg.liftMax; }
+  let holdT = null;
+  document.querySelectorAll("[data-hold]").forEach((b) => {
+    const [k, d] = b.dataset.hold.split(":"); const a = camAx[k], dir = +d;
+    const stop = () => { clearInterval(holdT); holdT = null; b.classList.remove("hold"); };
+    b.addEventListener("pointerdown", (e) => { e.preventDefault(); try { b.setPointerCapture(e.pointerId); } catch (_) {} b.classList.add("hold"); camNudge(a, dir);
+      clearInterval(holdT); holdT = setInterval(() => camNudge(a, dir), 100); });
+    ["pointerup", "pointercancel", "lostpointercapture"].forEach((ev) => b.addEventListener(ev, stop));
+  });
   function camFromTele(t) {
-    if (!camAx.tilt.drag) { if (t.us_r) camAx.tilt.el.value = t.us_r; camAx.tilt.lbl.textContent = t.us_r ? `${t.us_r}` : "ปล่อย"; }
-    if (!camAx.lift.drag) { if (t.us_l) camAx.lift.el.value = t.us_l; camAx.lift.lbl.textContent = t.us_l ? `${t.us_l}` : "ปล่อย"; }
+    for (const a of Object.values(camAx)) {
+      a.us = t[a.tele] || 0;
+      if (!a.us) a.target = null;
+      a.col.classList.toggle("off", !a.us);
+      const lo = a.min(), hi = a.max();
+      a.bar.style.height = a.us ? `${Math.max(0, Math.min(100, (a.us - lo) / Math.max(1, hi - lo) * 100))}%` : "0";
+      if (!holdT) a.lbl.textContent = a.us ? `${a.us}` : "ปล่อย";
+    }
   }
+  function camApplyLimits() {}                            // ขีดจำกัดอ่านสดจาก cfg ใน min()/max()
   document.querySelectorAll("[data-cam]").forEach((b) => b.onclick = () => {
     const k = b.dataset.cam;
-    if (k === "mid") send({ t: "x", us: Math.round((cfg.tiltMin + cfg.tiltMax) / 2) });
-    else if (k === "down") send({ t: "m", us: cfg.liftMin });
-    else { send({ t: "x", us: 0 }); send({ t: "m", us: 0 }); }
+    if (k === "mid") camGoto(camAx.tilt, camAx.tilt.start());
+    else if (k === "down") camGoto(camAx.lift, cfg.liftMin);
+    else { send({ t: "x", us: 0 }); send({ t: "m", us: 0 }); camAx.tilt.target = camAx.lift.target = null; }
   });
 
   // ── ภาพสด ──

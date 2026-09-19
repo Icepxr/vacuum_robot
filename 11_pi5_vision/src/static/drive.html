@@ -38,10 +38,25 @@
   </div>
 
   <div class="campad" id="campad">
-    <div class="campad-h">กล้อง</div>
-    <div class="campad-row"><span>มุม</span><input id="cam-tilt" type="range" min="500" max="2500" step="10" value="1500" aria-label="มุมกล้อง"><b id="cam-tilt-v">—</b></div>
-    <div class="campad-row"><span>สูง</span><input id="cam-lift" type="range" min="1000" max="2000" step="10" value="1000" aria-label="ความสูงเสา"><b id="cam-lift-v">—</b></div>
-    <div class="campad-btns"><button type="button" data-cam="mid">กลาง</button><button type="button" data-cam="down">พับ</button><button type="button" data-cam="release">ปล่อย</button></div>
+    <div class="cam-col">
+      <span class="cam-lbl">มุมกล้อง</span>
+      <button class="cam-btn" type="button" data-hold="tilt:1" aria-label="เงยกล้อง">▲</button>
+      <div class="cam-bar" aria-hidden="true"><i id="tilt-bar"></i></div>
+      <button class="cam-btn" type="button" data-hold="tilt:-1" aria-label="ก้มกล้อง">▼</button>
+      <b id="tilt-v">ปล่อย</b>
+    </div>
+    <div class="cam-col">
+      <span class="cam-lbl">เสา</span>
+      <button class="cam-btn" type="button" data-hold="lift:1" aria-label="ยกเสา">▲</button>
+      <div class="cam-bar" aria-hidden="true"><i id="lift-bar"></i></div>
+      <button class="cam-btn" type="button" data-hold="lift:-1" aria-label="ลดเสา">▼</button>
+      <b id="lift-v">ปล่อย</b>
+    </div>
+    <div class="cam-foot">
+      <button type="button" data-cam="mid">กลาง</button>
+      <button type="button" data-cam="down">พับ</button>
+      <button type="button" data-cam="release">ปล่อย</button>
+    </div>
   </div>
   <div class="dial" id="dial">
     <div class="dial-num"><b id="spdnum">75</b><small>mm/s</small></div>
