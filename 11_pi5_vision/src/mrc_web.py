@@ -59,6 +59,7 @@ class Hub:
         self.backend = None
         self.events = deque(maxlen=200)          # log ล่าสุดให้ client ที่เพิ่งต่อเห็นย้อนหลัง
         self.last_capture = None
+        self.last_reading = None
         self.started = time.time()
         # ── โหมดขับเอง: Pi "ถือ" setpoint ล่าสุดแล้วส่งซ้ำเอง (ไฟล์ 19 §19.3 — ห้ามให้ browser ส่ง $V ตรง) ──
         self.drive_v = 0
@@ -114,6 +115,8 @@ class Hub:
         self.events.append(ev)
         if ev.get("t") == "capture":
             self.last_capture = ev
+        if ev.get("t") == "reading":
+            self.last_reading = ev               # {"t":"reading","value":…,"confidence":…}
         if ev.get("t") == "event" and ev.get("code") == "BOOT":
             # ESP32 เพิ่งบูต (เปิดเครื่อง / WDT / brownout) — ค่าเพดาน $L หายไปกับ RAM → ส่งซ้ำ · บอกคนขับถ้าไม่ใช่เปิดเครื่อง
             reason = ev.get("detail", "")
@@ -156,8 +159,8 @@ class Hub:
                           if l.strip() and '"synced_at": null' in l)
         return {"t": "sys", "ts": time.time(), "uptime_s": round(time.time() - self.started),
                 "cam_ok": cam_ok, "cam_fallback": self.cam_fallback, "cpu_temp_c": temp, "disk_free_mb": du.free // 2**20,
-                "pending_sync": pending, "link": link, "last_capture": self.last_capture,
-                "esp32_supports": ["CAPTURE_REQ", "$K", "$V", "$S", "$E", "$C", "$P", "$L", "$X", "$M", "#T"],
+                "pending_sync": pending, "link": link, "last_capture": self.last_capture, "last_reading": self.last_reading,
+                "esp32_supports": ["CAPTURE_REQ", "$K", "$V", "$S", "$E", "$C", "$P", "$L", "$X", "$M", "$D", "#T"],
                 "tele": (self.daemon.tele if self.daemon else None),
                 "drive": {"v": self.drive_v, "w": self.drive_w, "active": self.drive_last_mono is not None,
                           "tripped": self.drive_tripped, "deadman_ms": int(DRIVE_DEADMAN_S * 1000)},
@@ -330,9 +333,21 @@ async def ws_endpoint(ws: WebSocket):
         hub.clients.discard(ws)
 
 
+def display_payload():
+    """ข้อความสำหรับจอบน ESP32 ($D): IP · ค่ามิเตอร์ล่าสุด · eCO2"""
+    ips = pi_ips(); ip = ips[0] if ips else ""
+    v = (hub.last_reading or {}).get("value")
+    reading = f"{v:g}" if isinstance(v, (int, float)) else ""
+    co2 = hub.air.latest.get("eco2_ppm") if (hub.air and hub.air.available) else None
+    return ip, reading, co2
+
+
 async def sys_ticker():
     while True:
         await asyncio.sleep(1.0)
+        if hub.daemon:
+            try: hub.daemon.send_display(*display_payload())        # จอ GC9A01 (C32) — ส่งเสมอ ไม่ต้องมี client
+            except Exception: pass                                   # noqa: BLE001
         if hub.clients:
             await hub.broadcast(hub.status())
 

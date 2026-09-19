@@ -55,3 +55,10 @@ def test_field_with_star_or_newline_rejected():
 def test_cmd_limits_frame():
     fr = P.decode(P.cmd_limits(7, 300, 2000))
     assert fr.kind == "$" and fr.type == "L" and fr.fields == ["L", "7", "300", "2000"]
+
+
+def test_cmd_display_strings():
+    fr = P.decode(P.cmd_display(3, "172.20.10.2", "1509", 620))
+    assert fr.fields == ["D", "3", "172.20.10.2", "1509", "620"]
+    fr = P.decode(P.cmd_display(4, "", "", None))
+    assert fr.fields == ["D", "4", "", "", ""]

@@ -49,5 +49,5 @@ def test_oled_lines_fit_and_handle_missing():
     ls = O.OledStatus.lines({})
     assert len(ls) == 4 and all(len(l) <= 21 for l in ls) and ls[0] == "IP no-net" and "NO LINK" in ls[1]
     ls = O.OledStatus.lines({"ip": ["172.20.10.2"], "link": {"alive": True}, "tele": {"state_name": "MANUAL"}, "cam_ok": True,
-                             "last_capture": {"value": 1509.0}, "air": {"eco2_ppm": 620, "temp_c": 28.4, "rh_pct": 55.2, "validity": 1}})
+                             "last_reading": {"value": 1509.0}, "air": {"eco2_ppm": 620, "temp_c": 28.4, "rh_pct": 55.2, "validity": 1}})
     assert ls == ["IP 172.20.10.2", "ESP32 MANUAL", "READ 1509  cam ok", "CO2 620 28C 55% warm"]

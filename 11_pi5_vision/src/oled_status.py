@@ -36,7 +36,7 @@ class OledStatus:
         link = s.get("link") or {}
         tele = s.get("tele") or {}
         state = tele.get("state_name", "--") if link.get("alive") else "NO LINK"
-        cap = s.get("last_capture") or {}
+        cap = s.get("last_reading") or {}
         rd = cap.get("value"); rd = f"{rd:g}" if isinstance(rd, (int, float)) else "--"
         air = s.get("air") or {}
         co2 = air.get("eco2_ppm"); t = air.get("temp_c"); rh = air.get("rh_pct")

@@ -13,6 +13,7 @@
 #include "comm_codec.h"   // crc8 / checkFrame — ทดสอบบน host ได้
 #include "manual.h"
 #include "servo_x.h"
+#include "tft.h"
 void robotEmergencyStop(const char*);
 int servoCurrentUs(); bool servoSetTarget(int us); void servoStop(const char*);
 bool blowerOnNow(); bool brushOnNow(); uint32_t brushOnSinceMsNow(); bool missionRunning(); bool servoAttachedNow();
@@ -61,9 +62,22 @@ int parseInts(const char* p, long* out, int maxN) {
   return n;
 }
 
+uint32_t lastRxMs = 0;                        // เฟรมดีล่าสุดจาก Pi (ให้จอ/สถานะรู้ว่าลิงก์ยังอยู่)
+
 void handleLine(char* line, size_t len) {
   if (!mrc::checkFrame(line, len)) { ++statBadLine; return; }   // boot log/ขยะ/CRC ผิด — ทิ้งเงียบ
   if (line[0] != '$' || line[2] != ',') { Serial.printf("[comm] เฟรมไม่รู้จัก: %s\n", line); return; }
+  lastRxMs = millis();
+  if (line[1] == 'D') {                          // $D,<seq>,<ip>,<reading>,<co2> — ข้อความให้จอ (C32) · ฟิลด์เป็นสตริง ไม่ผ่าน parseInts
+    char* f[5] = {nullptr, nullptr, nullptr, nullptr, nullptr}; int n = 0;
+    char* p = line + 3; f[n++] = p;
+    while (*p && n < 5) { if (*p == ',') { *p = '\0'; f[n++] = p + 1; } ++p; }
+    char* star = strchr(f[n - 1], '*'); if (star) *star = '\0';
+    if (n < 4) { nack(0, "BAD_ARGS"); return; }
+    tftSetInfo(f[1], f[2], n >= 4 && f[3][0] ? atoi(f[3]) : -1);
+    ack((uint32_t)strtoul(f[0], nullptr, 10));
+    return;
+  }
   long f[4] = {0, 0, 0, 0};
   const int n = parseInts(line + 3, f, 4);
   const uint32_t rseq = n >= 1 ? (uint32_t)f[0] : 0;
@@ -147,6 +161,8 @@ void sendTelemetry() {
 }
 
 }  // namespace
+
+bool commLinkAlive() { return lastRxMs && millis() - lastRxMs < 1500; }   // Pi ส่ง $V/$P/$D อย่างน้อยทุก 1 s เมื่อเว็บรัน
 
 void commSetup() {
   Serial0.begin(BAUD, SERIAL_8N1, PIN_U0_RX, PIN_U0_TX);

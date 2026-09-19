@@ -20,6 +20,7 @@
 #include "manual.h"    // โหมดขับเองจาก Pi — ขั้น E: $V/$S/$E/$C
 #include "wdt.h"       // Task WDT 1 s (C29) — loop() ค้าง → รีบูต → ล้อ coast
 #include "servo_x.h"   // เซอร์โวตัวที่ 2 แกน X ของกล้อง (GPIO18 · C30)
+#include "tft.h"       // จอกลม GC9A01 (C32)
 
 // ── จุดต่อของแต่ละโมดูล (นิยามอยู่ท้าย src/<ชุด>/main.cpp) ────
 void motorSetup();  void motorTick();  void motorCommand(const String&);
@@ -159,7 +160,9 @@ static bool interlockAllows(char sys, const String& sub, bool force) {
 }
 
 // ให้ comm.cpp เรียกได้ (E-STOP จาก Pi = เส้นทางเดียวกับ `stop` ในคอนโซล)
-void robotEmergencyStop(const char* why) { stopAllSystems(why); }
+static uint32_t estopMs = 0;                 // เวลาที่ E-STOP ล่าสุด — จอโชว์ "E-STOP" 3 s (ไม่มี latch: คำสั่ง $V ถัดไปขับต่อได้ตามเดิม)
+void robotEmergencyStop(const char* why) { stopAllSystems(why); estopMs = millis(); }
+bool robotEstopped() { return estopMs && millis() - estopMs < 3000; }
 
 static void printMergedHelp() {
   Serial.println();
@@ -272,6 +275,7 @@ void setup() {
   blowerSetup();
   servoSetup();
   servoXSetup();
+  tftSetup();
   motorSetup();
   commSetup();   // UART0 ไป Pi 5 — ไม่แตะขาของสามชุดข้างบน (43/44 จองไว้ตาม §3.2)
   missionSetup();
@@ -313,6 +317,7 @@ void loop() {
   blowerTick();
   servoTick();
   servoXTick();
+  tftTick();
   commTick();
   missionTick();   // หลัง commTick เพื่อให้เห็น $K ในรอบเดียวกัน
   manualTick();    // เขียน duty ล้อทุก 10 ms ตาม setpoint จาก $V (หรือ 0 เมื่อ deadman)

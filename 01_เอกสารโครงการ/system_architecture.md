@@ -173,7 +173,7 @@
 | 38 | `TFT_SCK` | OUT | SPI2 | |
 | 39 | `TFT_MOSI` | OUT | SPI2 | |
 | 40 | `TFT_DC` | OUT | — | |
-| 47 | `TFT_CS` | OUT | — | `RST` → EN, `BL` → 3.3 V |
+| 47 | `TFT_CS` | OUT | — | `RST` → EN, `BL` → 3.3 V · **ใช้จริง 19 ก.ย. 2026** `src/robot/tft.cpp` (LovyanGFX · C32) |
 | **อนาล็อก — ต้องเป็น ADC1 (GPIO 1–10) เท่านั้น เพราะ ADC2 ชนกับ Wi-Fi** ||||
 | 10 | `VBAT_SENSE` | IN | ADC1_CH9 | ตัวแบ่ง 150 kΩ / 33 kΩ — ดูข้อ 3.4 |
 | 1 | `SERVO_I_SENSE` | IN | ADC1_CH0 | ACS712-5A ⚠ **ต้องผ่านตัวแบ่ง 6.8 kΩ/10 kΩ** — ต่อตรงไม่ได้ ดูข้อ 3.8 |
