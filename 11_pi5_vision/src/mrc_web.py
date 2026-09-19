@@ -38,6 +38,7 @@ import mrc_protocol as P            # noqa: E402
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 DATA_DIR = Path(os.environ.get("MRC_DATA_DIR", Path(__file__).resolve().parent.parent / "data"))
 IMAGE_DIR = DATA_DIR / "images"
+LIMITS_PATH = DATA_DIR / "limits.json"      # เพดานความเร็วของหุ่น (C28) — อยู่กับ Pi
 JSONL_PATH = DATA_DIR / "readings.jsonl"
 PREVIEW_FPS = 10                    # ไฟล์ 19 §19.1 — 10 fps ≈ 3 Mbps บน hotspot
 LINK_STALE_S = 1.0                  # #T มา 10 Hz — เงียบเกิน 1 s = ลิงก์มีปัญหา
@@ -86,6 +87,11 @@ class Hub:
         self.limits["v_max"] = max(0, min(V_HW_MAX_MM_S, int(v_max)))
         self.limits["w_max"] = max(0, min(W_HW_MAX_MRAD_S, int(w_max)))
         if self.daemon: self.daemon.send_limits(self.limits["v_max"], self.limits["w_max"])
+        try:
+            LIMITS_PATH.parent.mkdir(parents=True, exist_ok=True)
+            LIMITS_PATH.write_text(json.dumps({"v_max": self.limits["v_max"], "w_max": self.limits["w_max"]}), encoding="utf-8")
+        except OSError as e:
+            self.on_event({"t": "log", "level": "warn", "msg": f"บันทึกเพดานไม่ได้: {e}"})
         return self.limits
 
     def drive_release(self):
@@ -117,6 +123,8 @@ class Hub:
             self.last_capture = ev
         if ev.get("t") == "reading":
             self.last_reading = ev               # {"t":"reading","value":…,"confidence":…}
+            if self.air and self.air.available:  # แนบอากาศ ณ เวลาถ่าย (ใช้กับข้อมูลหอพัก/ARIA ทีหลัง)
+                ev["air"] = {k: self.air.latest.get(k) for k in ("eco2_ppm", "tvoc_ppb", "aqi", "temp_c", "rh_pct", "validity")}
         if ev.get("t") == "event" and ev.get("code") == "BOOT":
             # ESP32 เพิ่งบูต (เปิดเครื่อง / WDT / brownout) — ค่าเพดาน $L หายไปกับ RAM → ส่งซ้ำ · บอกคนขับถ้าไม่ใช่เปิดเครื่อง
             reason = ev.get("detail", "")
@@ -338,8 +346,8 @@ def display_payload():
     ips = pi_ips(); ip = ips[0] if ips else ""
     v = (hub.last_reading or {}).get("value")
     reading = f"{v:g}" if isinstance(v, (int, float)) else ""
-    co2 = hub.air.latest.get("eco2_ppm") if (hub.air and hub.air.available) else None
-    return ip, reading, co2
+    a = hub.air.latest if (hub.air and hub.air.available) else {}
+    return ip, reading, a.get("eco2_ppm"), a.get("tvoc_ppb"), a.get("aqi"), a.get("temp_c"), a.get("rh_pct")
 
 
 async def sys_ticker():
@@ -392,6 +400,7 @@ def start_daemon(port, backend, baud=115200):
     hub.daemon, hub.backend = d, backend
     th = threading.Thread(target=d.run, name="capture-daemon", daemon=True)
     th.start()
+    d.send_limits(hub.limits["v_max"], hub.limits["w_max"])     # เพดานที่บันทึกไว้ → ESP32 ทันที (ไม่รอ browser)
     return d
 
 
@@ -439,10 +448,10 @@ def main():
     ap.add_argument("--engine", choices=["sevenseg", "tesseract", "ssocr"], default="sevenseg")   # C30: 7-seg ก่อน (18 ก.ย.)
     ap.add_argument("--run-id", default=time.strftime("run_%Y%m%d_%H%M%S"))
     ap.add_argument("--no-air", action="store_true", help="ไม่อ่าน ENS160/AHT21")
-    ap.add_argument("--no-oled", action="store_true", help="ไม่ขับจอ OLED")
+    ap.add_argument("--oled", action="store_true", help="ขับจอ OLED I2C บน Pi (ไม่ใช้กับ GC9A01 ที่อยู่บน ESP32)")
     args = ap.parse_args()
     if not args.no_air:  hub.air = AIR.AirSensor().start()                 # ไม่มีเซนเซอร์ก็รันต่อ (available False)
-    if not args.no_oled: hub.oled = OLED.OledStatus(hub.status).start()
+    if args.oled: hub.oled = OLED.OledStatus(hub.status).start()
 
     backend = D.StillImageBackend(args.image) if args.image else open_camera_or_fallback(args)
     if args.no_serial:

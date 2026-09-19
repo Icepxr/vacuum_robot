@@ -154,8 +154,15 @@
 
   <div class="pane" data-pane="status">
     <dl class="kv" id="kv"></dl>
-    <h4>สภาพแวดล้อม</h4>
-    <div class="na">เซนเซอร์คุณภาพอากาศ ENS160/AHT21 — ยังไม่ต่อ (ต่อกับ Pi ขา 3/5 ตามไฟล์ 21) · เมื่อต่อแล้วจะแสดง AQI · eCO₂ · TVOC · อุณหภูมิ · ความชื้น พร้อมสถานะ "กำลังอุ่นเครื่อง 3 นาที"</div>
+    <h4>คุณภาพอากาศ <small id="air-state">—</small></h4>
+    <div class="air" id="air-tiles">
+      <div class="tile"><b id="a-co2">—</b><span>eCO₂ <i>ppm</i></span><em id="a-rating"></em></div>
+      <div class="tile"><b id="a-tvoc">—</b><span>TVOC <i>ppb</i></span></div>
+      <div class="tile"><b id="a-aqi">—</b><span>AQI <i>1 ดีสุด · 5 แย่สุด</i></span></div>
+      <div class="tile"><b id="a-temp">—</b><span>อุณหภูมิ <i>°C</i></span></div>
+      <div class="tile"><b id="a-rh">—</b><span>ความชื้น <i>%</i></span></div>
+    </div>
+    <p class="fine" id="air-note">ENS160 ให้ eCO₂ ที่ประมาณจาก VOC (ไม่ใช่ CO₂ จริง) · ระดับตาม datasheet: &lt;600 ดีมาก · 600–800 ดี · 800–1000 พอใช้ · 1000–1500 แย่ ควรระบาย · &gt;1500 แย่มาก</p>
     <h4>เหตุการณ์</h4><ul id="ev" class="ev"></ul>
     <p class="fine"><a href="/">หน้าวินิจฉัยสำหรับช่าง</a> · ค่าตั้งค่าเก็บในเครื่องนี้ · <button id="cfg-reset" class="link" type="button">คืนค่าเริ่มต้น</button></p>
   </div>

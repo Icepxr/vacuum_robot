@@ -114,3 +114,13 @@ button{font:inherit;color:inherit}
 .cam-foot button{flex:1;background:transparent;border:1px solid var(--line);border-radius:9px;padding:6px 0;font-size:12px;color:var(--mut);cursor:pointer}
 [data-big="1"] .cam-btn{width:60px;height:56px;font-size:22px}
 @media (max-height:520px){.campad{transform:none;top:calc(var(--pad)*2 + 58px + env(safe-area-inset-top))}.cam-bar{height:36px}}
+
+/* คุณภาพอากาศ (แท็บสถานะ) — 5 ช่อง ตัวเลขใหญ่ · สีตามระดับ */
+.air{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:8px;margin:6px 0 4px}
+.tile{background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:12px;padding:10px 10px 8px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.tile b{font-size:24px;font-weight:300;letter-spacing:-.5px;line-height:1.1;font-variant-numeric:tabular-nums}
+.tile span{font-size:12px;color:var(--mut)}.tile span i{font-style:normal;opacity:.7}
+.tile em{font-style:normal;font-size:11px;font-weight:500;color:var(--acc)}
+.tile.warn b,.tile.warn em{color:var(--warn)}.tile.bad b,.tile.bad em{color:var(--stop)}
+.air.off .tile b{color:var(--mut)}
+h4 small{font-weight:400;color:var(--mut);font-size:12px;margin-left:6px}

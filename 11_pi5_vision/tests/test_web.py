@@ -28,6 +28,8 @@ class FakeCamBackend(FakeBackend):
 def web(tmp_path, monkeypatch):
     monkeypatch.setattr(W, "DATA_DIR", tmp_path)
     monkeypatch.setattr(W, "IMAGE_DIR", tmp_path / "images")
+    monkeypatch.setattr(W, "LIMITS_PATH", tmp_path / "limits.json")
+    W.hub.limits.update(v_max=W.V_MAX_MM_S, w_max=W.W_MAX_MRAD_S)
     monkeypatch.setattr(W, "JSONL_PATH", tmp_path / "readings.jsonl")
     (tmp_path / "images").mkdir()
     (tmp_path / "readings.jsonl").write_text(json.dumps({
@@ -40,6 +42,8 @@ def web(tmp_path, monkeypatch):
     backend = FakeCamBackend(tmp_path / "images")
     hub = W.Hub(); monkeypatch.setattr(W, "hub", hub)
     d = W.start_daemon(os.ttyname(slave), backend)
+    first = P.decode(read_line(master))               # เพดานที่บันทึกไว้ถูกส่งทันทีตอน daemon เริ่ม (C28)
+    assert first is not None and first.type == "L"
     with TestClient(W.app) as c:
         yield c, master, backend, hub
     d.stop()
@@ -173,6 +177,7 @@ def test_user_limits_raise_cap_and_send_L_clamped_at_hw(web):
         assert _drain_until(ws, "limits")["v_max"] == 716
         s = c.get("/api/status").json()
         assert s["limits"]["v_max"] == 716 and "$L" in s["esp32_supports"]
+        assert json.loads(W.LIMITS_PATH.read_text())["v_max"] == 716          # บันทึกไว้ที่ Pi
 
 
 def test_estop_and_clean_frames(web):

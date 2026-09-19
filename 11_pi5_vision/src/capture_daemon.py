@@ -185,7 +185,7 @@ class CaptureDaemon:
     def send_limits(self, v, w):     return self.send(P.cmd_limits, v, w)
     def send_servo_x(self, us):      return self.send(P.cmd_servo_x, us)
     def send_mast(self, us):         return self.send(P.cmd_mast, us)
-    def send_display(self, ip, reading, co2): return self.send(P.cmd_display, ip, reading, co2)
+    def send_display(self, *a):      return self.send(P.cmd_display, *a)
 
     def _emit(self, ev):
         try:

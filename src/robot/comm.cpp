@@ -68,13 +68,14 @@ void handleLine(char* line, size_t len) {
   if (!mrc::checkFrame(line, len)) { ++statBadLine; return; }   // boot log/ขยะ/CRC ผิด — ทิ้งเงียบ
   if (line[0] != '$' || line[2] != ',') { Serial.printf("[comm] เฟรมไม่รู้จัก: %s\n", line); return; }
   lastRxMs = millis();
-  if (line[1] == 'D') {                          // $D,<seq>,<ip>,<reading>,<co2> — ข้อความให้จอ (C32) · ฟิลด์เป็นสตริง ไม่ผ่าน parseInts
-    char* f[5] = {nullptr, nullptr, nullptr, nullptr, nullptr}; int n = 0;
+  if (line[1] == 'D') {                          // $D,<seq>,<ip>,<reading>,<co2>,<tvoc>,<aqi>,<temp×10>,<rh×10> — ข้อความให้จอ (C32) · สตริง ไม่ผ่าน parseInts
+    char* f[9] = {}; int n = 0;
     char* p = line + 3; f[n++] = p;
-    while (*p && n < 5) { if (*p == ',') { *p = '\0'; f[n++] = p + 1; } ++p; }
+    while (*p && n < 9) { if (*p == ',') { *p = '\0'; f[n++] = p + 1; } ++p; }
     char* star = strchr(f[n - 1], '*'); if (star) *star = '\0';
     if (n < 4) { nack(0, "BAD_ARGS"); return; }
-    tftSetInfo(f[1], f[2], n >= 4 && f[3][0] ? atoi(f[3]) : -1);
+    auto num = [&](int i, int dflt) { return (i < n && f[i][0]) ? atoi(f[i]) : dflt; };
+    tftSetInfo(f[1], f[2], num(3, -1), num(4, -1), num(5, -1), num(6, -1000), num(7, -1));
     ack((uint32_t)strtoul(f[0], nullptr, 10));
     return;
   }

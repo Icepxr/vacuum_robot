@@ -58,7 +58,7 @@ def test_cmd_limits_frame():
 
 
 def test_cmd_display_strings():
-    fr = P.decode(P.cmd_display(3, "172.20.10.2", "1509", 620))
-    assert fr.fields == ["D", "3", "172.20.10.2", "1509", "620"]
+    fr = P.decode(P.cmd_display(3, "172.20.10.2", "1509", 620, 23, 1, 29.04, 55.4))
+    assert fr.fields == ["D", "3", "172.20.10.2", "1509", "620", "23", "1", "290", "554"]
     fr = P.decode(P.cmd_display(4, "", "", None))
-    assert fr.fields == ["D", "4", "", "", ""]
+    assert fr.fields == ["D", "4", "", "", "", "", "", "", ""]

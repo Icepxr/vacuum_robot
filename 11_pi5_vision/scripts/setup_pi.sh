@@ -228,3 +228,6 @@ case "${1:-}" in
     status)   do_status ;;
     *) sed -n '2,12p' "$0"; exit 1 ;;
 esac
+
+# I2C (ENS160/AHT21 · ไฟล์ 21): i2c-tools ทำให้ /dev/i2c-1 เป็น group i2c → ผู้ใช้ต้องอยู่ในกลุ่ม ไม่งั้น service อ่านไม่ได้ (19 ก.ย.)
+# sudo apt-get install -y i2c-tools && sudo usermod -aG i2c "$USER"

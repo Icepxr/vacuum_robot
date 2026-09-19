@@ -100,7 +100,7 @@
   let ws, wsOk = false;
   function connect() {
     ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
-    ws.onopen = () => { wsOk = true; chip("link", "ลิงก์ ต่ออยู่"); pushLimits(); };
+    ws.onopen = () => { wsOk = true; chip("link", "ลิงก์ ต่ออยู่"); };   // เพดานความเร็วเป็นของหุ่น (Pi ส่งมาใน sys/limits) ไม่ใช่ของเครื่องนี้
     ws.onclose = () => { wsOk = false; setMode("ขาดการเชื่อมต่อ", "lost"); chip("link", "ลิงก์ หลุด — ต่อใหม่…", "bad"); beep("bad"); setTimeout(connect, 1000); };
     ws.onmessage = (m) => handle(JSON.parse(m.data));
   }
@@ -129,6 +129,7 @@
     switch (ev.t) {
       case "hello": (ev.events || []).slice(-10).forEach(handle); break;
       case "sys": lastSys = ev; chip("cams", "กล้อง " + (ev.cam_ok ? "ปกติ" : "<b>ไม่มีภาพ</b>"), ev.cam_ok ? "" : "bad"); airChip(ev.air);
+        if (ev.limits && (ev.limits.v_max !== cfg.vMax || ev.limits.w_max !== cfg.wMax)) { cfg.vMax = ev.limits.v_max; cfg.wMax = ev.limits.w_max; save(); applyCfg(); }
         if (!ev.link) setMode("ไม่มี serial", "lost");
         else if (!ev.link.alive) { setMode("ESP32 ไม่ตอบ", "lost"); chip("link", ev.link.age_s == null ? "ลิงก์ ยังไม่เคยได้ข้อมูล" : `ลิงก์ เงียบ ${ev.link.age_s}s`, "bad"); }
         else chip("link", `ลิงก์ <b>${Math.round(ev.link.age_s * 1000)} ms</b>`);
@@ -160,16 +161,31 @@
     return co2 + (a.tvoc_ppb != null ? ` · TVOC ${a.tvoc_ppb} ppb` : "") + th + warm;
   }
   function airChip(a) {
-    const e = $("air"); if (!a || !a.available || a.eco2_ppm == null) { e.hidden = true; return; }
-    e.hidden = false; e.innerHTML = `CO₂ <b>${a.eco2_ppm}</b>` + (a.temp_c != null ? ` · ${a.temp_c.toFixed(0)}°` : "");
-    e.className = "chip " + (a.validity ? "" : a.rating === "poor" || a.rating === "bad" ? "warn" : "");
+    const e = $("air"); if (!a || !a.available) { e.hidden = true; airTiles(a); return; }
+    e.hidden = false;
+    const word = a.validity === 1 || a.validity === 2 ? "กำลังอุ่น" : (AIR_TH[a.rating] || "—").split(" ")[0];
+    e.innerHTML = `อากาศ <b>${word}</b>` + (a.eco2_ppm != null ? ` · ${a.eco2_ppm}` : "") + (a.temp_c != null ? ` · ${a.temp_c.toFixed(0)}°` : "");
+    e.className = "chip " + (!a.validity && (a.rating === "poor" || a.rating === "bad") ? "warn" : "");
+    airTiles(a);
+  }
+  function airTiles(a) {
+    const wrap = $("air-tiles"), st = $("air-state"); if (!wrap) return;
+    const ok = a && a.available;
+    wrap.classList.toggle("off", !ok);
+    st.textContent = !a ? "ปิดไว้" : !ok ? "ไม่พบเซนเซอร์ — เช็คสาย SDA/SCL" : a.validity === 1 ? "กำลังอุ่น 3 นาที ค่ายังไม่ใช่ของจริง" : a.validity === 2 ? "ชั่วโมงแรกของเซนเซอร์ ค่ายังลอย" : a.validity === 3 ? "ค่าผิดปกติ" : "ปกติ";
+    const set = (id, v, dp = 0) => { $(id).textContent = ok && v != null ? (+v).toFixed(dp) : "—"; };
+    set("a-co2", a && a.eco2_ppm); set("a-tvoc", a && a.tvoc_ppb); set("a-aqi", a && a.aqi); set("a-temp", a && a.temp_c, 1); set("a-rh", a && a.rh_pct, 0);
+    $("a-rating").textContent = ok && !a.validity ? (AIR_TH[a.rating] || "") : "";
+    const bad = ok && !a.validity && (a.rating === "bad"), warn = ok && !a.validity && (a.rating === "poor");
+    $("a-co2").parentElement.className = "tile" + (bad ? " bad" : warn ? " warn" : "");
+    $("a-aqi").parentElement.className = "tile" + (ok && a.aqi >= 5 ? " bad" : ok && a.aqi >= 4 ? " warn" : "");
   }
   function renderKv() {
     const t = lastTele || {}, s = lastSys || { cleaning: {}, drive: {} };
     const rows = [["โหมด", t.state_name || "—"], ["ความเร็วสั่ง", t.v != null ? `${t.v} mm/s · หมุน ${t.w} mrad/s` : "—"], ["ล้อซ้าย / ขวา", t.duty_l != null ? `${t.duty_l} / ${t.duty_r} ‰` : "—"],
       ["เสายกกล้อง", t.mast === 2 ? `จับสัญญาณ ${t.us_l} µs` : t.mast === 0 ? "พับ" : "—"], ["กล้องแกน X", t.us_r ? `${t.us_r} µs` : "ปล่อย"], ["ดูด / แปรง", `${s.cleaning.suction ?? "—"} % / ${s.cleaning.brush ?? "—"} %`],
       ["แบตเตอรี่", t.vbat_mV ? `${(t.vbat_mV / 1000).toFixed(2)} V` : "ยังไม่มี ADC ในเฟิร์มแวร์"],
-      ["คุณภาพอากาศ", airText(s.air)], ["จอ OLED", s.oled ? (s.oled.available ? "ต่ออยู่" : "ไม่พบจอ") : "ปิด"], ["deadman Pi", `${s.drive.tripped ?? 0} ครั้ง`], ["Pi", `${s.cpu_temp_c ?? "—"} °C · SD ว่าง ${s.disk_free_mb ?? "—"} MB`]];
+ ["deadman Pi", `${s.drive.tripped ?? 0} ครั้ง`], ["Pi", `${s.cpu_temp_c ?? "—"} °C · SD ว่าง ${s.disk_free_mb ?? "—"} MB`]];
     $("kv").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
   }
 

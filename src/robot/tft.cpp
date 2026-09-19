@@ -60,12 +60,16 @@ void draw(lgfx::LovyanGFX& g) {
     g.setFont(&fonts::Font2); g.setTextColor(C_MUT, C_BG); g.drawString("last meter reading", 120, 78);
     g.setFont(&fonts::FreeSansBold24pt7b); g.setTextColor(C_INK, C_BG);
     g.drawString(infoFresh && info.reading[0] ? info.reading : "--", 120, 115);
-  } else {
-    g.setFont(&fonts::Font2); g.setTextColor(C_MUT, C_BG); g.drawString("eCO2 ppm", 120, 78);
-    g.setFont(&fonts::FreeSansBold24pt7b);
-    if (infoFresh && info.co2 >= 0) { char b[12]; snprintf(b, sizeof b, "%d", info.co2);
-      g.setTextColor(info.co2 >= 1000 ? C_WARN : C_INK, C_BG); g.drawString(b, 120, 115); }
-    else { g.setTextColor(C_MUT, C_BG); g.drawString("--", 120, 115); }
+  } else {                                                  // หน้าอากาศ: eCO2 ใหญ่ · TVOC/AQI · อุณหภูมิ/ความชื้น
+    g.setFont(&fonts::Font2); g.setTextColor(C_MUT, C_BG); g.drawString("air  eCO2 ppm", 120, 66);
+    char b[32];
+    if (infoFresh && info.co2 >= 0) {
+      g.setFont(&fonts::FreeSansBold24pt7b); g.setTextColor(info.co2 >= 1500 ? C_BAD : info.co2 >= 1000 ? C_WARN : C_INK, C_BG);
+      snprintf(b, sizeof b, "%d", info.co2); g.drawString(b, 120, 100);
+      g.setFont(&fonts::Font2); g.setTextColor(C_MUT, C_BG);
+      snprintf(b, sizeof b, "TVOC %d ppb   AQI %d/5", info.tvoc, info.aqi); g.drawString(b, 120, 132);
+      if (info.temp10 > -1000) { snprintf(b, sizeof b, "%.1f C   %d %%RH", info.temp10 / 10.0f, info.rh10 / 10); g.drawString(b, 120, 150); }
+    } else { g.setFont(&fonts::FreeSansBold24pt7b); g.setTextColor(C_MUT, C_BG); g.drawString("--", 120, 105); }
   }
   // โหมด (ล่าง)
   g.setFont(&fonts::FreeSansBold9pt7b); g.setTextColor(C_INK, C_BG);
@@ -95,9 +99,9 @@ void tftTick() {
   else draw(lcd);
 }
 
-void tftSetInfo(const char* ip, const char* reading, int co2) {
+void tftSetInfo(const char* ip, const char* reading, int co2, int tvoc, int aqi, int temp10, int rh10) {
   strncpy(info.ip, ip, sizeof info.ip - 1);
   strncpy(info.reading, reading, sizeof info.reading - 1);
-  info.co2 = co2; info.rxMs = millis();
+  info.co2 = co2; info.tvoc = tvoc; info.aqi = aqi; info.temp10 = temp10; info.rh10 = rh10; info.rxMs = millis();
 }
 bool tftReady() { return ready; }
