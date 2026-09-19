@@ -6,7 +6,7 @@
   // C28: เพดานความเร็วเป็นของผู้ใช้ (cfg.vMax/wMax → {t:"limits"} → Pi → $L) · ESP32 clamp แค่ที่ฮาร์ดแวร์ 716 mm/s
   let V_MAX = 150;                                     // = cfg.vMax หลัง applyCfg
   const V_HW_MAX = 716, W_HW_MAX = 7950;
-  const DEFAULTS = { vMax: 150, wMax: 1500, maxPct: 50, turnGain: 1000, tiltMin: 500, tiltMax: 2500, liftMin: 1000, liftMax: 2000, camPad: true, rampMs: 250, deadzone: 0.12, turnScale: true, invY: false, invX: false,
+  const DEFAULTS = { vMax: 150, wMax: 3000, maxPct: 50, turnGain: 2000, tiltMin: 500, tiltMax: 2500, liftMin: 1000, liftMax: 2000, camPad: true, rampMs: 250, deadzone: 0.12, turnScale: true, invY: false, invX: false,
     joySide: "left", joySize: "m", autoSuction: false, fps: 10, gridOn: false, roiOn: true, mirror: false,
     suctionPct: 100, brushPct: 60, suctionIdleOff: 0, sound: true, vibrate: true, toastSec: 3, staleSec: 2,
     accent: "mint", density: "comfortable", bigButtons: false, wakeLock: true };
@@ -21,7 +21,7 @@
     clearTimeout(limitsT); limitsT = setTimeout(() => send({ t: "limits", v_max: cfg.vMax, w_max: cfg.wMax }), 250);
   }
   function applyCfg() {
-    cfg.vMax = Math.max(50, Math.min(V_HW_MAX, +cfg.vMax || 150)); cfg.wMax = Math.max(500, Math.min(W_HW_MAX, +cfg.wMax || 1500));
+    cfg.vMax = Math.max(50, Math.min(V_HW_MAX, +cfg.vMax || 150)); cfg.wMax = Math.max(500, Math.min(W_HW_MAX, +cfg.wMax || 3000));
     if (cfg.turnGain > cfg.wMax) cfg.turnGain = cfg.wMax;
     V_MAX = cfg.vMax;
     if (cfg.tiltMin >= cfg.tiltMax) cfg.tiltMax = cfg.tiltMin + 10; if (cfg.liftMin >= cfg.liftMax) cfg.liftMax = cfg.liftMin + 10;
@@ -128,7 +128,7 @@
   function handle(ev) {
     switch (ev.t) {
       case "hello": (ev.events || []).slice(-10).forEach(handle); break;
-      case "sys": lastSys = ev; chip("cams", "กล้อง " + (ev.cam_ok ? "ปกติ" : "<b>ไม่มีภาพ</b>"), ev.cam_ok ? "" : "bad");
+      case "sys": lastSys = ev; chip("cams", "กล้อง " + (ev.cam_ok ? "ปกติ" : "<b>ไม่มีภาพ</b>"), ev.cam_ok ? "" : "bad"); airChip(ev.air);
         if (!ev.link) setMode("ไม่มี serial", "lost");
         else if (!ev.link.alive) { setMode("ESP32 ไม่ตอบ", "lost"); chip("link", ev.link.age_s == null ? "ลิงก์ ยังไม่เคยได้ข้อมูล" : `ลิงก์ เงียบ ${ev.link.age_s}s`, "bad"); }
         else chip("link", `ลิงก์ <b>${Math.round(ev.link.age_s * 1000)} ms</b>`);
@@ -151,11 +151,25 @@
       case "event": logEv(`ESP32: ${ev.code} ${ev.detail || ""}`, "warn"); break;
     }
   }
+  const AIR_TH = { excellent: "ดีมาก", good: "ดี", fair: "พอใช้", poor: "แย่ — ควรระบาย", bad: "แย่มาก — ระบายอากาศ" };
+  function airText(a) {
+    if (!a) return "ปิด"; if (!a.available) return "ไม่พบเซนเซอร์ (ENS160/AHT21)";
+    const co2 = a.eco2_ppm != null ? `eCO₂ ${a.eco2_ppm} ppm (${AIR_TH[a.rating] || "—"})` : "eCO₂ —";
+    const th = a.temp_c != null ? ` · ${a.temp_c} °C · ${a.rh_pct} %` : "";
+    const warm = a.validity === 1 ? " · กำลังอุ่น 3 นาที" : a.validity === 2 ? " · ชั่วโมงแรก (ค่ายังไม่นิ่ง)" : a.validity === 3 ? " · ค่าผิดปกติ" : "";
+    return co2 + (a.tvoc_ppb != null ? ` · TVOC ${a.tvoc_ppb} ppb` : "") + th + warm;
+  }
+  function airChip(a) {
+    const e = $("air"); if (!a || !a.available || a.eco2_ppm == null) { e.hidden = true; return; }
+    e.hidden = false; e.innerHTML = `CO₂ <b>${a.eco2_ppm}</b>` + (a.temp_c != null ? ` · ${a.temp_c.toFixed(0)}°` : "");
+    e.className = "chip " + (a.validity ? "" : a.rating === "poor" || a.rating === "bad" ? "warn" : "");
+  }
   function renderKv() {
     const t = lastTele || {}, s = lastSys || { cleaning: {}, drive: {} };
     const rows = [["โหมด", t.state_name || "—"], ["ความเร็วสั่ง", t.v != null ? `${t.v} mm/s · หมุน ${t.w} mrad/s` : "—"], ["ล้อซ้าย / ขวา", t.duty_l != null ? `${t.duty_l} / ${t.duty_r} ‰` : "—"],
       ["เสายกกล้อง", t.mast === 2 ? `จับสัญญาณ ${t.us_l} µs` : t.mast === 0 ? "พับ" : "—"], ["กล้องแกน X", t.us_r ? `${t.us_r} µs` : "ปล่อย"], ["ดูด / แปรง", `${s.cleaning.suction ?? "—"} % / ${s.cleaning.brush ?? "—"} %`],
-      ["แบตเตอรี่", t.vbat_mV ? `${(t.vbat_mV / 1000).toFixed(2)} V` : "ยังไม่มี ADC ในเฟิร์มแวร์"], ["deadman Pi", `${s.drive.tripped ?? 0} ครั้ง`], ["Pi", `${s.cpu_temp_c ?? "—"} °C · SD ว่าง ${s.disk_free_mb ?? "—"} MB`]];
+      ["แบตเตอรี่", t.vbat_mV ? `${(t.vbat_mV / 1000).toFixed(2)} V` : "ยังไม่มี ADC ในเฟิร์มแวร์"],
+      ["คุณภาพอากาศ", airText(s.air)], ["จอ OLED", s.oled ? (s.oled.available ? "ต่ออยู่" : "ไม่พบจอ") : "ปิด"], ["deadman Pi", `${s.drive.tripped ?? 0} ครั้ง`], ["Pi", `${s.cpu_temp_c ?? "—"} °C · SD ว่าง ${s.disk_free_mb ?? "—"} MB`]];
     $("kv").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
   }
 

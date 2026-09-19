@@ -31,6 +31,8 @@ from fastapi.staticfiles import StaticFiles
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import capture_daemon as D          # noqa: E402
+import air_sensor as AIR            # noqa: E402
+import oled_status as OLED          # noqa: E402
 import mrc_protocol as P            # noqa: E402
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -42,7 +44,7 @@ LINK_STALE_S = 1.0                  # #T มา 10 Hz — เงียบเก�
 DRIVE_DEADMAN_S = 0.30              # ไฟล์ 19 §19.3 — browser เงียบเกินนี้ → ส่ง $S แล้วเลิกส่ง $V
 DRIVE_REPEAT_S = 0.10               # ส่ง $V ซ้ำ 10 Hz ให้ G8 (300 ms) ผ่านด้วย margin 3×
 V_MAX_MM_S = 150                    # ค่าเริ่มต้นของเพดานที่ผู้ใช้ตั้งได้ (C28 — เดิม G14 เป็นการห้าม)
-W_MAX_MRAD_S = 1500
+W_MAX_MRAD_S = 3000                 # C31 19 ก.ย.: 1500 หมุนตัวไม่ไป (duty ~126 ‰ ต่ำกว่าแรงเสียดทานสถิต) → เพิ่ม + พื้น duty 200 ‰ ในเฟิร์มแวร์
 V_HW_MAX_MM_S = 716                 # เพดานฮาร์ดแวร์: 152 rpm [วัดจริง M1] × π × Ø90 mm (ไฟล์ 19 §19.7) — ขอเกินก็ไม่ได้อยู่แล้ว
 W_HW_MAX_MRAD_S = 7950              # 716 / (180/2) mm ≈ 7.96 rad/s [คำนวณ] ต้องตรงกับ manual_core.h
 
@@ -67,6 +69,8 @@ class Hub:
         # C28: เพดานความเร็วเป็นของผู้ใช้ (ตั้งจากหน้าเว็บ → $L) · Pi แค่ clamp ตามค่าเดียวกันและจำไว้ให้ client ใหม่
         self.cam_fallback = False                # True = เปิดกล้องไม่ได้ ใช้ภาพนิ่งแทน → cam_ok False ให้หน้าเว็บบอกตรงๆ
         self.cam_args = None                     # args ของกล้อง (index/engine/run_id) ให้ camera_hotplug ลองเปิดใหม่
+        self.air = None                          # AirSensor (ENS160/AHT21 บน I2C ของ Pi) — None ถ้าปิดด้วย --no-air
+        self.oled = None                         # OledStatus — None ถ้า --no-oled
         self.limits = {"v_max": V_MAX_MM_S, "w_max": W_MAX_MRAD_S, "v_hw_max": V_HW_MAX_MM_S, "w_hw_max": W_HW_MAX_MRAD_S}
 
     # ── ขับเอง ──
@@ -160,6 +164,8 @@ class Hub:
                 "cleaning": self.cleaning,
                 "limits": self.limits,
                 "ip": pi_ips(),
+                "air": (dict(self.air.latest, available=self.air.available) if self.air else None),
+                "oled": ({"available": self.oled.available, "error": self.oled.error} if self.oled else None),
                 "clients": len(self.clients)}
 
 
@@ -417,7 +423,11 @@ def main():
     ap.add_argument("--image", help="ใช้รูปนี้แทนกล้อง")
     ap.add_argument("--engine", choices=["sevenseg", "tesseract", "ssocr"], default="sevenseg")   # C30: 7-seg ก่อน (18 ก.ย.)
     ap.add_argument("--run-id", default=time.strftime("run_%Y%m%d_%H%M%S"))
+    ap.add_argument("--no-air", action="store_true", help="ไม่อ่าน ENS160/AHT21")
+    ap.add_argument("--no-oled", action="store_true", help="ไม่ขับจอ OLED")
     args = ap.parse_args()
+    if not args.no_air:  hub.air = AIR.AirSensor().start()                 # ไม่มีเซนเซอร์ก็รันต่อ (available False)
+    if not args.no_oled: hub.oled = OLED.OledStatus(hub.status).start()
 
     backend = D.StillImageBackend(args.image) if args.image else open_camera_or_fallback(args)
     if args.no_serial:

@@ -26,3 +26,5 @@ uvicorn[standard]==0.52.4
 websockets==17.1
 pyserial==3.5
 pyserial-asyncio==0.6
+smbus2>=0.4          # ENS160/AHT21 บน I2C (air_sensor.py)
+luma.oled>=3.13      # จอ OLED SSD1306 (oled_status.py) — ดึง Pillow มาด้วย

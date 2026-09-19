@@ -13,7 +13,7 @@ namespace mrc {
 struct ManualCfg {
   int      v_max_mm_s      = 150;    // ค่าเริ่มต้น (เดิม G14) · ผู้ใช้เปลี่ยนได้ด้วย $L ไม่เกิน v_hw_max
   int      v_hw_max_mm_s   = 716;    // เพดานฮาร์ดแวร์ [คำนวณจาก 152 rpm วัดจริง] — $L ขอเกินถูก clamp ที่นี่
-  int      w_max_mrad_s    = 1500;   // ≈ 86 °/s — หมุนตัวรอบละ ~4 s [ประมาณการ] · ปรับได้ด้วย $L
+  int      w_max_mrad_s    = 3000;   // ≈ 172 °/s (เดิม 1500 — C31: หมุนไม่ไป) · ปรับได้ด้วย $L
   int      w_hw_max_mrad_s = 7950;   // v_hw_max / (track/2) = 716 / 90 mm ≈ 7.96 rad/s [คำนวณ]
   int      track_mm        = 180;    // ระยะล้อซ้าย–ขวา [ยังไม่ยืนยันของจริง]
   int      permille_per_mps = 1400;  // 210 ‰ / 0.15 m/s  [คำนวณจากค่าวัดจริงไร้โหลด]
@@ -21,6 +21,8 @@ struct ManualCfg {
   int      slew_permille_per_tick = 15;   // ต่อ tick 10 ms → 0→210 ใน ~140 ms (rampTo เดิม 300 ms แต่ blocking)
   uint32_t deadman_ms      = 300;    // G8
   int      deadband_permille = 40;   // ต่ำกว่านี้ล้อไม่หมุนอยู่ดี (M1 วัดว่า 25 % duty ยังหมุน — deadband จริงยังไม่วัด) → ตัดเป็น 0
+  int      permille_start  = 200;    // พื้น duty ต่ำสุดที่ "สั่งแล้วต้องขยับ" (C31 19 ก.ย.: หมุนซ้าย-ขวาไม่ไป — duty หมุนตัว ~126 ‰ ต่ำกว่าแรงเสียดทานสถิต)
+                                     // คำสั่งที่ไม่ใช่ 0 และต่ำกว่านี้ถูกยกขึ้นเป็นค่านี้ [ประมาณการ: M1 25 % หมุนเปล่า · มีโหลดยังไม่วัด]
 };
 
 struct WheelCmd { int l = 0, r = 0; };    // ‰ ที่ส่งจริง (หลัง slew)
@@ -94,6 +96,8 @@ class Manual {
     if (p >  cfg_.permille_max) p =  cfg_.permille_max;
     if (p < -cfg_.permille_max) p = -cfg_.permille_max;
     if (p > -cfg_.deadband_permille && p < cfg_.deadband_permille) p = 0;
+    else if (p > 0 && p < cfg_.permille_start) p = cfg_.permille_start;    // ยกให้พ้นแรงเสียดทานสถิต (C31)
+    else if (p < 0 && p > -cfg_.permille_start) p = -cfg_.permille_start;
     return (int)p;
   }
   int slew(int cur, int target) const {
