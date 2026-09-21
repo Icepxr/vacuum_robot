@@ -8,7 +8,7 @@
   const V_HW_MAX = 716, W_HW_MAX = 7950;
   const DEFAULTS = { vMax: 300, wMax: 3000, maxPct: 50, turnGain: 2000, tiltMin: 500, tiltMax: 2500, liftMin: 1000, liftMax: 2000, camPad: true, rampMs: 250, deadzone: 0.12, turnScale: true, invY: false, invX: false,
     joySide: "left", joySize: "m", autoSuction: false, driveUi: "pad", curveTurn: 50, joySnap: true, fps: 10, gridOn: false, roiOn: true, mirror: false,
-    suctionPct: 100, brushPct: 60, suctionIdleOff: 0, sound: true, vibrate: true, toastSec: 3, staleSec: 2,
+    suctionPct: 100, suctionIdleOff: 0, sound: true, vibrate: true, toastSec: 3, staleSec: 2,
     accent: "mint", density: "comfortable", bigButtons: false, wakeLock: true };
   let cfg = { ...DEFAULTS };
   try { Object.assign(cfg, JSON.parse(localStorage.getItem("mrc.drive.cfg") || "{}")); } catch (e) {}
@@ -41,7 +41,7 @@
     wake();
   }
   const fmtOut = (k, v) => ({ tiltMin: `${v} µs`, tiltMax: `${v} µs`, liftMin: `${v} µs`, liftMax: `${v} µs`, vMax: `${v} mm/s${v > 300 ? " ⚠ เกินค่าเริ่มต้น" : ""}`, wMax: `${v} mrad/s`, maxPct: `${v}% · ${Math.round(V_MAX * v / 100)} mm/s`, turnGain: `${v}`, curveTurn: `${v}%`, rampMs: `${v} ms`, deadzone: `${v}`, fps: `${v} fps`,
-    suctionPct: `${v}%`, brushPct: `${v}%`, suctionIdleOff: v ? `${v} s` : "ไม่ปิด", toastSec: `${v} s`, staleSec: `${v} s` })[k] ?? v;
+    suctionPct: `${v}%`, suctionIdleOff: v ? `${v} s` : "ไม่ปิด", toastSec: `${v} s`, staleSec: `${v} s` })[k] ?? v;
   document.querySelectorAll("[data-cfg]").forEach((el) => el.addEventListener("input", () => {
     const k = el.dataset.cfg; cfg[k] = el.type === "checkbox" ? el.checked : (el.tagName === "SELECT" ? el.value : +el.value);
     save(); applyCfg();
@@ -186,7 +186,7 @@
   function renderKv() {
     const t = lastTele || {}, s = lastSys || { cleaning: {}, drive: {} };
     const rows = [["โหมด", t.state_name || "—"], ["ความเร็วสั่ง", t.v != null ? `${t.v} mm/s · หมุน ${t.w} mrad/s` : "—"], ["ล้อซ้าย / ขวา", t.duty_l != null ? `${t.duty_l} / ${t.duty_r} ‰` : "—"],
-      ["เสายกกล้อง", t.mast === 2 ? `จับสัญญาณ ${t.us_l} µs` : t.mast === 0 ? "พับ" : "—"], ["กล้องแกน X", t.us_r ? `${t.us_r} µs` : "ปล่อย"], ["ดูด / แปรง", `${s.cleaning.suction ?? "—"} % / ${s.cleaning.brush ?? "—"} %`],
+      ["เสายกกล้อง", t.mast === 2 ? `จับสัญญาณ ${t.us_l} µs` : t.mast === 0 ? "พับ" : "—"], ["กล้องแกน X", t.us_r ? `${t.us_r} µs` : "ปล่อย"], ["ดูด / แปรง", `${s.cleaning.suction ? "เปิด" : "ปิด"} / ${s.cleaning.brush ? "เปิด" : "ปิด"}`],
       ["แบตเตอรี่", t.vbat_mV ? `${(t.vbat_mV / 1000).toFixed(2)} V` : "ยังไม่มี ADC ในเฟิร์มแวร์"],
  ["deadman Pi", `${s.drive.tripped ?? 0} ครั้ง`], ["Pi", `${s.cpu_temp_c ?? "—"} °C · SD ว่าง ${s.disk_free_mb ?? "—"} MB`]];
     $("kv").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
@@ -267,13 +267,14 @@
   $("estop").onclick = estop;
   function capture() { $("capture").disabled = true; send({ t: "capture" }); setTimeout(() => $("capture").disabled = false, 5000); }
   $("capture").onclick = capture;
+  const BRUSH_ON_PCT = 100;
   let suction = 0, brush = 0, idleT;
   function sendClean() { send({ t: "clean", suction, brush }); paintTog(); }
   function toggleSuction() { suction = suction ? 0 : cfg.suctionPct; sendClean(); }
-  function toggleBrush() { brush = brush ? 0 : cfg.brushPct; sendClean(); }
+  function toggleBrush() { brush = brush ? 0 : BRUSH_ON_PCT; sendClean(); }   // แปรง = เปิด/ปิดเหมือนดูด (ผู้ใช้ 21 ก.ย.) · 100 % ของราง 5 V = 5 V ≤ พิกัด 6 V (C30)
   $("suction").onclick = toggleSuction; $("brush").onclick = toggleBrush;
   function paintTog() { $("suction").classList.toggle("on", !!suction); $("suction").querySelector("b").textContent = suction ? "เปิด" : "ปิด";
-    $("brush").classList.toggle("on", !!brush); $("brush").querySelector("b").textContent = brush ? `${brush}%` : "ปิด"; }
+    $("brush").classList.toggle("on", !!brush); $("brush").querySelector("b").textContent = brush ? "เปิด" : "ปิด"; }
   setInterval(() => { if (cfg.suctionIdleOff && suction && !driving) { idleT = (idleT || 0) + 1; if (idleT >= cfg.suctionIdleOff) { suction = 0; sendClean(); toast("ปิดดูดอัตโนมัติ (หยุดนาน)", "good"); idleT = 0; } } else idleT = 0; }, 1000);
 
   // ── sheet ตั้งค่า ──
