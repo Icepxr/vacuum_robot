@@ -352,3 +352,33 @@ def test_deadman_trip_shows_on_display(web):
             if not raw: break
             fr = P.decode(raw); types.append((fr.type, fr.fields[11] if fr.type == "D" else ""))
         assert ("S", "") in types and ("D", "DEADMAN") in types
+
+
+class ZoomCamBackend(FakeCamBackend):
+    """กล้องปลอมที่คุมซูมได้ (interface เดียวกับ UsbCameraBackend.controls/set_control)"""
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k); self.ctl = {"zoom": 1.0, "pan": 0.0, "tilt": 0.0, "af": True, "focus": 0.5}
+    def controls(self):
+        return {"zoom_max": 5.0, "hw": {"zoom": True, "pan": True, "tilt": True, "af": True, "focus": True}, "sw_zoom": False, **self.ctl}
+    def set_control(self, **kw):
+        for k, v in kw.items():
+            self.ctl[k] = max(1.0, min(5.0, float(v))) if k == "zoom" else v
+        return self.controls()
+
+
+def test_cam_controls_via_ws_and_rest(web, monkeypatch):
+    """C36 ซูม: WS {t:"cam"} → backend.set_control → broadcast cam_ctl · REST /api/cam · กล้องที่คุมไม่ได้ → nack/null"""
+    c, master, backend, hub = web
+    assert c.get("/api/cam").json() is None                   # FakeCamBackend ไม่มี controls
+    with c.websocket_connect("/ws") as ws:
+        ws.receive_json(); ws.receive_json()
+        ws.send_json({"t": "cam", "zoom": 2}); ev = _drain_until(ws, "nack"); assert ev["reason"] == "no_camera_control"
+    hub.backend = ZoomCamBackend(hub.backend.tmp)
+    with c.websocket_connect("/ws") as ws:
+        ws.receive_json(); ws.receive_json()
+        ws.send_json({"t": "cam", "zoom": 9, "af": False, "focus": 0.3, "bogus": 1})
+        ev = _drain_until(ws, "cam_ctl")
+        assert ev["zoom"] == 5.0 and ev["af"] is False and ev["focus"] == 0.3 and "bogus" not in ev
+        assert c.get("/api/status").json()["cam_ctl"]["zoom"] == 5.0
+        r = c.post("/api/cam", json={"zoom": 1, "pan": 0.25}).json()
+        assert r["ok"] and r["zoom"] == 1.0 and r["pan"] == 0.25

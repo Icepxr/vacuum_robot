@@ -81,6 +81,17 @@ class Hub:
         # C35 จอบนหุ่นเป็นแบบ "โชว์เมื่อมีเหตุ": Pi ถือเหตุการณ์ล่าสุดไว้จนหมดเวลา แล้วใส่ไปกับ $D ทุกเฟรม (จอไม่มี timer เอง — เฟรมหายก็หายแค่ 1 s)
         self.disp_evt = None                     # (code, arg, until_mono) · None = ไม่มีเหตุการณ์ค้าง
 
+    # ── C36 ซูม/โฟกัสกล้อง — ส่งต่อให้ backend ถ้ามันทำได้ (กล้องจริง) · ภาพนิ่ง/ไม่มีกล้อง = None ──
+    def cam_controls(self):
+        fn = getattr(self.backend, "controls", None)
+        return fn() if fn else None
+
+    def cam_set(self, **kw):
+        fn = getattr(self.backend, "set_control", None)
+        if not fn: return None
+        allowed = {k: v for k, v in kw.items() if k in ("zoom", "pan", "tilt", "af", "focus") and isinstance(v, (int, float, bool))}
+        return fn(**allowed) if allowed else fn()
+
     # ── C35 จอบนหุ่น ──
     def display_event(self, code, arg=""):
         """เหตุการณ์ชั่วคราวให้จอโชว์ (ถ่ายภาพ/ค่าอ่าน/deadman) แล้วส่ง $D ทันที ไม่รอ tick 1 s
@@ -157,6 +168,8 @@ class Hub:
             self.last_reading = ev               # {"t":"reading","value":…,"confidence":…}
             if self.air and self.air.available:  # แนบอากาศ ณ เวลาถ่าย (ใช้กับข้อมูลหอพัก/ARIA ทีหลัง)
                 ev["air"] = {k: self.air.latest.get(k) for k in ("eco2_ppm", "tvoc_ppb", "aqi", "temp_c", "rh_pct", "validity")}
+            c = self.cam_controls()                # C36 ซูม/โฟกัสที่ใช้ตอนถ่าย — ภาพที่เซฟคือเฟรมหลังซูม (UVC ครอปในกล้อง) จึงต้องรู้ว่าซูมเท่าไหร่
+            if c: ev["cam"] = {k: c[k] for k in ("zoom", "pan", "tilt", "af", "focus")}
             v = ev.get("value")
             self.display_event("READ", f"{v:g}") if isinstance(v, (int, float)) else self.display_event("NOREAD")
         if ev.get("t") == "event" and ev.get("code") == "BOOT":
@@ -203,7 +216,7 @@ class Hub:
                 "tele": (self.daemon.tele if self.daemon else None),
                 "drive": {"v": self.drive_v, "w": self.drive_w, "active": self.drive_last_mono is not None,
                           "tripped": self.drive_tripped, "deadman_ms": int(DRIVE_DEADMAN_S * 1000)},
-                "cleaning": self.cleaning,
+                "cleaning": self.cleaning, "cam_ctl": self.cam_controls(),
                 "limits": self.limits,
                 "ip": pi_ips(),
                 "air": (dict(self.air.latest, available=self.air.available) if self.air else None),
@@ -264,6 +277,21 @@ def api_capture():
     hub.display_event("CAP")
     ok = hub.daemon.capture_now()
     return JSONResponse({"ok": ok})
+
+
+@app.get("/api/cam")
+def api_cam_get():
+    """C36 ความสามารถ + ค่าปัจจุบันของซูม/แพน/ทิลต์/โฟกัส · null = กล้องคุมไม่ได้ (ภาพนิ่ง/ไม่มีกล้อง)"""
+    return JSONResponse(hub.cam_controls())
+
+
+@app.post("/api/cam")
+async def api_cam_set(body: dict):
+    r = await asyncio.to_thread(hub.cam_set, **body)
+    if r is None:
+        return JSONResponse({"ok": False, "reason": "no_camera_control"}, status_code=503)
+    await hub.broadcast({"t": "cam_ctl", **r})
+    return JSONResponse({"ok": True, **r})
 
 
 ROI_PATH = Path(__file__).resolve().parent / "roi_config.json"
@@ -347,6 +375,10 @@ async def ws_endpoint(ws: WebSocket):
                 hub.drive(cmd.get("v", 0), cmd.get("w", 0))
             elif t == "release":                     # ปล่อยจอย
                 hub.drive_release()
+            elif t == "cam":                         # C36 {"t":"cam","zoom":2.5,"pan":0,"tilt":0,"af":false,"focus":0.4} — ใส่เฉพาะที่จะเปลี่ยน
+                r = await asyncio.to_thread(hub.cam_set, **{k: v for k, v in cmd.items() if k != "t"})   # v4l2-ctl ~10 ms — ออกจาก event loop
+                if r is None: await ws.send_text(json.dumps({"t": "nack", "cmd": "cam", "reason": "no_camera_control"}))
+                else: await hub.broadcast({"t": "cam_ctl", **r})
             elif t == "stop" and d is not None:
                 hub.drive_release()
             elif t == "estop" and d is not None:     # ทำงานทุกโหมด ไม่ผ่านตัวกรอง

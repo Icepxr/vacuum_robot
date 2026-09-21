@@ -1,4 +1,4 @@
-// drive.js — cockpit ขับเอง (rev.2 · 16 ก.ย.) · vanilla · ไม่โหลดอะไรจากเน็ต
+// drive.js — cockpit ขับเอง (rev.3 · 21 ก.ย. — C36 ปุ่มทิศทาง 8 ทาง + ซูมกล้อง) · vanilla · ไม่โหลดอะไรจากเน็ต
 // หลักความปลอดภัยเหมือนเดิม: browser ส่ง {t:"drive"} ทุก 100 ms ขณะมีอินพุต · ปล่อย = {t:"release"} ·
 // Pi ถือค่าล่าสุดแล้วส่ง $V ซ้ำเอง · เงียบ 300 ms = Pi ส่ง $S · ESP32 มี deadman ของตัวเองอีกชั้น
 (() => {
@@ -7,7 +7,7 @@
   let V_MAX = 150;                                     // = cfg.vMax หลัง applyCfg
   const V_HW_MAX = 716, W_HW_MAX = 7950;
   const DEFAULTS = { vMax: 300, wMax: 3000, maxPct: 50, turnGain: 2000, tiltMin: 500, tiltMax: 2500, liftMin: 1000, liftMax: 2000, camPad: true, rampMs: 250, deadzone: 0.12, turnScale: true, invY: false, invX: false,
-    joySide: "left", joySize: "m", autoSuction: false, fps: 10, gridOn: false, roiOn: true, mirror: false,
+    joySide: "left", joySize: "m", autoSuction: false, driveUi: "pad", curveTurn: 50, joySnap: true, fps: 10, gridOn: false, roiOn: true, mirror: false,
     suctionPct: 100, brushPct: 60, suctionIdleOff: 0, sound: true, vibrate: true, toastSec: 3, staleSec: 2,
     accent: "mint", density: "comfortable", bigButtons: false, wakeLock: true };
   let cfg = { ...DEFAULTS };
@@ -28,6 +28,7 @@
     root.dataset.campad = cfg.camPad ? 1 : 0; camApplyLimits();
     root.dataset.accent = cfg.accent; root.dataset.density = cfg.density; root.dataset.big = cfg.bigButtons ? 1 : 0;
     root.dataset.joyside = cfg.joySide; root.dataset.mirror = cfg.mirror ? 1 : 0;
+    $("joy").hidden = cfg.driveUi !== "joy"; $("pad").hidden = cfg.driveUi !== "pad";
     root.style.setProperty("--joy", { s: "120px", m: "160px", l: "210px" }[cfg.joySize] || "160px");
     $("grid").hidden = !cfg.gridOn; $("roi").hidden = !cfg.roiOn || !roi;
     document.querySelectorAll("[data-cfg]").forEach((el) => {
@@ -39,7 +40,7 @@
     if (streamFps !== cfg.fps) startStream();
     wake();
   }
-  const fmtOut = (k, v) => ({ tiltMin: `${v} µs`, tiltMax: `${v} µs`, liftMin: `${v} µs`, liftMax: `${v} µs`, vMax: `${v} mm/s${v > 300 ? " ⚠ เกินค่าเริ่มต้น" : ""}`, wMax: `${v} mrad/s`, maxPct: `${v}% · ${Math.round(V_MAX * v / 100)} mm/s`, turnGain: `${v}`, rampMs: `${v} ms`, deadzone: `${v}`, fps: `${v} fps`,
+  const fmtOut = (k, v) => ({ tiltMin: `${v} µs`, tiltMax: `${v} µs`, liftMin: `${v} µs`, liftMax: `${v} µs`, vMax: `${v} mm/s${v > 300 ? " ⚠ เกินค่าเริ่มต้น" : ""}`, wMax: `${v} mrad/s`, maxPct: `${v}% · ${Math.round(V_MAX * v / 100)} mm/s`, turnGain: `${v}`, curveTurn: `${v}%`, rampMs: `${v} ms`, deadzone: `${v}`, fps: `${v} fps`,
     suctionPct: `${v}%`, brushPct: `${v}%`, suctionIdleOff: v ? `${v} s` : "ไม่ปิด", toastSec: `${v} s`, staleSec: `${v} s` })[k] ?? v;
   document.querySelectorAll("[data-cfg]").forEach((el) => el.addEventListener("input", () => {
     const k = el.dataset.cfg; cfg[k] = el.type === "checkbox" ? el.checked : (el.tagName === "SELECT" ? el.value : +el.value);
@@ -128,7 +129,8 @@
   function handle(ev) {
     switch (ev.t) {
       case "hello": (ev.events || []).slice(-10).forEach(handle); break;
-      case "sys": lastSys = ev; chip("cams", "กล้อง " + (ev.cam_ok ? "ปกติ" : "<b>ไม่มีภาพ</b>"), ev.cam_ok ? "" : "bad"); airChip(ev.air);
+      case "sys": lastSys = ev; chip("cams", "กล้อง " + (ev.cam_ok ? "ปกติ" : "<b>ไม่มีภาพ</b>") + (ev.cam_ctl && ev.cam_ctl.zoom > 1.01 ? ` · ${(+ev.cam_ctl.zoom).toFixed(1)}×` : ""), ev.cam_ok ? "" : "bad"); airChip(ev.air);
+        if ("cam_ctl" in ev && !pts.size && !zoomT) paintCam(ev.cam_ctl);                  // ซิงก์จากเครื่องอื่น — แต่ไม่แย่งตอนนิ้วยังอยู่บนจอ
         if (ev.limits && (ev.limits.v_max !== cfg.vMax || ev.limits.w_max !== cfg.wMax)) { cfg.vMax = ev.limits.v_max; cfg.wMax = ev.limits.w_max; save(); applyCfg(); }
         if (!ev.link) setMode("ไม่มี serial", "lost");
         else if (!ev.link.alive) { setMode("ESP32 ไม่ตอบ", "lost"); chip("link", ev.link.age_s == null ? "ลิงก์ ยังไม่เคยได้ข้อมูล" : `ลิงก์ เงียบ ${ev.link.age_s}s`, "bad"); }
@@ -150,6 +152,7 @@
       case "reading": toast(ev.value == null ? "อ่านตัวเลขไม่ออก — เล็งให้เข้ากรอบแล้วถ่ายใหม่" : `อ่านได้ ${ev.value}`, ev.value == null ? "warn" : "good"); logEv(`ค่า ${ev.value ?? "—"} (conf ${ev.confidence})`, ev.value == null ? "warn" : "good"); break;
       case "log": if (ev.level === "bad" || ev.level === "warn") { logEv(ev.msg, ev.level); if (ev.level === "bad") toast(ev.msg, "bad"); } else if (ev.level === "good") logEv(ev.msg, "good"); break;
       case "event": logEv(`ESP32: ${ev.code} ${ev.detail || ""}`, "warn"); break;
+      case "cam_ctl": if (!pts.size && !zoomT) paintCam(ev); break;
     }
   }
   const AIR_TH = { excellent: "ดีมาก", good: "ดี", fair: "พอใช้", poor: "แย่ — ควรระบาย", bad: "แย่มาก — ระบายอากาศ" };
@@ -193,11 +196,11 @@
   let speedPct = cfg.maxPct;
   function setSpeed(pct, persist = true) {
     speedPct = Math.max(10, Math.min(100, pct)); $("spd").value = speedPct; $("spdnum").textContent = Math.round(V_MAX * speedPct / 100);
-    document.querySelectorAll(".dial-presets button").forEach((b) => b.classList.toggle("on", +b.dataset.pct === speedPct));
+    document.querySelectorAll(".dial-presets button, .pad-foot button").forEach((b) => b.classList.toggle("on", +b.dataset.pct === speedPct));
     if (persist) { cfg.maxPct = speedPct; save(); }
   }
   $("spd").oninput = (e) => setSpeed(+e.target.value);
-  document.querySelectorAll(".dial-presets button").forEach((b) => b.onclick = () => setSpeed(+b.dataset.pct));
+  document.querySelectorAll(".dial-presets button, .pad-foot button").forEach((b) => b.onclick = () => setSpeed(+b.dataset.pct));
 
   // ── อินพุต: จอย / คีย์ / gamepad → vec ∈ [-1,1]² ──
   let jx = 0, jy = 0, joyActive = false;
@@ -209,20 +212,37 @@
   const endJoy = () => { joyActive = false; joy.classList.remove("active"); jx = jy = 0; paintKnob(0, 0); pump(); };
   joy.addEventListener("pointerup", endJoy); joy.addEventListener("pointercancel", endJoy);
   function moveJoy(e) { const r = joy.getBoundingClientRect(); let x = (e.clientX - (r.left + r.width / 2)) / R(), y = -(e.clientY - (r.top + r.height / 2)) / R();
-    const len = Math.hypot(x, y); if (len > 1) { x /= len; y /= len; } jx = x; jy = y; paintKnob(x, y); }
+    const len = Math.hypot(x, y); if (len > 1) { x /= len; y /= len; }
+    if (cfg.joySnap && len > 0.05) { if (Math.abs(x) < 0.38 * len) x = 0; else if (Math.abs(y) < 0.38 * len) y = 0; }   // ล็อกแกน: ใกล้แนวตั้ง = ตรง · ใกล้แนวนอน = หมุนล้วน (±22°)
+    jx = x; jy = y; paintKnob(x, y); }
+  // C36 ปุ่มทิศทาง: แต่ละปุ่มจับ pointer ของตัวเอง (กด 2 ปุ่มพร้อมกันได้) · เวกเตอร์ = ผลรวมของปุ่มที่กดค้าง
+  const padHeld = new Map();
+  document.querySelectorAll("#pad [data-dir]").forEach((b) => {
+    const d = b.dataset.dir;
+    const up = (e) => { if (padHeld.delete(e.pointerId)) { b.classList.remove("hold"); pump(); } };
+    b.addEventListener("pointerdown", (e) => { e.preventDefault();
+      if (d === "stop") { padHeld.clear(); document.querySelectorAll("#pad .hold").forEach((x) => x.classList.remove("hold")); pump(); send({ t: "stop" }); return; }
+      try { b.setPointerCapture(e.pointerId); } catch (_) {}
+      padHeld.set(e.pointerId, d.split(":").map(Number)); b.classList.add("hold"); pump(); });
+    ["pointerup", "pointercancel", "lostpointercapture"].forEach((ev) => b.addEventListener(ev, up));
+  });
+  function dpadVec() { if (!padHeld.size) return null; let x = 0, y = 0; for (const [dx, dy] of padHeld.values()) { x += dx; y += dy; } return [Math.max(-1, Math.min(1, x)), Math.max(-1, Math.min(1, y))]; }
   const keys = new Set();
   window.addEventListener("keydown", (e) => { if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return; if (e.repeat) return; const k = e.key.toLowerCase();
     if (k === " ") { e.preventDefault(); estop(); return; } if (k === "c") { capture(); return; } if (k === "f") { toggleSuction(); return; } if (k === "g") { toggleBrush(); return; }
-    if (k === "1") return setSpeed(25); if (k === "2") return setSpeed(50); if (k === "3") return setSpeed(100); keys.add(k); });
+    if (k === "1") return setSpeed(25); if (k === "2") return setSpeed(50); if (k === "3") return setSpeed(100);
+    if (k === "q") return zoomBy(-0.5); if (k === "e") return zoomBy(0.5); keys.add(k); });
   window.addEventListener("keyup", (e) => { keys.delete(e.key.toLowerCase()); pump(); });
-  window.addEventListener("blur", () => { keys.clear(); endJoy(); });
+  window.addEventListener("blur", () => { keys.clear(); endJoy(); padHeld.clear(); document.querySelectorAll("#pad .hold").forEach((x) => x.classList.remove("hold")); });
   const keyVec = () => { let x = 0, y = 0; if (keys.has("w") || keys.has("arrowup")) y++; if (keys.has("s") || keys.has("arrowdown")) y--; if (keys.has("a") || keys.has("arrowleft")) x--; if (keys.has("d") || keys.has("arrowright")) x++; return [x, y]; };
   let padBtn = {};
   function padVec() { const gp = (navigator.getGamepads ? navigator.getGamepads() : [])[0]; if (!gp) return [0, 0];
     const p = (i) => gp.buttons[i] && gp.buttons[i].pressed; const edge = (i, fn) => { if (p(i) && !padBtn[i]) fn(); padBtn[i] = p(i); };
     edge(1, estop); edge(0, capture); edge(2, toggleSuction); const boost = gp.buttons[7] ? gp.buttons[7].value : 0;
     const dz = (v) => Math.abs(v) < cfg.deadzone ? 0 : v; return [dz(gp.axes[0] || 0) * (1 + boost * 0.5), -dz(gp.axes[1] || 0) * (1 + boost * 0.5)]; }
-  function inputVec() { if (joyActive) return [jx, jy]; const [kx, ky] = keyVec(); if (kx || ky) return [kx, ky]; return padVec(); }
+  let stepInput = false;                                 // true = อินพุตแบบปุ่ม (ทิศทาง/คีย์) → หมุนตามความเร็วที่ตั้ง · มุม = โค้งตาม curveTurn
+  function inputVec() { stepInput = false; if (joyActive) return [jx, jy]; const dp = dpadVec(); if (dp) { stepInput = true; return dp; }
+    const [kx, ky] = keyVec(); if (kx || ky) { stepInput = true; return [kx, ky]; } return padVec(); }
 
   // ── ส่งคำสั่ง 10 Hz · ramp ฝั่ง client ตาม cfg.rampMs ──
   let driving = false, curV = 0, curW = 0, lastT = performance.now();
@@ -232,7 +252,8 @@
     if (Math.hypot(x, y) < cfg.deadzone) x = y = 0;
     if (cfg.invY) y = -y; if (cfg.invX) x = -x;
     const tv = y * V_MAX * speedPct / 100;
-    const tw = -x * cfg.turnGain * (cfg.turnScale ? (1 - 0.5 * Math.abs(y)) : 1);
+    let tw = -x * cfg.turnGain * (cfg.turnScale ? (1 - 0.5 * Math.abs(y)) : 1);
+    if (stepInput) tw = -x * cfg.turnGain * (y ? cfg.curveTurn / 100 : speedPct / 100);   // ปุ่ม: หมุนอยู่กับที่เร็วตามสปีดที่เลือก · ปุ่มมุม = โค้งคงที่
     if (!x && !y) { curV = curW = 0; if (driving) { driving = false; send({ t: "release" }); } return; }
     if (!driving) { driving = true; if (cfg.autoSuction && !suction) toggleSuction(); }
     const step = cfg.rampMs ? Math.min(1, dt / cfg.rampMs) : 1;
@@ -275,6 +296,47 @@
   $("roi-save").onclick = async () => { const r = await fetch("/api/roi", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ crop: roiDraft }) }).then((x) => x.json());
     if (r.ok) { roi = r.crop; roiDraft = null; roiEditing = false; roiEl.classList.remove("edit"); vp.classList.remove("roi-editing"); $("roi-save").disabled = true; paintRoi(roi); toast("บันทึกกรอบแล้ว", "good"); } else toast(r.reason, "bad"); };
   $("roi-reset").onclick = () => { roiDraft = { x: 0, y: 0, w: 1, h: 1 }; paintRoi(roiDraft); $("roi-save").disabled = false; };
+
+  // ── C36 ซูม/แพน/ทิลต์/โฟกัสกล้อง — ค่าจริงอยู่ที่ Pi (sys.cam_ctl / cam_ctl) · ส่ง {t:"cam"} แบบ throttle ──
+  let camCtl = null, camSendT = 0, camPending = null;
+  function camSend(o) { camPending = { ...(camPending || {}), ...o }; const now = performance.now();
+    if (now - camSendT > 80) { camSendT = now; send({ t: "cam", ...camPending }); camPending = null; }
+    else setTimeout(() => { if (camPending) { camSendT = performance.now(); send({ t: "cam", ...camPending }); camPending = null; } }, 90); }
+  function paintCam(c) {
+    camCtl = c; const has = !!c; $("camctl-rows").classList.toggle("off", !has); $("zoom-col").classList.toggle("off", !has);
+    if (!has) { $("zoom-v").textContent = "—"; $("zoom-tag").hidden = true; $("camctl-note").textContent = "กล้องนี้คุมซูมไม่ได้ (ไม่มีกล้อง / ภาพนิ่ง)"; return; }
+    const z = +c.zoom; $("cc-zoom").max = c.zoom_max; $("cc-zoom").value = z; $("cc-zoom-o").textContent = `${z.toFixed(1)}×` + (c.sw_zoom ? " (ซอฟต์แวร์)" : z > 2 ? " · เกิน 2× กล้องขยายภาพ" : "");
+    $("zoom-v").textContent = `${z.toFixed(1)}×`; $("zoom-bar").style.height = `${(z - 1) / (c.zoom_max - 1) * 100}%`;
+    $("zoom-tag").hidden = z <= 1.01; $("zoom-tag").textContent = `${z.toFixed(1)}×`; vp.classList.toggle("zoomed", z > 1.01);
+    $("cc-af").checked = !!c.af; $("cc-af").disabled = !c.hw.af; $("cc-focus").disabled = c.af || !c.hw.focus; $("cc-focus").value = c.focus; $("cc-focus-o").textContent = (+c.focus).toFixed(2);
+    $("camctl-note").textContent = c.sw_zoom ? "กล้องไม่มีซูม UVC — ครอปภาพ 1080p แทน (เกิน 2× ตัวเลขจะแตก)" : "ซูม UVC ครอปจากเซนเซอร์ 4K: ≤ 2× คมเท่าเดิม · ถ่าง 2 นิ้วบนภาพ = ซูม · ลาก = เลื่อน · แตะ 2 ครั้ง = 1×";
+  }
+  function zoomTo(z) { if (!camCtl) return; z = Math.max(1, Math.min(camCtl.zoom_max, z)); camCtl.zoom = z; paintCam(camCtl); camSend({ zoom: +z.toFixed(2) }); }
+  function zoomBy(d) { zoomTo((camCtl ? +camCtl.zoom : 1) + d); }
+  $("cc-zoom").oninput = (e) => zoomTo(+e.target.value);
+  $("cc-af").onchange = (e) => camSend({ af: e.target.checked });
+  $("cc-focus").oninput = (e) => { $("cc-focus-o").textContent = (+e.target.value).toFixed(2); camSend({ focus: +e.target.value }); };
+  $("cc-reset").onclick = () => { camSend({ zoom: 1, pan: 0, tilt: 0 }); if (camCtl) { camCtl.zoom = 1; camCtl.pan = 0; camCtl.tilt = 0; paintCam(camCtl); } };
+  let zoomT = null;                                    // ปุ่ม +/− บนแผงกล้อง: แตะ = 0.2× · กดค้าง = ไต่ต่อเนื่อง
+  document.querySelectorAll("[data-zoom]").forEach((b) => { const dir = +b.dataset.zoom;
+    const stop = () => { clearInterval(zoomT); zoomT = null; b.classList.remove("hold"); };
+    b.addEventListener("pointerdown", (e) => { e.preventDefault(); try { b.setPointerCapture(e.pointerId); } catch (_) {} b.classList.add("hold"); zoomBy(dir * 0.2); clearInterval(zoomT); zoomT = setInterval(() => zoomBy(dir * 0.2), 120); });
+    ["pointerup", "pointercancel", "lostpointercapture"].forEach((ev) => b.addEventListener(ev, stop)); });
+  // ท่าทางบนภาพสด: ถ่าง 2 นิ้ว = ซูม · ลาก 1 นิ้วขณะซูม = แพน/ทิลต์ · แตะ 2 ครั้ง = กลับ 1× (ไม่ทำงานตอนตั้งกรอบ ROI)
+  const pts = new Map(); let pinch0 = null, drag0 = null, lastTap = 0;
+  vp.addEventListener("pointerdown", (e) => { if (roiEditing || !camCtl) return; pts.set(e.pointerId, [e.clientX, e.clientY]); try { vp.setPointerCapture(e.pointerId); } catch (_) {}
+    if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch0 = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), z: +camCtl.zoom }; drag0 = null; }
+    else if (pts.size === 1) { const now = performance.now(); if (now - lastTap < 300) { $("cc-reset").onclick(); lastTap = 0; } else lastTap = now;
+      drag0 = camCtl.zoom > 1.01 ? { x: e.clientX, y: e.clientY, pan: +camCtl.pan, tilt: +camCtl.tilt } : null; } });
+  vp.addEventListener("pointermove", (e) => { if (!pts.has(e.pointerId)) return; pts.set(e.pointerId, [e.clientX, e.clientY]);
+    if (pts.size === 2 && pinch0) { const [a, b] = [...pts.values()]; zoomTo(pinch0.z * Math.hypot(a[0] - b[0], a[1] - b[1]) / pinch0.d); }
+    else if (pts.size === 1 && drag0) { const r = vp.getBoundingClientRect(); const z = +camCtl.zoom;
+      const pan = Math.max(-1, Math.min(1, drag0.pan - (e.clientX - drag0.x) / r.width * 2 / (z - 1 || 1) * (cfg.mirror ? -1 : 1)));
+      const tilt = Math.max(-1, Math.min(1, drag0.tilt + (e.clientY - drag0.y) / r.height * 2 / (z - 1 || 1)));
+      camCtl.pan = pan; camCtl.tilt = tilt; camSend({ pan: +pan.toFixed(3), tilt: +tilt.toFixed(3) }); } });
+  const endPt = (e) => { pts.delete(e.pointerId); if (pts.size < 2) pinch0 = null; if (!pts.size) drag0 = null; };
+  ["pointerup", "pointercancel"].forEach((ev) => vp.addEventListener(ev, endPt));
+  fetch("/api/cam").then((r) => r.json()).then(paintCam).catch(() => paintCam(null));
 
   // ── กันจอดับ ──
   let wl = null;

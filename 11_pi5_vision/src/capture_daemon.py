@@ -20,6 +20,8 @@ capture_daemon.py — ขั้น C ของแกนหลัก: ฟัง U
 ทดสอบบนโน้ตบุ๊กโดยไม่มี Pi/กล้อง/cv2: tests/test_capture_daemon.py (pty ปลอม + backend ปลอม)
 """
 import argparse
+import re
+import subprocess
 import sys
 import threading
 import time
@@ -44,9 +46,35 @@ def log(msg):
 #                     preview_jpeg() -> bytes หรือ None  (เฟรมย่อสำหรับ /stream.mjpg ของ mrc_web.py)
 # ─────────────────────────────────────────────────────────────
 
+# ── C36 คุมกล้องผ่าน UVC (v4l2-ctl) — ซูม/แพน/ทิลต์/โฟกัส ──
+# BRIO: zoom_absolute 100–500 (= 1–5×, ครอปจากเซนเซอร์ 4K → ที่เอาต์พุต 1080p ซูม ≤ 2× ไม่เสียรายละเอียด) · pan/tilt_absolute ±36000 step 3600
+# (ขยับกรอบที่ครอปตอนซูม — ไม่ใช่กลไก) · focus_absolute 0–255 step 5 (ใช้ได้เมื่อปิด AF) · ชื่อ/ช่วงอ่านจาก --list-ctrls จริงตอนเปิดกล้อง ไม่ hardcode
+UVC_NAMES = {"zoom": ("zoom_absolute",), "pan": ("pan_absolute",), "tilt": ("tilt_absolute",),
+             "af": ("focus_automatic_continuous", "focus_auto"), "focus": ("focus_absolute",)}
+
+def uvc_list_ctrls(dev):
+    """{ชื่อ: {min,max,step,default,value}} จาก `v4l2-ctl -d dev --list-ctrls` · ไม่มี v4l2-ctl/ไม่ใช่ UVC → {}"""
+    try:
+        out = subprocess.run(["v4l2-ctl", "-d", str(dev), "--list-ctrls"], capture_output=True, text=True, timeout=3).stdout
+    except Exception:                                # noqa: BLE001
+        return {}
+    ctrls = {}
+    for line in out.splitlines():
+        m = re.match(r"\s*(\w+)\s+0x[0-9a-f]+\s+\((\w+)\)\s*:(.*)", line)
+        if not m:
+            continue
+        name, kind, rest = m.groups()
+        kv = {k: int(v) for k, v in re.findall(r"(\w+)=(-?\d+)", rest)}
+        if kind == "bool":
+            kv.setdefault("min", 0); kv.setdefault("max", 1); kv.setdefault("step", 1)
+        ctrls[name] = kv
+    return ctrls
+
+
 class UsbCameraBackend:
     """BRIO ผ่าน OpenCV/V4L2 · MJPG 1080p เปิดค้างใน thread · เก็บเฟรม BGR ล่าสุด 1 เฟรม
-    ตัวเลข: cap.read() ≈ 61 ms · imwrite 14 ms · resize 6 ms [วัดจริง 11 ก.ย. — ไฟล์ 19 §19.4.1]"""
+    ตัวเลข: cap.read() ≈ 61 ms · imwrite 14 ms · resize 6 ms [วัดจริง 11 ก.ย. — ไฟล์ 19 §19.4.1]
+    C36: ซูม/แพน/ทิลต์/โฟกัสผ่าน UVC ถ้ากล้องมี (BRIO) · ไม่มีก็ซูมแบบซอฟต์แวร์ (ครอปเฟรม 1080p — ใช้กับภาพสด/ถ่าย/OCR เหมือนกันหมด)"""
 
     def __init__(self, index=0, size=(1920, 1080), engine="sevenseg",
                  run_id=None, meter_type="water"):
@@ -66,6 +94,16 @@ class UsbCameraBackend:
         self._cap = cap
         self._frame, self._frame_ts = None, 0.0
         self._lock = threading.Lock()
+        self.dev = f"/dev/video{index}" if isinstance(index, int) else str(index)
+        self.uvc = uvc_list_ctrls(self.dev)                        # {} = ไม่มี v4l2-ctl หรือกล้องไม่เปิดเผย control
+        self.ctl = {"zoom": 1.0, "pan": 0.0, "tilt": 0.0, "af": True, "focus": 0.5}   # ค่าที่ผู้ใช้ตั้ง (normalized)
+        self.hw = {k: next((n for n in names if n in self.uvc), None) for k, names in UVC_NAMES.items()}
+        if self.hw["zoom"]:
+            z = self.uvc[self.hw["zoom"]]; self.zoom_max = z["max"] / max(1, z["min"])   # BRIO 500/100 = 5×
+        else:
+            self.zoom_max = 4.0                                    # ซอฟต์แวร์: 1080p/4 = 480×270 — เกินนี้ภาพแตกจนอ่านไม่ได้
+        log(f"กล้อง control: " + (", ".join(f"{k}={v}" for k, v in self.hw.items() if v) or "ไม่มี UVC — ซูมซอฟต์แวร์") + f" · ซูมสูงสุด {self.zoom_max:g}×")
+        self.set_control(zoom=1.0, pan=0.0, tilt=0.0, af=True)     # เริ่มที่ค่าเป็นกลางเสมอ (กล้องจำค่าเก่าข้ามการรีบูตได้)
         self._stop = threading.Event()
         self._th = threading.Thread(target=self._reader, name="cam-reader", daemon=True)
         self._th.start()
@@ -84,7 +122,50 @@ class UsbCameraBackend:
             frame, ts = self._frame, self._frame_ts
         if frame is None or time.monotonic() - ts > max_age_s:
             return None                              # กล้องหลุด/ค้าง → รายงานล้ม ไม่ส่งภาพเก่า
+        if not self.hw["zoom"] and self.ctl["zoom"] > 1.001:       # ซูมซอฟต์แวร์: ครอปให้ทุกทาง (สด/ถ่าย/OCR) เห็นภาพเดียวกัน
+            h, w = frame.shape[:2]; z = self.ctl["zoom"]
+            cw, ch = int(w / z), int(h / z)
+            cx = int((w - cw) / 2 * (1 + self.ctl["pan"])); cy = int((h - ch) / 2 * (1 - self.ctl["tilt"]))
+            frame = frame[cy:cy + ch, cx:cx + cw]
         return frame
+
+    # ── C36 ซูม/แพน/ทิลต์/โฟกัส ──
+    def controls(self):
+        """สิ่งที่หน้าเว็บต้องรู้: ทำอะไรได้บ้าง + ค่าปัจจุบัน (normalized: zoom 1..zoom_max · pan/tilt −1..1 · focus 0..1)"""
+        return {"zoom_max": self.zoom_max, "hw": {k: bool(v) for k, v in self.hw.items()},
+                "sw_zoom": not self.hw["zoom"], **self.ctl}
+
+    def _uvc_set(self, key, raw):
+        name = self.hw.get(key)
+        if not name: return False
+        try:
+            subprocess.run(["v4l2-ctl", "-d", self.dev, f"--set-ctrl={name}={int(raw)}"], capture_output=True, timeout=2)
+            return True
+        except Exception:                            # noqa: BLE001
+            return False
+
+    def set_control(self, **kw):
+        """ตั้งค่าที่ให้มา (zoom/pan/tilt/af/focus) · clamp เอง · คืน controls() หลังตั้ง"""
+        if "zoom" in kw:
+            self.ctl["zoom"] = max(1.0, min(self.zoom_max, float(kw["zoom"])))
+            if self.hw["zoom"]:
+                z = self.uvc[self.hw["zoom"]]; self._uvc_set("zoom", round(z["min"] * self.ctl["zoom"]))
+        for k in ("pan", "tilt"):
+            if k in kw:
+                self.ctl[k] = max(-1.0, min(1.0, float(kw[k])))
+                if self.hw[k]:
+                    c = self.uvc[self.hw[k]]; step = max(1, c.get("step", 1))
+                    raw = round(self.ctl[k] * c["max"] / step) * step                 # BRIO step 3600 — ต้องลงตัว ไม่งั้นกล้องปฏิเสธ
+                    self._uvc_set(k, raw)
+        if "af" in kw:
+            self.ctl["af"] = bool(kw["af"])
+            self._uvc_set("af", 1 if self.ctl["af"] else 0)
+        if "focus" in kw:
+            self.ctl["focus"] = max(0.0, min(1.0, float(kw["focus"])))
+        if ("focus" in kw or ("af" in kw and not self.ctl["af"])) and self.hw["focus"] and not self.ctl["af"]:
+            c = self.uvc[self.hw["focus"]]; step = max(1, c.get("step", 1))
+            self._uvc_set("focus", round((c["min"] + self.ctl["focus"] * (c["max"] - c["min"])) / step) * step)
+        return self.controls()
 
     def save(self, frame):
         return self.MR.save_image(frame)             # ต้นฉบับ 1080p q92 ลง data/images/
