@@ -16,22 +16,9 @@
 #error "ต้องใช้ Arduino-ESP32 core 3.x (ESP-IDF v5) — platform espressif32 ตัวทางการของ PlatformIO ยังให้ core 2.0.x (ESP-IDF 4.4) ซึ่งไม่มี driver/pulse_cnt.h ดู 03_ผลการทดสอบ/M1_มอเตอร์และเอ็นโคดเดอร์.md หัวข้อ 'ก่อนกด Build'"
 #endif
 
-// ── ขา GPIO — ตรงกับ system_architecture.md §3.2 ทุกขา ────────
-// L298N ต่อโดย "เสียบจัมเปอร์ ENA/ENB ค้างไว้" แล้ว PWM ที่ IN1/IN2
-// → ใช้ 4 ขาเท่าเดิม ไม่กินขาเกินงบ 25 ขา และย้ายไป DRV8871 ได้โดยไม่แก้ pin
-constexpr int PIN_MOT_L_IN1 = 4;   // LEDC ch0
-constexpr int PIN_MOT_L_IN2 = 5;   // LEDC ch1
-constexpr int PIN_MOT_R_IN1 = 6;   // LEDC ch2
-constexpr int PIN_MOT_R_IN2 = 7;   // LEDC ch3
-
-constexpr int PIN_ENC_L_A = 11;    // PCNT unit 0
-constexpr int PIN_ENC_L_B = 12;
-constexpr int PIN_ENC_R_A = 13;    // PCNT unit 1
-constexpr int PIN_ENC_R_B = 14;
-
-// GPIO 48 บน devkitc-1 เป็น LED แบบ WS2812 (สายข้อมูลเส้นเดียว) ไม่ใช่ LED ธรรมดา
-// digitalWrite() ไม่ทำให้มันติด ต้องส่งเป็นสตรีมข้อมูลสี → ชุดทดสอบนี้ไม่ใช้
-// constexpr int PIN_STATUS_LED = 48;
+// ── ขา GPIO → ย้ายไปรวมที่ src/pins.h (21 ก.ย. 2026) — PIN_MOT_*/PIN_ENC_* มาจากที่นั่น ─
+// L298N ต่อโดย "เสียบจัมเปอร์ ENA/ENB ค้างไว้" แล้ว PWM ที่ IN1/IN2 → ใช้ 4 ขาเท่าเดิม ย้ายไป DRV8871 ได้โดยไม่แก้ pin
+#include "../pins.h"
 
 // ── PWM ───────────────────────────────────────────────────────
 // 20 kHz คือค่าที่ล็อกไว้สำหรับ DRV8871 (§3.5 timer T0, 11-bit)

@@ -21,9 +21,9 @@
 #error "ต้องใช้ Arduino-ESP32 core 3.x (ESP-IDF v5) — ดู platformio.ini"
 #endif
 
-// ── ขา — ตรงกับ system_architecture.md §3.2 ─────────────────
-// กลไกใหม่ (ไฟล์ 12 รอบแก้ที่ 2) ใช้เซอร์โว 1 ตัว → ทดสอบที่ SERVO_A
-constexpr int PIN_SERVO = 17;
+// ── ขา → src/pins.h · กลไกใหม่ (ไฟล์ 12 รอบแก้ที่ 2) ใช้เซอร์โว 1 ตัวที่ SERVO_A ─
+#include "../pins.h"
+constexpr int PIN_SERVO = PIN_SERVO_MAST;   // ชื่อเดิมในไฟล์นี้
 
 // ── PWM ──────────────────────────────────────────────────────
 constexpr uint32_t SERVO_FREQ_HZ = 50;

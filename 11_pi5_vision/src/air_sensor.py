@@ -14,8 +14,10 @@
 import threading
 import time
 
-ENS_ADDRS = (0x53, 0x52)
-AHT_ADDR = 0x38
+import mrc_config as CFG          # บัส/แอดเดรส อยู่ที่เดียว
+
+ENS_ADDRS = CFG.ENS160_ADDRS
+AHT_ADDR = CFG.AHT21_ADDR
 ECO2_RATING = ((600, "excellent"), (800, "good"), (1000, "fair"), (1500, "poor"))   # ENS160 Table 5
 
 
@@ -27,7 +29,7 @@ def eco2_rating(ppm):
 
 
 class AirSensor:
-    def __init__(self, bus_no=1, period_s=2.0):
+    def __init__(self, bus_no=CFG.I2C_BUS, period_s=2.0):
         self.bus_no, self.period_s = bus_no, period_s
         self.available = False
         self.ens_addr = None

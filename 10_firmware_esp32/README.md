@@ -2,7 +2,7 @@
 
 > ## ⚠️ โค้ดจริงยังอยู่ที่ **รากของ repo** ไม่ใช่ในโฟลเดอร์นี้
 > commit แรกบน GitHub (`d54a05c` — ESP32-S3 Wi-Fi connection test) วางโปรเจกต์ PlatformIO
-> ไว้ที่รากแล้ว: `platformio.ini`, `src/main.cpp`, `src/secrets.h.example`
+> ไว้ที่รากแล้ว: `platformio.ini`, `src/` (ขาทุกขาอยู่ที่ **`src/pins.h`** ไฟล์เดียว — 21 ก.ย. 2026)
 >
 > **ยังไม่ตัดสินใจว่าจะย้ายเข้ามาในโฟลเดอร์นี้หรือไม่** — ถ้าย้าย เครื่อง Windows ต้องเปิด
 > VSCode/PlatformIO ที่โฟลเดอร์ `10_firmware_esp32/` แทนรากโปรเจกต์ (PlatformIO ต้องการ
@@ -12,7 +12,7 @@
 
 | env | โค้ด | ใช้ทำอะไร |
 |---|---|---|
-| `wifi_test` | `src/main.cpp` | ทดสอบต่อ Wi-Fi (commit เดิม) |
+| ~~`wifi_test`~~ | `archive/firmware_wifi_test/` | ถอดออก 21 ก.ย. 2026 — เฟิร์มแวร์จริงไม่ใช้ Wi-Fi |
 | `motor_encoder_test` | `src/motor_encoder_test/` | **ชุดทดสอบ M1 มอเตอร์ + เอ็นโคดเดอร์** (ไดรเวอร์ L298N ชั่วคราว) |
 | `servo_test` | `src/servo_test/` | **ชุดทดสอบ M2 เซอร์โวเสายก** — วัดช่วงหมุนจริงเพื่อปิด C8 |
 | `blower_test` | `src/blower_test/` | **ชุดทดสอบ M3 ระบบดูด** — blower + มอเตอร์แปรง |
@@ -53,10 +53,8 @@ pio run -e robot -t upload -t monitor                # รวมทุกระ�
 
 ## ตั้งค่าก่อนคอมไพล์ครั้งแรก
 
-```bash
-cp src/secrets.h.example src/secrets.h   # แล้วใส่ SSID/รหัสผ่านจริง
-```
-`src/secrets.h` อยู่ใน `.gitignore` แล้ว — **ห้าม commit**
+ไม่ต้องตั้งอะไร — เฟิร์มแวร์ `robot` ไม่ใช้ Wi-Fi จึงไม่มี `secrets.h` แล้ว (ของเดิมอยู่ `archive/firmware_wifi_test/`)
+**จะย้ายขาอะไร แก้ที่ `src/pins.h` ที่เดียว** แล้วแก้ตาราง §3.2 ให้ตรงกัน
 
 ## ข้อมูลที่ยืนยันแล้วจาก `01_เอกสารโครงการ/system_architecture.md` (rev.6/rev.7)
 

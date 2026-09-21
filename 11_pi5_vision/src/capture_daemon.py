@@ -31,6 +31,7 @@ import serial
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import mrc_protocol as P  # noqa: E402
+import mrc_config as CFG  # noqa: E402
 
 CAPTURE_TIMEOUT_S = 5.0        # หน้าต่างของ state CAMERA_CAPTURE (system_architecture §6.1)
 
@@ -76,7 +77,7 @@ class UsbCameraBackend:
     ตัวเลข: cap.read() ≈ 61 ms · imwrite 14 ms · resize 6 ms [วัดจริง 11 ก.ย. — ไฟล์ 19 §19.4.1]
     C36: ซูม/แพน/ทิลต์/โฟกัสผ่าน UVC ถ้ากล้องมี (BRIO) · ไม่มีก็ซูมแบบซอฟต์แวร์ (ครอปเฟรม 1080p — ใช้กับภาพสด/ถ่าย/OCR เหมือนกันหมด)"""
 
-    def __init__(self, index=0, size=(1920, 1080), engine="sevenseg",
+    def __init__(self, index=CFG.CAMERA_INDEX, size=CFG.CAMERA_SIZE, engine="sevenseg",
                  run_id=None, meter_type="water"):
         import cv2                                   # นำเข้าตรงนี้ให้ import โมดูลได้บนเครื่องที่ไม่มี cv2
         import meter_reader as MR
@@ -449,9 +450,9 @@ def selftest(backend, rounds=3):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--port", default="/dev/ttyAMA0")
-    ap.add_argument("--baud", type=int, default=115200)
-    ap.add_argument("--camera", type=int, default=0, help="index ของกล้อง USB")
+    ap.add_argument("--port", default=CFG.SERIAL_PORT)
+    ap.add_argument("--baud", type=int, default=CFG.SERIAL_BAUD)
+    ap.add_argument("--camera", type=int, default=CFG.CAMERA_INDEX, help="index ของกล้อง USB")
     ap.add_argument("--image", help="ใช้รูปนี้แทนกล้อง (ทดสอบลิงก์)")
     ap.add_argument("--engine", choices=["sevenseg", "tesseract", "ssocr"], default="sevenseg")
     ap.add_argument("--meter-type", default="water")

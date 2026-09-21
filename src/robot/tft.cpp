@@ -2,11 +2,12 @@
 #define LGFX_USE_V1
 #include <LovyanGFX.hpp>
 #include "tft.h"
+#include "../pins.h"
 
 bool manualActive(); bool manualTripped(); bool missionRunning(); bool commLinkAlive(); bool robotEstopped();
 
 namespace {
-constexpr int PIN_SCK = 38, PIN_MOSI = 39, PIN_DC = 40, PIN_CS = 47;   // §3.2
+constexpr int PIN_SCK = PIN_TFT_SCK, PIN_MOSI = PIN_TFT_MOSI, PIN_DC = PIN_TFT_DC, PIN_CS = PIN_TFT_CS;   // ../pins.h
 
 class LGFX : public lgfx::LGFX_Device {
   lgfx::Panel_GC9A01 panel_;

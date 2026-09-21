@@ -14,12 +14,11 @@
 #error "ต้องใช้ Arduino-ESP32 core 3.x (ESP-IDF v5) — ดู platformio.ini"
 #endif
 
-// ── ขา GPIO — ตรงกับ system_architecture.md §3.2 ────────────
-// §3.2 ระบุชัดว่าขานี้เป็น "GPIO ธรรมดา ไม่ผูก LEDC"
+// ── ขา GPIO → src/pins.h (PIN_SUCTION_EN 21 · PIN_BRUSH_PWM 16) ──────────────
 // วงจรที่ขา: R 100 Ω อนุกรมเข้าเกต + pull-down 10 kΩ ลงกราวด์ + ไดโอด SS34 คร่อมโหลด
 // ⚠ ตัวที่กัน blower ออกตัวตอนบูตจริงๆ คือ pull-down 10 kΩ ไม่ใช่โค้ด —
 //   ช่วง ~300 ms ของ bootloader ก่อนถึง setup() ขายังลอยอยู่
-constexpr int PIN_SUCTION_EN = 21;
+#include "../pins.h"
 
 // ── สเปกของ blower ที่ใช้จริง ────────────────────────────────
 // AVC BA10033B12U · 12 V · 2.4 A (28.8 W) · centrifugal 97 mm  [สเปก]
@@ -68,8 +67,7 @@ constexpr float BRUSH_RAIL_V   = 5.0f;    // แรงดันรางที�
 constexpr float BRUSH_V_MAX    = 6.0f;    // พิกัดแรงดันสูงสุดของมอเตอร์ใหม่ (6 V 200 rpm · 19 ก.ย.) — ราง 5 V ต่ำกว่านี้อยู่แล้ว
 constexpr float BRUSH_V_MIN    = 0.0f;    // มอเตอร์ใหม่: แรงดันออกตัวยังไม่วัด → ไม่ตั้งขั้นต่ำ ให้ผู้ใช้เลือกเอง
 
-constexpr int PIN_BRUSH_PWM = 16;          // §3.2 · LEDC ch5 T1
-constexpr uint32_t BRUSH_FREQ_HZ = 20000;  // §3.5 T1 · div = 1,000 ตั้งได้จริง
+constexpr uint32_t BRUSH_FREQ_HZ = 20000;  // PIN_BRUSH_PWM (16) อยู่ใน pins.h · LEDC ch5 T1  // §3.5 T1 · div = 1,000 ตั้งได้จริง
 constexpr uint8_t  BRUSH_RES_BITS = 10;    // §3.5 T1
 constexpr int      BRUSH_MAX = (1 << BRUSH_RES_BITS) - 1;   // 1023
 

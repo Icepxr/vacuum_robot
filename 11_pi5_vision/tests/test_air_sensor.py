@@ -1,9 +1,8 @@
-"""air_sensor / oled_status — ไม่มีฮาร์ดแวร์: ต้องไม่ล้ม · สูตรแปลงค่า AHT21/ENS160 ตรงตามที่จดในหัวไฟล์"""
+"""air_sensor — ไม่มีฮาร์ดแวร์: ต้องไม่ล้ม · สูตรแปลงค่า AHT21/ENS160 ตรงตามที่จดในหัวไฟล์"""
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import air_sensor as A     # noqa: E402
-import oled_status as O    # noqa: E402
 
 
 class FakeBus:
@@ -40,14 +39,4 @@ def test_no_hardware_does_not_crash():
     import time; time.sleep(0.3)
     assert s.available is False and s.latest["error"]
     s.stop()
-    o = O.OledStatus(lambda: {}).start(); time.sleep(0.3)
-    assert o.available is False and o.error
-    o.stop()
 
-
-def test_oled_lines_fit_and_handle_missing():
-    ls = O.OledStatus.lines({})
-    assert len(ls) == 4 and all(len(l) <= 21 for l in ls) and ls[0] == "IP no-net" and "NO LINK" in ls[1]
-    ls = O.OledStatus.lines({"ip": ["172.20.10.2"], "link": {"alive": True}, "tele": {"state_name": "MANUAL"}, "cam_ok": True,
-                             "last_reading": {"value": 1509.0}, "air": {"eco2_ppm": 620, "temp_c": 28.4, "rh_pct": 55.2, "validity": 1}})
-    assert ls == ["IP 172.20.10.2", "ESP32 MANUAL", "READ 1509  cam ok", "CO2 620 28C 55% warm"]

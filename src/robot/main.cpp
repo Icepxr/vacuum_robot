@@ -19,6 +19,7 @@
 #include "mission.h"   // ภารกิจ 1 รอบแบบ script — ขั้น D: mis …
 #include "manual.h"    // โหมดขับเองจาก Pi — ขั้น E: $V/$S/$E/$C
 #include "wdt.h"       // Task WDT 1 s (C29) — loop() ค้าง → รีบูต → ล้อ coast
+#include "../pins.h"   // ขาทุกขาอยู่ที่เดียว
 #include "servo_x.h"   // เซอร์โวตัวที่ 2 แกน X ของกล้อง (GPIO18 · C30)
 #include "tft.h"       // จอกลม GC9A01 (C32)
 
@@ -39,9 +40,9 @@ void servoStop(const char*);  void servoHelp();  bool servoAttachedNow();
 //   PIN_SUCTION_EN = blower_test/config.h  ·  PIN_BRUSH_PWM = blower_test/config.h
 //   PIN_SERVO      = servo_test/main.cpp
 // ⚠ ถ้าแก้ขาในไฟล์พวกนั้น ต้องแก้ที่นี่ด้วย
-constexpr int GATE_SUCTION = 21;
-constexpr int GATE_BRUSH   = 16;
-constexpr int GATE_SERVO   = 17;
+constexpr int GATE_SUCTION = PIN_SUCTION_EN;    // ../pins.h — ดึงเกตลง LOW ให้เร็วที่สุดตอนบูต
+constexpr int GATE_BRUSH   = PIN_BRUSH_PWM;
+constexpr int GATE_SERVO   = PIN_SERVO_MAST;
 
 // ── ค่าเวลาของ interlock (ไฟล์ 18 §18.3 — ทั้งคู่เป็น [ประมาณการ]) ──
 constexpr uint32_t SETTLE_MS        = 300;   // เว้นระหว่างแปรง ↔ เซอร์โว (ราง 5 V)

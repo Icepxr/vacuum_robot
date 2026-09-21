@@ -31,8 +31,8 @@ from fastapi.staticfiles import StaticFiles
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import capture_daemon as D          # noqa: E402
+import mrc_config as CFG            # noqa: E402 — พอร์ต/กล้อง/บัส อยู่ที่เดียว
 import air_sensor as AIR            # noqa: E402
-import oled_status as OLED          # noqa: E402
 import mrc_protocol as P            # noqa: E402
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -76,7 +76,6 @@ class Hub:
         self.cam_fallback = False                # True = เปิดกล้องไม่ได้ ใช้ภาพนิ่งแทน → cam_ok False ให้หน้าเว็บบอกตรงๆ
         self.cam_args = None                     # args ของกล้อง (index/engine/run_id) ให้ camera_hotplug ลองเปิดใหม่
         self.air = None                          # AirSensor (ENS160/AHT21 บน I2C ของ Pi) — None ถ้าปิดด้วย --no-air
-        self.oled = None                         # OledStatus — None ถ้า --no-oled
         self.limits = {"v_max": V_MAX_MM_S, "w_max": W_MAX_MRAD_S, "v_hw_max": V_HW_MAX_MM_S, "w_hw_max": W_HW_MAX_MRAD_S}
         # C35 จอบนหุ่นเป็นแบบ "โชว์เมื่อมีเหตุ": Pi ถือเหตุการณ์ล่าสุดไว้จนหมดเวลา แล้วใส่ไปกับ $D ทุกเฟรม (จอไม่มี timer เอง — เฟรมหายก็หายแค่ 1 s)
         self.disp_evt = None                     # (code, arg, until_mono) · None = ไม่มีเหตุการณ์ค้าง
@@ -220,7 +219,6 @@ class Hub:
                 "limits": self.limits,
                 "ip": pi_ips(),
                 "air": (dict(self.air.latest, available=self.air.available) if self.air else None),
-                "oled": ({"available": self.oled.available, "error": self.oled.error} if self.oled else None),
                 "clients": len(self.clients)}
 
 
@@ -523,19 +521,17 @@ def open_camera_or_fallback(args):
 def main():
     import uvicorn
     ap = argparse.ArgumentParser()
-    ap.add_argument("--host", default="0.0.0.0")
-    ap.add_argument("--port", type=int, default=8000)
-    ap.add_argument("--serial", default="/dev/ttyAMA0")
+    ap.add_argument("--host", default=CFG.WEB_HOST)
+    ap.add_argument("--port", type=int, default=CFG.WEB_PORT)
+    ap.add_argument("--serial", default=CFG.SERIAL_PORT)
     ap.add_argument("--no-serial", action="store_true", help="ไม่มี ESP32 — ภาพสด/ถ่ายจากเว็บอย่างเดียว")
-    ap.add_argument("--camera", type=int, default=0)
+    ap.add_argument("--camera", type=int, default=CFG.CAMERA_INDEX)
     ap.add_argument("--image", help="ใช้รูปนี้แทนกล้อง")
     ap.add_argument("--engine", choices=["sevenseg", "tesseract", "ssocr"], default="sevenseg")   # C30: 7-seg ก่อน (18 ก.ย.)
     ap.add_argument("--run-id", default=time.strftime("run_%Y%m%d_%H%M%S"))
     ap.add_argument("--no-air", action="store_true", help="ไม่อ่าน ENS160/AHT21")
-    ap.add_argument("--oled", action="store_true", help="ขับจอ OLED I2C บน Pi (ไม่ใช้กับ GC9A01 ที่อยู่บน ESP32)")
     args = ap.parse_args()
     if not args.no_air:  hub.air = AIR.AirSensor().start()                 # ไม่มีเซนเซอร์ก็รันต่อ (available False)
-    if args.oled: hub.oled = OLED.OledStatus(hub.status).start()
 
     backend = D.StillImageBackend(args.image) if args.image else open_camera_or_fallback(args)
     if args.no_serial:

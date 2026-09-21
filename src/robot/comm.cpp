@@ -10,6 +10,7 @@
 //   test vector ต้องตรงกับ 11_pi5_vision/src/mrc_protocol.py:
 //   crc8("123456789") = 0xF4 (ค่า check มาตรฐาน) · crc8("E,1000,CAPTURE_REQ,1") = 0xE0
 #include "comm.h"
+#include "../pins.h"
 #include "comm_codec.h"   // crc8 / checkFrame — ทดสอบบน host ได้
 #include "manual.h"
 #include "servo_x.h"
@@ -20,8 +21,7 @@ bool blowerOnNow(); bool brushOnNow(); uint32_t brushOnSinceMsNow(); bool missio
 
 namespace {
 
-constexpr int      PIN_U0_RX = 44;         // §3.2 — Pi GPIO14 TXD → ESP32 GPIO44
-constexpr int      PIN_U0_TX = 43;         // §3.2 — ESP32 GPIO43 → Pi GPIO15 RXD
+// PIN_U0_RX 44 / PIN_U0_TX 43 มาจาก ../pins.h (§3.2 · ไขว้กับ Pi GPIO14/15)
 constexpr uint32_t BAUD      = 115200;     // §3.7 · ไฟล์ 09 §9.5
 constexpr uint32_t CAPTURE_TIMEOUT_MS = 5000;   // state CAMERA_CAPTURE §6.1
 constexpr size_t   RX_LINE_MAX  = 128;        // #T เต็มฟิลด์ ~90 ตัวอักษร (ไฟล์ 09 §9.5) · $D 13 ฟิลด์ (C35) สูงสุด ~90 — กันบรรทัดหลุดยาว

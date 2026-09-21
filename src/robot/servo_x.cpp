@@ -1,8 +1,9 @@
 // servo_x.cpp — ดู servo_x.h
 #include "servo_x.h"
+#include "../pins.h"
 
 namespace {
-constexpr int      PIN_SERVO_X   = 18;      // §3.2 SERVO_B · ไม่ใช่ strapping pin ของ S3 (0/3/45/46) · ไม่ชน USB 19/20
+// PIN_SERVO_X (18 · SERVO_B) มาจาก ../pins.h
 constexpr uint32_t FREQ_HZ       = 50;
 constexpr uint8_t  RES_BITS      = 14;      // ไฟล์ 17: 16 บิตตั้งไม่ได้บน S3
 constexpr int      DUTY_MAX      = (1 << RES_BITS) - 1;
