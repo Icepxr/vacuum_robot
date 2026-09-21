@@ -43,6 +43,10 @@ JSONL_PATH = DATA_DIR / "readings.jsonl"
 PREVIEW_FPS = 10                    # ไฟล์ 19 §19.1 — 10 fps ≈ 3 Mbps บน hotspot
 LINK_STALE_S = 1.0                  # #T มา 10 Hz — เงียบเกิน 1 s = ลิงก์มีปัญหา
 DRIVE_DEADMAN_S = 0.30              # ไฟล์ 19 §19.3 — browser เงียบเกินนี้ → ส่ง $S แล้วเลิกส่ง $V
+# C35 จอบนหุ่น: เหตุการณ์ค้างบนจอกี่วินาที (Pi ถือเวลา · จอโชว์ตามที่ $D บอก)
+DISPLAY_HOLD_S = {"CAP": 4.0, "SAVED": 4.0, "READ": 8.0, "NOREAD": 6.0, "CAPFAIL": 6.0, "DEADMAN": 3.0}
+CPU_HOT_C   = 80.0        # Pi 5 throttle ที่ 80 °C (ค่าจาก vcgencmd get_throttled ของ RPi — เตือนก่อนถึง)
+DISK_LOW_MB = 200         # ภาพ ~150 kB/รูป → 200 MB ≈ 1300 รูป ยังพอ 1 วันแต่ต้องรู้แล้ว
 DRIVE_REPEAT_S = 0.10               # ส่ง $V ซ้ำ 10 Hz ให้ G8 (300 ms) ผ่านด้วย margin 3×
 V_MAX_MM_S = 300                    # ค่าเริ่มต้นของเพดานที่ผู้ใช้ตั้งได้ (C28) · 19 ก.ย. C31: 150 = duty 21 % ขับเบา/หมุนไม่ไป → 300 (42 %) · ระยะหยุด ~185–285 mm (ไฟล์ 19 §19.8)
 W_MAX_MRAD_S = 3000                 # C31 19 ก.ย.: 1500 หมุนตัวไม่ไป (duty ~126 ‰ ต่ำกว่าแรงเสียดทานสถิต) → เพิ่ม + พื้น duty 200 ‰ ในเฟิร์มแวร์
@@ -74,6 +78,32 @@ class Hub:
         self.air = None                          # AirSensor (ENS160/AHT21 บน I2C ของ Pi) — None ถ้าปิดด้วย --no-air
         self.oled = None                         # OledStatus — None ถ้า --no-oled
         self.limits = {"v_max": V_MAX_MM_S, "w_max": W_MAX_MRAD_S, "v_hw_max": V_HW_MAX_MM_S, "w_hw_max": W_HW_MAX_MRAD_S}
+        # C35 จอบนหุ่นเป็นแบบ "โชว์เมื่อมีเหตุ": Pi ถือเหตุการณ์ล่าสุดไว้จนหมดเวลา แล้วใส่ไปกับ $D ทุกเฟรม (จอไม่มี timer เอง — เฟรมหายก็หายแค่ 1 s)
+        self.disp_evt = None                     # (code, arg, until_mono) · None = ไม่มีเหตุการณ์ค้าง
+
+    # ── C35 จอบนหุ่น ──
+    def display_event(self, code, arg=""):
+        """เหตุการณ์ชั่วคราวให้จอโชว์ (ถ่ายภาพ/ค่าอ่าน/deadman) แล้วส่ง $D ทันที ไม่รอ tick 1 s
+        เรียกได้จากทุก thread (daemon.send มี lock)"""
+        self.disp_evt = (code, str(arg), time.monotonic() + DISPLAY_HOLD_S.get(code, 4.0))
+        self.push_display()
+
+    def push_display(self):
+        if self.daemon is None: return
+        try: self.daemon.send_display(*display_payload())
+        except Exception: pass                   # noqa: BLE001 — จอไม่ใช่เส้นทางความปลอดภัย ห้ามล้ม web
+
+    def display_warn(self):
+        """ปัญหาฝั่ง Pi ที่ค้างอยู่ → รหัสเดียว (เรียงตามความร้ายแรง) · "" = ปกติ
+        NOIP/HOT ร้ายแรง (จอเต็ม) · NOCAM/DISK/NOAIR เตือนเป็นแถบบนหน้าอากาศ (ยังขับได้)"""
+        temp = cpu_temp_c()
+        if not pi_ips():                              return "NOIP"
+        if temp is not None and temp >= CPU_HOT_C:    return "HOT"
+        if self.cam_fallback:                         return "NOCAM"
+        du = shutil.disk_usage(DATA_DIR if DATA_DIR.exists() else Path("/"))
+        if du.free < DISK_LOW_MB * 2**20:             return "DISK"
+        if self.air is not None and not self.air.available: return "NOAIR"
+        return ""
 
     # ── ขับเอง ──
     def drive(self, v, w):
@@ -112,6 +142,7 @@ class Hub:
                 self.drive_last_mono = None
                 self.daemon.send_stop()
                 self.on_event({"t": "log", "level": "warn", "msg": "deadman ฝั่ง Pi: browser เงียบเกิน 300 ms → $S"})
+                self.display_event("DEADMAN")
                 continue
             self.daemon.send_velocity(self.drive_v, self.drive_w)
 
@@ -121,10 +152,13 @@ class Hub:
         self.events.append(ev)
         if ev.get("t") == "capture":
             self.last_capture = ev
+            self.display_event("SAVED" if ev.get("ok") else "CAPFAIL", "" if ev.get("ok") else ev.get("reason", ""))
         if ev.get("t") == "reading":
             self.last_reading = ev               # {"t":"reading","value":…,"confidence":…}
             if self.air and self.air.available:  # แนบอากาศ ณ เวลาถ่าย (ใช้กับข้อมูลหอพัก/ARIA ทีหลัง)
                 ev["air"] = {k: self.air.latest.get(k) for k in ("eco2_ppm", "tvoc_ppb", "aqi", "temp_c", "rh_pct", "validity")}
+            v = ev.get("value")
+            self.display_event("READ", f"{v:g}") if isinstance(v, (int, float)) else self.display_event("NOREAD")
         if ev.get("t") == "event" and ev.get("code") == "BOOT":
             # ESP32 เพิ่งบูต (เปิดเครื่อง / WDT / brownout) — ค่าเพดาน $L หายไปกับ RAM → ส่งซ้ำ · บอกคนขับถ้าไม่ใช่เปิดเครื่อง
             reason = ev.get("detail", "")
@@ -156,10 +190,7 @@ class Hub:
             link = {"port": d.ser.port, "baud": d.ser.baudrate, "stats": d.stats,
                     "age_s": age, "alive": age is not None and age < LINK_STALE_S}
         cam_ok = self.backend is not None and self.backend.latest() is not None and not self.cam_fallback
-        try:
-            temp = int(Path("/sys/class/thermal/thermal_zone0/temp").read_text()) / 1000
-        except Exception:                        # noqa: BLE001
-            temp = None
+        temp = cpu_temp_c()
         du = shutil.disk_usage(DATA_DIR if DATA_DIR.exists() else Path("/"))
         pending = 0
         if JSONL_PATH.exists():
@@ -230,6 +261,7 @@ def api_capture():
     """ถ่ายจากเว็บ — ไม่ผ่าน ESP32 · ผลจริงมาทาง WebSocket (capture แล้ว reading)"""
     if hub.daemon is None:
         return JSONResponse({"ok": False, "reason": "no daemon"}, status_code=503)
+    hub.display_event("CAP")
     ok = hub.daemon.capture_now()
     return JSONResponse({"ok": ok})
 
@@ -307,6 +339,7 @@ async def ws_endpoint(ws: WebSocket):
             t = cmd.get("t")
             d = hub.daemon
             if t == "capture" and d is not None:
+                hub.display_event("CAP")             # จอ: "กำลังถ่าย" ก่อน แล้ว SAVED/READ ตามมาจาก on_event
                 await asyncio.to_thread(d.capture_now)
             elif t == "status":
                 await ws.send_text(json.dumps(hub.status(), ensure_ascii=False))
@@ -341,13 +374,24 @@ async def ws_endpoint(ws: WebSocket):
         hub.clients.discard(ws)
 
 
+def cpu_temp_c():
+    try:    return int(Path("/sys/class/thermal/thermal_zone0/temp").read_text()) / 1000
+    except Exception: return None                # noqa: BLE001
+
+
 def display_payload():
-    """ข้อความสำหรับจอบน ESP32 ($D): IP · ค่ามิเตอร์ล่าสุด · eCO2"""
+    """ฟิลด์ $D ให้จอบน ESP32 (C32/C35): IP · ค่ามิเตอร์ล่าสุด · อากาศ · จำนวน browser · ปัญหาค้าง · เหตุการณ์ที่ยังไม่หมดเวลา
+    จอเลือกหน้าเองจากลำดับ: E-STOP > Pi เงียบ > เหตุการณ์ > ปัญหาร้ายแรง > ยังไม่มี browser (โชว์ IP) > หน้าอากาศ (+แถบเตือนย่อย)"""
     ips = pi_ips(); ip = ips[0] if ips else ""
     v = (hub.last_reading or {}).get("value")
     reading = f"{v:g}" if isinstance(v, (int, float)) else ""
     a = hub.air.latest if (hub.air and hub.air.available) else {}
-    return ip, reading, a.get("eco2_ppm"), a.get("tvoc_ppb"), a.get("aqi"), a.get("temp_c"), a.get("rh_pct")
+    evt, arg = "", ""
+    if hub.disp_evt is not None:
+        if time.monotonic() < hub.disp_evt[2]: evt, arg = hub.disp_evt[0], hub.disp_evt[1]
+        else: hub.disp_evt = None
+    return (ip, reading, a.get("eco2_ppm"), a.get("tvoc_ppb"), a.get("aqi"), a.get("temp_c"), a.get("rh_pct"),
+            len(hub.clients), hub.display_warn(), evt, arg)
 
 
 async def sys_ticker():
@@ -404,13 +448,21 @@ def start_daemon(port, backend, baud=115200):
     return d
 
 
+_ips_cache = (0.0, [])
+
 def pi_ips():
-    """IPv4 ของ Pi ทุก interface (ไว้โชว์บนหน้าเว็บ/log — IP เปลี่ยนบ่อยบน Wi-Fi อาคาร/hotspot มือถือ)"""
+    """IPv4 ของ Pi ทุก interface (ไว้โชว์บนหน้าเว็บ/log — IP เปลี่ยนบ่อยบน Wi-Fi อาคาร/hotspot มือถือ)
+    cache 3 s — display_event เรียกจาก thread ของ daemon ไม่ควรเสียเวลา spawn hostname ทุกครั้ง"""
+    global _ips_cache
+    now = time.monotonic()
+    if now - _ips_cache[0] < 3.0: return _ips_cache[1]
     try:
         out = subprocess.run(["hostname", "-I"], capture_output=True, text=True, timeout=2).stdout.split()
-        return [a for a in out if "." in a]
+        ips = [a for a in out if "." in a]
     except Exception:                        # noqa: BLE001
-        return []
+        ips = []
+    _ips_cache = (now, ips)
+    return ips
 
 
 def open_camera_or_fallback(args):

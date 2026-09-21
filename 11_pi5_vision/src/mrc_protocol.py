@@ -109,10 +109,15 @@ def cmd_stop(seq: int) -> bytes:                                   return encode
 def cmd_estop(seq: int) -> bytes:                                  return encode("$", "E", seq)
 def cmd_clean(seq: int, suction_pct: int, brush_pct: int) -> bytes: return encode("$", "C", seq, int(suction_pct), int(brush_pct))
 def cmd_ping(seq: int) -> bytes:                                   return encode("$", "P", seq)
-def cmd_display(seq: int, ip: str, reading: str, co2, tvoc=None, aqi=None, temp_c=None, rh=None) -> bytes:
-    """C32 ข้อความให้จอ GC9A01 บน ESP32 (สตริง — ห้ามมี , หรือ *) · อุณหภูมิ/ความชื้น ×10 เป็นจำนวนเต็ม"""
+def cmd_display(seq: int, ip: str, reading: str, co2, tvoc=None, aqi=None, temp_c=None, rh=None,
+                clients=None, warn: str = "", evt: str = "", arg: str = "") -> bytes:
+    """C32/C35 ข้อความให้จอ GC9A01 บน ESP32 (สตริง — ห้ามมี , หรือ *) · อุณหภูมิ/ความชื้น ×10 เป็นจำนวนเต็ม
+    C35: clients = จำนวน browser ที่ต่ออยู่ (0 → จอโชว์ IP ให้เปิด) · warn = ปัญหาฝั่ง Pi ที่ค้างอยู่ (NOIP/HOT/NOCAM/DISK/NOAIR · "" = ปกติ)
+    evt/arg = เหตุการณ์ชั่วคราวที่ Pi ถือไว้จนหมดเวลา (CAP/SAVED/READ <ค่า>/NOREAD/CAPFAIL <เหตุ>/DEADMAN) · จอไม่มี timer เอง"""
     z = lambda v, k=1: "" if v is None else int(round(v * k))          # noqa: E731
-    return encode("$", "D", seq, ip.replace(",", ""), str(reading).replace(",", ""), z(co2), z(tvoc), z(aqi), z(temp_c, 10), z(rh, 10))
+    clean = lambda t: str(t).replace(",", "").replace("*", "")[:15]    # noqa: E731
+    return encode("$", "D", seq, ip.replace(",", ""), str(reading).replace(",", ""), z(co2), z(tvoc), z(aqi), z(temp_c, 10), z(rh, 10),
+                  z(clients), clean(warn), clean(evt), clean(arg))
 def cmd_mast(seq: int, us: int) -> bytes:                           return encode("$", "M", seq, int(us))   # C30 เสา scissor ไม่บล็อก · 0 = ปล่อย
 def cmd_servo_x(seq: int, us: int) -> bytes:                        return encode("$", "X", seq, int(us))   # C30 เซอร์โวแกน X · 0 = ปล่อย
 def cmd_limits(seq: int, v_max_mm_s: int, w_max_mrad_s: int) -> bytes: return encode("$", "L", seq, int(v_max_mm_s), int(w_max_mrad_s))   # C28 เพดานที่ผู้ใช้ตั้ง

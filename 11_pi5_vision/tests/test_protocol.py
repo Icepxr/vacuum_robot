@@ -58,7 +58,9 @@ def test_cmd_limits_frame():
 
 
 def test_cmd_display_strings():
-    fr = P.decode(P.cmd_display(3, "172.20.10.2", "1509", 620, 23, 1, 29.04, 55.4))
-    assert fr.fields == ["D", "3", "172.20.10.2", "1509", "620", "23", "1", "290", "554"]
-    fr = P.decode(P.cmd_display(4, "", "", None))
-    assert fr.fields == ["D", "4", "", "", "", "", "", "", ""]
+    fr = P.decode(P.cmd_display(3, "172.20.10.2", "1509", 620, 23, 1, 29.04, 55.4, 1, "NOCAM", "READ", "1509"))
+    assert fr.fields == ["D", "3", "172.20.10.2", "1509", "620", "23", "1", "290", "554", "1", "NOCAM", "READ", "1509"]
+    fr = P.decode(P.cmd_display(4, "", "", None))                  # ฟิลด์ C35 ว่างได้ (จอตีความว่า "ไม่รู้")
+    assert fr.fields == ["D", "4", "", "", "", "", "", "", "", "", "", "", ""]
+    fr = P.decode(P.cmd_display(5, "", "", None, evt="CAPFAIL", arg="no,frame*x" + "y" * 20))   # arg ห้ามพังเฟรม: ตัด , * และยาวสุด 15
+    assert fr is not None and fr.fields[12] == "noframexyyyyyyy" and len(fr.fields[12]) == 15

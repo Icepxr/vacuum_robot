@@ -82,43 +82,76 @@ void drawAirPage(lgfx::LovyanGFX& g, bool fresh) {
   g.setFont(&fonts::Font2); g.setTextColor(C_MUT, C_BG); g.drawString("temp", 92, 212); g.drawString("humid", 150, 212);
 }
 
-// วงแหวนรอบนอก = สถานะรวม (เขียว/เหลือง/แดง) · กลาง = หน้าสลับ IP / ค่าอ่าน / CO2 · ล่าง = โหมด
+// ── หน้าข้อความ (C35) — อ่านจากระยะ ~1 m: หัวข้อเล็ก · คำหลัก 12 pt (หรือตัวเลข 24 pt) · คำอธิบาย 1–2 บรรทัด ──
+void drawMsg(lgfx::LovyanGFX& g, const char* top, const char* big, uint16_t bigC, const char* sub = nullptr,
+             const char* sub2 = nullptr, bool bigIsNumber = false) {
+  g.setTextDatum(textdatum_t::middle_center);
+  if (top) { g.setFont(&fonts::Font2); g.setTextColor(C_MUT, C_BG); g.drawString(top, 120, 76); }
+  if (bigIsNumber) g.setFont(strlen(big) > 7 ? &fonts::FreeSansBold18pt7b : &fonts::FreeSansBold24pt7b);   // 7 หลัก × 27 px = 189 px พอดีคอร์ดกลางจอ
+  else             g.setFont(&fonts::FreeSansBold12pt7b);
+  g.setTextColor(bigC, C_BG); g.drawString(big, 120, 112);
+  g.setFont(&fonts::Font2); g.setTextColor(C_INK, C_BG);
+  if (sub)  g.drawString(sub, 120, 146);
+  if (sub2) { g.setTextColor(C_MUT, C_BG); g.drawString(sub2, 120, 164); }
+}
+void drawMode(lgfx::LovyanGFX& g, bool estop) {
+  g.setTextDatum(textdatum_t::middle_center);
+  g.setFont(&fonts::FreeSansBold9pt7b); g.setTextColor(C_INK, C_BG);
+  g.drawString(estop ? "stopped" : missionRunning() ? "MISSION" : manualActive() ? "DRIVING" : "READY", 120, 192);
+}
+bool is(const char* a, const char* b) { return strcmp(a, b) == 0; }
+
+// C35 จอนิ่ง: หน้าปกติ = อากาศ · เปลี่ยนเฉพาะเมื่อมีเหตุ ตามลำดับความสำคัญ (ดู tft.h) · Pi ถือเวลาเหตุการณ์ จอแค่โชว์ตามเฟรมล่าสุด
 void draw(lgfx::LovyanGFX& g) {
   const uint32_t now = millis();
   const bool link = commLinkAlive();
   const bool estop = robotEstopped();
   const bool infoFresh = info.rxMs && now - info.rxMs < 5000;
-  uint16_t ring = estop ? C_BAD : !link ? C_BAD : (manualTripped() ? C_WARN : C_OK);
+  const char* warn = infoFresh ? info.warn : "";
+  const char* evt  = infoFresh ? info.evt  : "";
+  const bool warnSevere = is(warn, "NOIP") || is(warn, "HOT");
+  const bool warnMinor  = warn[0] && !warnSevere;
+  uint16_t ring = (estop || !link || warnSevere) ? C_BAD : (warnMinor || manualTripped()) ? C_WARN : C_OK;
   g.fillScreen(C_BG);
   g.fillArc(120, 120, 119, 113, 0, 360, ring);          // บาง 6 px — ให้เกจอากาศด้านในเด่น
-  g.setTextColor(C_INK, C_BG);
-  g.setTextDatum(textdatum_t::middle_center);
-  const uint32_t ph = now % 12000;                          // รอบ 12 s: IP 3 s · ค่าอ่าน 3 s · อากาศ 6 s (หน้ากราฟิกให้เวลาอ่านนานกว่า)
-  const int page = ph < 3000 ? 0 : ph < 6000 ? 1 : 2;
+  char b[40];
   if (estop) {
-    g.setFont(&fonts::FreeSansBold18pt7b); g.drawString("E-STOP", 120, 110);
-  } else if (!link) {
-    g.setFont(&fonts::FreeSansBold12pt7b); g.drawString("NO LINK", 120, 100);
-    g.setFont(&fonts::Font2); g.setTextColor(C_MUT, C_BG); g.drawString("waiting for Pi", 120, 130);
-  } else if (page == 0) {
-    g.setFont(&fonts::Font2); g.setTextColor(C_MUT, C_BG); g.drawString("open in browser", 120, 78);
-    g.setFont(&fonts::FreeSansBold12pt7b); g.setTextColor(C_ACC, C_BG);
-    g.drawString(infoFresh && info.ip[0] ? info.ip : "no IP yet", 120, 110);
-    g.setFont(&fonts::Font2); g.setTextColor(C_MUT, C_BG); g.drawString(":8000/drive", 120, 138);
-  } else if (page == 1) {
-    g.setFont(&fonts::Font2); g.setTextColor(C_MUT, C_BG); g.drawString("last meter reading", 120, 78);
-    g.setFont(&fonts::FreeSansBold24pt7b); g.setTextColor(C_INK, C_BG);
-    g.drawString(infoFresh && info.reading[0] ? info.reading : "--", 120, 115);
+    g.setTextDatum(textdatum_t::middle_center);
+    g.setFont(&fonts::FreeSansBold18pt7b); g.setTextColor(C_BAD, C_BG); g.drawString("E-STOP", 120, 110);
+    g.setFont(&fonts::Font2); g.setTextColor(C_MUT, C_BG); g.drawString("motors off", 120, 146);
+  } else if (!link) {                                      // Pi เงียบ > 1.5 s: Pi ดับ/เว็บล้ม/สาย USB หลุด — จอบอกเองได้เพราะไม่ต้องพึ่ง Pi
+    const uint32_t age = info.rxMs ? (now - info.rxMs) / 1000 : 0;
+    snprintf(b, sizeof b, info.rxMs ? "no data for %lu s" : "no data since boot", (unsigned long)age);
+    char last[32] = ""; if (info.ip[0]) snprintf(last, sizeof last, "last IP %s", info.ip);
+    drawMsg(g, "Pi 5", "OFFLINE", C_BAD, b, info.ip[0] ? last : "check USB cable / power");
+    drawMode(g, false);
+  } else if (evt[0]) {                                     // เหตุการณ์ชั่วคราว (Pi ถือ 3–8 s)
+    if      (is(evt, "CAP"))     drawMsg(g, "camera", "CAPTURING", C_ACC, "hold still");
+    else if (is(evt, "SAVED"))   drawMsg(g, "camera", "PHOTO SAVED", C_OK, "reading the meter...");
+    else if (is(evt, "READ"))    drawMsg(g, "meter reading", info.arg[0] ? info.arg : "?", C_INK, "saved to SD", nullptr, true);
+    else if (is(evt, "NOREAD"))  drawMsg(g, "camera", "CAN'T READ", C_WARN, "photo saved, digits unclear", "retake or adjust ROI");
+    else if (is(evt, "CAPFAIL")) drawMsg(g, "camera", "FAILED", C_BAD, info.arg[0] ? info.arg : "no frame", "check camera");
+    else if (is(evt, "DEADMAN")) drawMsg(g, "safety", "STOPPED", C_WARN, "phone link lost", "move the stick again");
+    else                         drawMsg(g, "event", evt, C_INK, info.arg);
+    if (!is(evt, "READ")) drawMode(g, false);
+  } else if (warnSevere) {                                 // ปัญหาที่ทำให้คุมหุ่นไม่ได้/เสียหาย — เต็มจอจนกว่าจะหาย
+    if (is(warn, "NOIP")) drawMsg(g, "network", "NO WI-FI", C_BAD, "Pi has no IP address", "check the hotspot");
+    else                  drawMsg(g, "Pi 5", "CPU HOT", C_BAD, "over 80 C, throttling", "stop and let it cool");
+    drawMode(g, false);
+  } else if (info.clients == 0 || !infoFresh) {           // ยังไม่มี browser ต่อ → บอกทางเข้า (นี่คือหน้าแรกตอนเปิดเครื่อง)
+    drawMsg(g, "open in browser", infoFresh && info.ip[0] ? info.ip : "no IP yet", C_ACC, ":8000/drive");
+    drawMode(g, false);
   } else {
     drawAirPage(g, infoFresh);
+    if (warnMinor) {                                       // แถบเตือนแทนแถว AQI — ยังขับได้ แต่ต้องรู้
+      g.fillRect(40, 44, 160, 28, C_BG);
+      g.setTextDatum(textdatum_t::middle_center);
+      g.setFont(&fonts::FreeSansBold9pt7b); g.setTextColor(C_WARN, C_BG);
+      g.drawString(is(warn, "NOCAM") ? "NO CAMERA" : is(warn, "DISK") ? "DISK ALMOST FULL" : is(warn, "NOAIR") ? "NO AIR SENSOR" : warn, 120, 52);
+      g.setFont(&fonts::Font2); g.setTextColor(C_MUT, C_BG);
+      g.drawString(is(warn, "NOCAM") ? "plug the USB camera" : is(warn, "DISK") ? "free space on the Pi" : "check I2C wiring", 120, 68);
+    }
   }
-  // โหมด (ล่าง)
-  if (page != 2 || estop || !link) {
-    g.setFont(&fonts::FreeSansBold9pt7b); g.setTextColor(C_INK, C_BG);
-    g.drawString(estop ? "stopped" : missionRunning() ? "MISSION" : manualActive() ? "DRIVING" : "READY", 120, 178);
-  }
-  // จุดหน้า
-  if (page != 2) for (int i = 0; i < 3; ++i) g.fillCircle(108 + i * 12, 200, 3, i == page && link && !estop ? C_INK : C_MUT);
 }
 }  // namespace
 
@@ -142,9 +175,13 @@ void tftTick() {
   else draw(lcd);
 }
 
-void tftSetInfo(const char* ip, const char* reading, int co2, int tvoc, int aqi, int temp10, int rh10) {
+void tftSetInfo(const char* ip, const char* reading, int co2, int tvoc, int aqi, int temp10, int rh10,
+                int clients, const char* warn, const char* evt, const char* arg) {
   strncpy(info.ip, ip, sizeof info.ip - 1);
   strncpy(info.reading, reading, sizeof info.reading - 1);
-  info.co2 = co2; info.tvoc = tvoc; info.aqi = aqi; info.temp10 = temp10; info.rh10 = rh10; info.rxMs = millis();
+  strncpy(info.warn, warn, sizeof info.warn - 1);
+  strncpy(info.evt, evt, sizeof info.evt - 1);
+  strncpy(info.arg, arg, sizeof info.arg - 1);
+  info.co2 = co2; info.tvoc = tvoc; info.aqi = aqi; info.temp10 = temp10; info.rh10 = rh10; info.clients = clients; info.rxMs = millis();
 }
 bool tftReady() { return ready; }

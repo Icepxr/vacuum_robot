@@ -24,7 +24,7 @@ constexpr int      PIN_U0_RX = 44;         // §3.2 — Pi GPIO14 TXD → ESP32 
 constexpr int      PIN_U0_TX = 43;         // §3.2 — ESP32 GPIO43 → Pi GPIO15 RXD
 constexpr uint32_t BAUD      = 115200;     // §3.7 · ไฟล์ 09 §9.5
 constexpr uint32_t CAPTURE_TIMEOUT_MS = 5000;   // state CAMERA_CAPTURE §6.1
-constexpr size_t   RX_LINE_MAX  = 96;         // #T เต็มฟิลด์ ~90 ตัวอักษร (ไฟล์ 09 §9.5) — กันบรรทัดหลุดยาว
+constexpr size_t   RX_LINE_MAX  = 128;        // #T เต็มฟิลด์ ~90 ตัวอักษร (ไฟล์ 09 §9.5) · $D 13 ฟิลด์ (C35) สูงสุด ~90 — กันบรรทัดหลุดยาว
 
 char     rxBuf[RX_LINE_MAX];
 size_t   rxLen = 0;
@@ -68,14 +68,16 @@ void handleLine(char* line, size_t len) {
   if (!mrc::checkFrame(line, len)) { ++statBadLine; return; }   // boot log/ขยะ/CRC ผิด — ทิ้งเงียบ
   if (line[0] != '$' || line[2] != ',') { Serial.printf("[comm] เฟรมไม่รู้จัก: %s\n", line); return; }
   lastRxMs = millis();
-  if (line[1] == 'D') {                          // $D,<seq>,<ip>,<reading>,<co2>,<tvoc>,<aqi>,<temp×10>,<rh×10> — ข้อความให้จอ (C32) · สตริง ไม่ผ่าน parseInts
-    char* f[9] = {}; int n = 0;
+  if (line[1] == 'D') {                          // $D,<seq>,<ip>,<reading>,<co2>,<tvoc>,<aqi>,<temp×10>,<rh×10>,<clients>,<warn>,<evt>,<arg> — ข้อความให้จอ (C32/C35) · สตริง ไม่ผ่าน parseInts
+    char* f[13] = {}; int n = 0;
     char* p = line + 3; f[n++] = p;
-    while (*p && n < 9) { if (*p == ',') { *p = '\0'; f[n++] = p + 1; } ++p; }
+    while (*p && n < 13) { if (*p == ',') { *p = '\0'; f[n++] = p + 1; } ++p; }
     char* star = strchr(f[n - 1], '*'); if (star) *star = '\0';
     if (n < 4) { nack(0, "BAD_ARGS"); return; }
     auto num = [&](int i, int dflt) { return (i < n && f[i][0]) ? atoi(f[i]) : dflt; };
-    tftSetInfo(f[1], f[2], num(3, -1), num(4, -1), num(5, -1), num(6, -1000), num(7, -1));
+    auto str = [&](int i) { return i < n ? (const char*)f[i] : ""; };
+    tftSetInfo(f[1], f[2], num(3, -1), num(4, -1), num(5, -1), num(6, -1000), num(7, -1),
+               num(8, -1), str(9), str(10), str(11));
     ack((uint32_t)strtoul(f[0], nullptr, 10));
     return;
   }

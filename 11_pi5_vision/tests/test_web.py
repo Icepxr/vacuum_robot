@@ -91,8 +91,14 @@ def test_ws_capture_from_web(web):
         assert got["capture"]["ok"] and got["capture"]["source"] == "web"
         assert got["reading"]["value"] == 123.4 and got["reading"]["source_req"] == "web"
         assert backend.saved == ["img_0.jpg"]
-        # ห้ามมีอะไรถูกส่งไป ESP32 (ถ่ายจากเว็บไม่เกี่ยวกับ $K)
-        assert read_line(master, timeout=0.3) == b""
+        # ไป ESP32 ได้แค่ $D ให้จอ (C35: CAP → SAVED → READ <ค่า>) — ห้ามมี $K (ถ่ายจากเว็บไม่เกี่ยวกับ ESP32)
+        sent = []
+        while True:
+            raw = read_line(master, timeout=0.3)
+            if not raw: break
+            sent.append(P.decode(raw))
+        assert sent and all(f.type == "D" for f in sent)
+        assert [f.fields[11] for f in sent] == ["CAP", "SAVED", "READ"] and sent[-1].fields[12] == "123.4"
 
 
 def test_ws_unsupported_command_gets_honest_nack(web):
@@ -145,7 +151,7 @@ def test_drive_repeats_V_at_10hz_then_deadman_sends_S(web):
             line = read_line(master, timeout=0.2)
             if line:
                 got.append(P.decode(line))
-        kinds = [g.type for g in got if g]
+        kinds = [g.type for g in got if g and g.type != "D"]   # $D ให้จอ (C35 DEADMAN) ไม่ใช่คำสั่งขับ — ตัดออกก่อนเช็คลำดับ
         assert kinds.count("V") >= 2, kinds
         assert kinds[-1] == "S" and kinds.count("S") == 1, kinds
         v = next(g for g in got if g and g.type == "V")
@@ -304,3 +310,45 @@ def test_mast_command_frames(web):
         fr = P.decode(read_line(master)); assert fr.type == "M" and fr.fields[2] == "1400"
         ws.send_json({"t": "m", "us": 0})
         fr = P.decode(read_line(master)); assert fr.type == "M" and fr.fields[2] == "0"
+
+
+def test_display_payload_event_hold_and_warn(web, monkeypatch):
+    """C35 จอบนหุ่น: Pi ถือเหตุการณ์ไว้ตาม DISPLAY_HOLD_S · หมดเวลาแล้วฟิลด์ว่าง · warn เรียงตามความร้ายแรง · clients นับ browser"""
+    c, master, backend, hub = web
+    monkeypatch.setattr(W, "pi_ips", lambda: ["10.0.0.5"])
+    monkeypatch.setattr(W, "cpu_temp_c", lambda: 55.0)
+    ip, reading, *_, clients, warn, evt, arg = W.display_payload()
+    assert (ip, clients, evt, arg) == ("10.0.0.5", 0, "", "") and warn in ("", "NOAIR")   # air อาจไม่มีบนเครื่องทดสอบ
+    hub.display_event("READ", "1509")
+    fr = P.decode(read_line(master))                     # ส่ง $D ทันที ไม่รอ tick
+    assert fr.type == "D" and fr.fields[11:13] == ["READ", "1509"]
+    hub.disp_evt = (hub.disp_evt[0], hub.disp_evt[1], time.monotonic() - 0.01)   # จำลองหมดเวลา
+    assert W.display_payload()[9:11] == ("", "")
+    # ปัญหาฝั่ง Pi — ร้ายแรงก่อน
+    monkeypatch.setattr(W, "pi_ips", lambda: [])
+    assert hub.display_warn() == "NOIP"
+    monkeypatch.setattr(W, "pi_ips", lambda: ["10.0.0.5"])
+    monkeypatch.setattr(W, "cpu_temp_c", lambda: 81.0)
+    assert hub.display_warn() == "HOT"
+    monkeypatch.setattr(W, "cpu_temp_c", lambda: 55.0)
+    hub.cam_fallback = True
+    assert hub.display_warn() == "NOCAM"
+    hub.cam_fallback = False
+    with c.websocket_connect("/ws") as ws:
+        ws.receive_json(); ws.receive_json()
+        assert W.display_payload()[7] == 1               # browser ต่อแล้ว → จอเลิกโชว์ IP ไปหน้าอากาศ
+
+
+def test_deadman_trip_shows_on_display(web):
+    """deadman ฝั่ง Pi → นอกจาก $S ต้องส่ง $D evt=DEADMAN ให้จอบอกคนขับว่าทำไมหยุด"""
+    c, master, backend, hub = web
+    with c.websocket_connect("/ws") as ws:
+        ws.receive_json(); ws.receive_json()
+        ws.send_json({"t": "drive", "v": 100, "w": 0})
+        time.sleep(0.6)                                   # > deadman 300 ms
+        types = []
+        while True:
+            raw = read_line(master, timeout=0.3)
+            if not raw: break
+            fr = P.decode(raw); types.append((fr.type, fr.fields[11] if fr.type == "D" else ""))
+        assert ("S", "") in types and ("D", "DEADMAN") in types
