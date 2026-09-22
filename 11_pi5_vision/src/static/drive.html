@@ -56,32 +56,33 @@
     </div>
   </div>
 
+  <!-- แผงกล้อง rev.3 (22 ก.ย.): คุมเป็น "มุม" (องศา) ด้วยสไลเดอร์ — ลากไปมุมที่ต้องการ · −/+ ขยับทีละขั้น (กดค้างได้) · ตัวเลข = มุมจริงจาก #T -->
   <div class="campad" id="campad">
-    <div class="cam-col">
+    <div class="cam-row" id="tilt-row">
       <span class="cam-lbl">มุมกล้อง</span>
-      <button class="cam-btn" type="button" data-hold="tilt:1" aria-label="เงยกล้อง">▲</button>
-      <div class="cam-bar" aria-hidden="true"><i id="tilt-bar"></i></div>
-      <button class="cam-btn" type="button" data-hold="tilt:-1" aria-label="ก้มกล้อง">▼</button>
+      <button class="cam-step" type="button" data-hold="tilt:-1" aria-label="ก้มกล้อง">−</button>
+      <input class="cam-slider" id="tilt-sl" type="range" min="0" max="180" step="1" value="90" aria-label="มุมกล้อง (องศา)">
+      <button class="cam-step" type="button" data-hold="tilt:1" aria-label="เงยกล้อง">+</button>
       <b id="tilt-v">ปล่อย</b>
     </div>
-    <div class="cam-col">
+    <div class="cam-row" id="lift-row">
       <span class="cam-lbl">เสา</span>
-      <button class="cam-btn" type="button" data-hold="lift:1" aria-label="ยกเสา">▲</button>
-      <div class="cam-bar" aria-hidden="true"><i id="lift-bar"></i></div>
-      <button class="cam-btn" type="button" data-hold="lift:-1" aria-label="ลดเสา">▼</button>
+      <button class="cam-step" type="button" data-hold="lift:-1" aria-label="ลดเสา">−</button>
+      <input class="cam-slider" id="lift-sl" type="range" min="45" max="135" step="1" value="45" aria-label="เสา (องศา)">
+      <button class="cam-step" type="button" data-hold="lift:1" aria-label="ยกเสา">+</button>
       <b id="lift-v">ปล่อย</b>
     </div>
-    <div class="cam-col" id="zoom-col">
+    <div class="cam-row" id="zoom-col">
       <span class="cam-lbl">ซูม</span>
-      <button class="cam-btn" type="button" data-zoom="1" aria-label="ซูมเข้า">+</button>
-      <div class="cam-bar" aria-hidden="true"><i id="zoom-bar"></i></div>
-      <button class="cam-btn" type="button" data-zoom="-1" aria-label="ซูมออก">−</button>
+      <button class="cam-step" type="button" data-zoom="-1" aria-label="ซูมออก">−</button>
+      <input class="cam-slider" id="zoom-sl" type="range" min="1" max="5" step="0.1" value="1" aria-label="ซูม">
+      <button class="cam-step" type="button" data-zoom="1" aria-label="ซูมเข้า">+</button>
       <b id="zoom-v">1.0×</b>
     </div>
     <div class="cam-foot">
-      <button type="button" data-cam="mid">กลาง</button>
-      <button type="button" data-cam="down">พับ</button>
-      <button type="button" data-cam="release">ปล่อย</button>
+      <button type="button" data-cam="mid">กล้องตรง</button>
+      <button type="button" data-cam="down">พับเสา</button>
+      <button type="button" data-cam="release">ปล่อยเซอร์โว</button>
     </div>
   </div>
   <div class="dial" id="dial">
@@ -136,10 +137,15 @@
   </div>
 
   <div class="pane" data-pane="cam">
-    <label class="row"><span>มุมกล้อง — ขีดต่ำ <small>µs ของเซอร์โวมุม (GPIO18) · ตั้งให้ตรงที่กลไกไม่ชน</small></span><input data-cfg="tiltMin" type="range" min="500" max="2500" step="10"><output></output></label>
-    <label class="row"><span>มุมกล้อง — ขีดสูง</span><input data-cfg="tiltMax" type="range" min="500" max="2500" step="10"><output></output></label>
-    <label class="row"><span>เสา — พับสุด <small>µs ของเซอร์โว scissor · ⚠ นอกช่วงจริง = เฟือง/ก้านชน ตั้งจากที่วัดจริงเท่านั้น</small></span><input data-cfg="liftMin" type="range" min="500" max="2500" step="10"><output></output></label>
-    <label class="row"><span>เสา — ยกสุด</span><input data-cfg="liftMax" type="range" min="500" max="2500" step="10"><output></output></label>
+    <p class="fine">เซอร์โวคุมเป็น <b>องศา</b> (0–180° = พัลส์ 500–2500 µs ตามสเปกทั่วไปของ MG996R — ยังไม่ได้วัดตัวจริง C8) · ขีดจำกัดข้างล่างคือ "กลไกไม่ชน" — ตั้งจากที่ลองจริงเท่านั้น · วิธีหา: ขยายขีดให้กว้าง เลื่อนสไลเดอร์ช้าๆ จนถึงจุดที่กลไกเริ่มติด แล้วกด "ใช้มุมนี้"</p>
+    <label class="row"><span>มุมกล้อง — ต่ำสุด (ก้ม) <small>°</small></span><input data-cfg="tiltMinDeg" type="range" min="0" max="180" step="1"><output></output></label>
+    <label class="row"><span>มุมกล้อง — สูงสุด (เงย)</span><input data-cfg="tiltMaxDeg" type="range" min="0" max="180" step="1"><output></output></label>
+    <div class="row"><span>มุมกล้อง — ใช้มุมปัจจุบันเป็น</span><div class="btns"><button class="btn" type="button" data-setlim="tilt:min">ต่ำสุด</button><button class="btn" type="button" data-setlim="tilt:max">สูงสุด</button></div></div>
+    <label class="row"><span>มุมกล้อง — กลับทิศ <small>ถ้า + แล้วกล้องก้มแทนเงย</small></span><input data-cfg="tiltInv" type="checkbox"></label>
+    <label class="row"><span>เสา — พับสุด <small>° · ⚠ เกินช่วงจริง = เฟือง/ก้านชน</small></span><input data-cfg="liftMinDeg" type="range" min="0" max="180" step="1"><output></output></label>
+    <label class="row"><span>เสา — ยกสุด</span><input data-cfg="liftMaxDeg" type="range" min="0" max="180" step="1"><output></output></label>
+    <div class="row"><span>เสา — ใช้มุมปัจจุบันเป็น</span><div class="btns"><button class="btn" type="button" data-setlim="lift:min">พับสุด</button><button class="btn" type="button" data-setlim="lift:max">ยกสุด</button></div></div>
+    <label class="row"><span>เสา — กลับทิศ <small>ถ้า + แล้วเสาลดแทนยก</small></span><input data-cfg="liftInv" type="checkbox"></label>
     <label class="row"><span>แผงกล้องบนหน้าจอ <small>สไลเดอร์มุม/ความสูง/ซูม</small></span><input data-cfg="camPad" type="checkbox"></label>
     <div class="row col" id="camctl-rows">
       <span>ซูม / โฟกัส <small id="camctl-note">บนภาพสด: ถ่าง 2 นิ้ว = ซูม · ลาก 1 นิ้ว (ตอนซูม) = เลื่อนกรอบ · แตะ 2 ครั้ง = กลับ 1×</small></span>

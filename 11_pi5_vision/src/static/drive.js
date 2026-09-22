@@ -6,12 +6,16 @@
   // C28: เพดานความเร็วเป็นของผู้ใช้ (cfg.vMax/wMax → {t:"limits"} → Pi → $L) · ESP32 clamp แค่ที่ฮาร์ดแวร์ 716 mm/s
   let V_MAX = 150;                                     // = cfg.vMax หลัง applyCfg
   const V_HW_MAX = 716, W_HW_MAX = 7950;
-  const DEFAULTS = { vMax: 300, wMax: 3000, maxPct: 50, turnGain: 2000, tiltMin: 500, tiltMax: 2500, liftMin: 1000, liftMax: 2000, camPad: true, rampMs: 250, deadzone: 0.12, turnScale: true, invY: false, invX: false,
+  const DEFAULTS = { vMax: 300, wMax: 3000, maxPct: 50, turnGain: 2000, tiltMinDeg: 0, tiltMaxDeg: 180, tiltInv: false, liftMinDeg: 45, liftMaxDeg: 135, liftInv: false, camPad: true, rampMs: 250, deadzone: 0.12, turnScale: true, invY: false, invX: false,
     joySide: "left", joySize: "m", autoSuction: false, driveUi: "pad", curveTurn: 50, joySnap: true, fps: 10, gridOn: false, roiOn: true, mirror: false,
     suctionPct: 100, suctionIdleOff: 0, sound: true, vibrate: true, toastSec: 3, staleSec: 2,
     accent: "mint", density: "comfortable", bigButtons: false, wakeLock: true };
   let cfg = { ...DEFAULTS };
   try { Object.assign(cfg, JSON.parse(localStorage.getItem("mrc.drive.cfg") || "{}")); } catch (e) {}
+  // rev.3: ขีดเซอร์โวเก็บเป็นองศา — แปลงค่าเก่า (µs) ของเครื่องนี้ครั้งเดียว
+  const usDeg = (us) => Math.round((us - 500) / 2000 * 180);
+  if (cfg.tiltMin != null) { cfg.tiltMinDeg = usDeg(cfg.tiltMin); cfg.tiltMaxDeg = usDeg(cfg.tiltMax); delete cfg.tiltMin; delete cfg.tiltMax; }
+  if (cfg.liftMin != null) { cfg.liftMinDeg = usDeg(cfg.liftMin); cfg.liftMaxDeg = usDeg(cfg.liftMax); delete cfg.liftMin; delete cfg.liftMax; }
   const save = () => { try { localStorage.setItem("mrc.drive.cfg", JSON.stringify(cfg)); } catch (e) {} };
 
   // ── apply cfg → DOM ──
@@ -24,7 +28,7 @@
     cfg.vMax = Math.max(50, Math.min(V_HW_MAX, +cfg.vMax || 300)); cfg.wMax = Math.max(500, Math.min(W_HW_MAX, +cfg.wMax || 3000));
     if (cfg.turnGain > cfg.wMax) cfg.turnGain = cfg.wMax;
     V_MAX = cfg.vMax;
-    if (cfg.tiltMin >= cfg.tiltMax) cfg.tiltMax = cfg.tiltMin + 10; if (cfg.liftMin >= cfg.liftMax) cfg.liftMax = cfg.liftMin + 10;
+    for (const k of ["tilt", "lift"]) { const lo = k + "MinDeg", hi = k + "MaxDeg"; cfg[lo] = Math.max(0, Math.min(180, +cfg[lo] || 0)); cfg[hi] = Math.max(0, Math.min(180, +cfg[hi] || 0)); if (cfg[lo] >= cfg[hi]) cfg[hi] = Math.min(180, cfg[lo] + 1); }
     root.dataset.campad = cfg.camPad ? 1 : 0; camApplyLimits();
     root.dataset.accent = cfg.accent; root.dataset.density = cfg.density; root.dataset.big = cfg.bigButtons ? 1 : 0;
     root.dataset.joyside = cfg.joySide; root.dataset.mirror = cfg.mirror ? 1 : 0;
@@ -40,7 +44,7 @@
     if (streamFps !== cfg.fps) startStream();
     wake();
   }
-  const fmtOut = (k, v) => ({ tiltMin: `${v} µs`, tiltMax: `${v} µs`, liftMin: `${v} µs`, liftMax: `${v} µs`, vMax: `${v} mm/s${v > 300 ? " ⚠ เกินค่าเริ่มต้น" : ""}`, wMax: `${v} mrad/s`, maxPct: `${v}% · ${Math.round(V_MAX * v / 100)} mm/s`, turnGain: `${v}`, curveTurn: `${v}%`, rampMs: `${v} ms`, deadzone: `${v}`, fps: `${v} fps`,
+  const fmtOut = (k, v) => ({ tiltMinDeg: `${v}°`, tiltMaxDeg: `${v}°`, liftMinDeg: `${v}°`, liftMaxDeg: `${v}°`, vMax: `${v} mm/s${v > 300 ? " ⚠ เกินค่าเริ่มต้น" : ""}`, wMax: `${v} mrad/s`, maxPct: `${v}% · ${Math.round(V_MAX * v / 100)} mm/s`, turnGain: `${v}`, curveTurn: `${v}%`, rampMs: `${v} ms`, deadzone: `${v}`, fps: `${v} fps`,
     suctionPct: `${v}%`, suctionIdleOff: v ? `${v} s` : "ไม่ปิด", toastSec: `${v} s`, staleSec: `${v} s` })[k] ?? v;
   document.querySelectorAll("[data-cfg]").forEach((el) => el.addEventListener("input", () => {
     const k = el.dataset.cfg; cfg[k] = el.type === "checkbox" ? el.checked : (el.tagName === "SELECT" ? el.value : +el.value);
@@ -50,46 +54,71 @@
   document.querySelectorAll("#swatches button").forEach((b) => b.onclick = () => { cfg.accent = b.dataset.accent; save(); applyCfg(); });
   $("cfg-reset").onclick = () => { cfg = { ...DEFAULTS }; save(); applyCfg(); toast("คืนค่าเริ่มต้นแล้ว", "good"); };
 
-  // ── แผงกล้อง (C30 rev.2): ปุ่ม ▲▼ กดค้าง = เดินต่อเนื่อง · แตะ = ขยับ 1 ขั้น ──
-  // มุม → $X (เซอร์โว 2 · เดิน 25 us/12 ms ในเฟิร์มแวร์) · เสา → $M (scissor · 10 us/24 ms)
-  // ขณะกดค้าง ส่งเป้าใหม่ทุก 100 ms = ตำแหน่งล่าสุด ± step (step ≈ ระยะที่เฟิร์มแวร์เดินได้ใน 100 ms → ไม่วิ่งนำ ปล่อยแล้วหยุดใน ≤1 ขั้น)
-  // ตำแหน่งจริงมาจาก #T (us_r = มุม · us_l = เสา · 0 = ปล่อย) → แถบ + ตัวเลข
+  // ── แผงกล้อง rev.3 (22 ก.ย.): คุมเป็น "องศา" — สไลเดอร์ = ไปมุมนั้น · −/+ = ขั้นละ step° (กดค้างเดินต่อ) ──
+  // เฟิร์มแวร์ยังคุยเป็น µs (มุม → $X · เสา → $M · slew เอง) · หน้าเว็บแปลง: 0–180° ↔ 500–2500 µs (สเกลทั่วไปของ MG996R — ยังไม่วัดตัวจริง C8)
+  // ตำแหน่งจริงมาจาก #T (us_r = มุม · us_l = เสา · 0 = ปล่อย) → ตัวเลข + สไลเดอร์ตามเมื่อไม่ได้ลาก
+  const US_0 = 500, US_180 = 2500;
   const camAx = {
-    tilt: { cmd: "x", tele: "us_r", step: 150, bar: $("tilt-bar"), lbl: $("tilt-v"), col: $("tilt-bar").parentElement.parentElement, us: 0, target: null, min: () => cfg.tiltMin, max: () => cfg.tiltMax, start: () => Math.round((cfg.tiltMin + cfg.tiltMax) / 2), name: "มุมกล้อง" },
-    lift: { cmd: "m", tele: "us_l", step: 40,  bar: $("lift-bar"), lbl: $("lift-v"), col: $("lift-bar").parentElement.parentElement, us: 0, target: null, min: () => cfg.liftMin, max: () => cfg.liftMax, start: () => cfg.liftMin, name: "เสา" },
+    tilt: { cmd: "x", tele: "us_r", step: 5, sl: $("tilt-sl"), lbl: $("tilt-v"), row: $("tilt-row"), us: 0, target: null, drag: false,
+            min: () => cfg.tiltMinDeg, max: () => cfg.tiltMaxDeg, inv: () => cfg.tiltInv, start: () => Math.round((cfg.tiltMinDeg + cfg.tiltMaxDeg) / 2), name: "มุมกล้อง" },
+    lift: { cmd: "m", tele: "us_l", step: 2, sl: $("lift-sl"), lbl: $("lift-v"), row: $("lift-row"), us: 0, target: null, drag: false,
+            min: () => cfg.liftMinDeg, max: () => cfg.liftMaxDeg, inv: () => cfg.liftInv, start: () => cfg.liftMinDeg, name: "เสา" },
   };
-  function camGoto(a, us) { us = Math.max(a.min(), Math.min(a.max(), Math.round(us))); a.target = us; send({ t: a.cmd, us }); a.lbl.textContent = `${us}`; }
+  const degToUs = (a, d) => Math.round(US_0 + (a.inv() ? 180 - d : d) / 180 * (US_180 - US_0));
+  const usToDeg = (a, us) => { const d = Math.round((us - US_0) / (US_180 - US_0) * 180); return a.inv() ? 180 - d : d; };
+  const camDeg = (a) => a.target != null ? a.target : a.us ? usToDeg(a, a.us) : null;   // มุมที่ "รู้" ตอนนี้ (เป้า > จริง)
+  let servoSendT = {};
+  function camGoto(a, deg, immediate = true) {
+    deg = Math.max(a.min(), Math.min(a.max(), Math.round(deg))); a.target = deg;
+    a.lbl.textContent = `${deg}°`; a.sl.value = deg;
+    const fire = () => send({ t: a.cmd, us: degToUs(a, deg) });
+    if (immediate) fire();
+    else { clearTimeout(servoSendT[a.cmd]); servoSendT[a.cmd] = setTimeout(fire, 60); }   // ลากสไลเดอร์: รวมเป็น ≤ ~16 คำสั่ง/วิ
+  }
   function camNudge(a, dir) {
-    if (!a.us && a.target == null) {                       // ยังไม่ผูกสัญญาณ — ไม่รู้ว่าฮอร์นอยู่ไหน: เริ่มที่ค่าปลอดภัยของแกนนั้นก่อน
-      camGoto(a, a.start()); toast(`${a.name}: ผูกสัญญาณที่ ${a.target} µs ก่อน แล้วค่อยกดอีกครั้ง`, "warn"); return;
-    }
-    const base = a.target != null ? a.target : a.us;
-    camGoto(a, base + dir * a.step);
+    const cur = camDeg(a);
+    if (cur == null) { camGoto(a, a.start()); toast(`${a.name}: ผูกสัญญาณที่ ${a.target}° ก่อน แล้วค่อยกดอีกครั้ง`, "warn"); return; }
+    camGoto(a, cur + dir * a.step);
   }
   let holdT = null;
   document.querySelectorAll("[data-hold]").forEach((b) => {
     const [k, d] = b.dataset.hold.split(":"); const a = camAx[k], dir = +d;
     const stop = () => { clearInterval(holdT); holdT = null; b.classList.remove("hold"); };
     b.addEventListener("pointerdown", (e) => { e.preventDefault(); try { b.setPointerCapture(e.pointerId); } catch (_) {} b.classList.add("hold"); camNudge(a, dir);
-      clearInterval(holdT); holdT = setInterval(() => camNudge(a, dir), 100); });
+      clearInterval(holdT); holdT = setInterval(() => camNudge(a, dir), 150); });
     ["pointerup", "pointercancel", "lostpointercapture"].forEach((ev) => b.addEventListener(ev, stop));
   });
+  for (const a of Object.values(camAx)) {
+    a.sl.addEventListener("pointerdown", () => { a.drag = true; });
+    ["pointerup", "pointercancel"].forEach((ev) => a.sl.addEventListener(ev, () => { a.drag = false; }));
+    a.sl.addEventListener("input", () => camGoto(a, +a.sl.value, false));
+    a.sl.addEventListener("change", () => { a.drag = false; camGoto(a, +a.sl.value, true); });
+  }
   function camFromTele(t) {
     for (const a of Object.values(camAx)) {
       a.us = t[a.tele] || 0;
       if (!a.us) a.target = null;
-      a.col.classList.toggle("off", !a.us);
-      const lo = a.min(), hi = a.max();
-      a.bar.style.height = a.us ? `${Math.max(0, Math.min(100, (a.us - lo) / Math.max(1, hi - lo) * 100))}%` : "0";
-      if (!holdT) a.lbl.textContent = a.us ? `${a.us}` : "ปล่อย";
+      a.row.classList.toggle("off", !a.us);
+      if (a.drag || holdT) continue;
+      const d = camDeg(a);
+      a.lbl.textContent = d == null ? "ปล่อย" : `${a.us ? usToDeg(a, a.us) : d}°`;   // ตัวเลข = มุมจริง (ถ้ามี) · สไลเดอร์ = เป้า
+      if (d != null && a.target == null) a.sl.value = d;
     }
   }
-  function camApplyLimits() {}                            // ขีดจำกัดอ่านสดจาก cfg ใน min()/max()
+  function camApplyLimits() {
+    for (const a of Object.values(camAx)) { a.sl.min = a.min(); a.sl.max = a.max(); }
+  }
   document.querySelectorAll("[data-cam]").forEach((b) => b.onclick = () => {
     const k = b.dataset.cam;
     if (k === "mid") camGoto(camAx.tilt, camAx.tilt.start());
-    else if (k === "down") camGoto(camAx.lift, cfg.liftMin);
+    else if (k === "down") camGoto(camAx.lift, cfg.liftMinDeg);
     else { send({ t: "x", us: 0 }); send({ t: "m", us: 0 }); camAx.tilt.target = camAx.lift.target = null; }
+  });
+  // ⚙ กล้อง: "ใช้มุมปัจจุบันเป็น ต่ำสุด/สูงสุด" — ไว้ไฟนอลขีดจากของจริง (ผู้ใช้ 22 ก.ย.)
+  document.querySelectorAll("[data-setlim]").forEach((b) => b.onclick = () => {
+    const [k, which] = b.dataset.setlim.split(":"); const a = camAx[k]; const d = a.us ? usToDeg(a, a.us) : camDeg(a);
+    if (d == null) { toast(`${a.name}: ยังไม่รู้มุม — ขยับก่อน`, "warn"); return; }
+    cfg[k + (which === "min" ? "MinDeg" : "MaxDeg")] = d; save(); applyCfg(); toast(`${a.name}: ${which === "min" ? "ต่ำสุด" : "สูงสุด"} = ${d}°`, "good");
   });
 
   // ── ภาพสด ──
@@ -130,7 +159,7 @@
     switch (ev.t) {
       case "hello": (ev.events || []).slice(-10).forEach(handle); break;
       case "sys": lastSys = ev; chip("cams", "กล้อง " + (ev.cam_ok ? "ปกติ" : "<b>ไม่มีภาพ</b>") + (ev.cam_ctl && ev.cam_ctl.zoom > 1.01 ? ` · ${(+ev.cam_ctl.zoom).toFixed(1)}×` : ""), ev.cam_ok ? "" : "bad"); airChip(ev.air);
-        if ("cam_ctl" in ev && !pts.size && !zoomT) paintCam(ev.cam_ctl);                  // ซิงก์จากเครื่องอื่น — แต่ไม่แย่งตอนนิ้วยังอยู่บนจอ
+        if ("cam_ctl" in ev && !pts.size && !zoomT && !zoomDrag) paintCam(ev.cam_ctl);                  // ซิงก์จากเครื่องอื่น — แต่ไม่แย่งตอนนิ้วยังอยู่บนจอ
         if (ev.limits && (ev.limits.v_max !== cfg.vMax || ev.limits.w_max !== cfg.wMax)) { cfg.vMax = ev.limits.v_max; cfg.wMax = ev.limits.w_max; save(); applyCfg(); }
         if (!ev.link) setMode("ไม่มี serial", "lost");
         else if (!ev.link.alive) { setMode("ESP32 ไม่ตอบ", "lost"); chip("link", ev.link.age_s == null ? "ลิงก์ ยังไม่เคยได้ข้อมูล" : `ลิงก์ เงียบ ${ev.link.age_s}s`, "bad"); }
@@ -152,7 +181,7 @@
       case "reading": toast(ev.value == null ? "อ่านตัวเลขไม่ออก — เล็งให้เข้ากรอบแล้วถ่ายใหม่" : `อ่านได้ ${ev.value}`, ev.value == null ? "warn" : "good"); logEv(`ค่า ${ev.value ?? "—"} (conf ${ev.confidence})`, ev.value == null ? "warn" : "good"); break;
       case "log": if (ev.level === "bad" || ev.level === "warn") { logEv(ev.msg, ev.level); if (ev.level === "bad") toast(ev.msg, "bad"); } else if (ev.level === "good") logEv(ev.msg, "good"); break;
       case "event": logEv(`ESP32: ${ev.code} ${ev.detail || ""}`, "warn"); break;
-      case "cam_ctl": if (!pts.size && !zoomT) paintCam(ev); break;
+      case "cam_ctl": if (!pts.size && !zoomT && !zoomDrag) paintCam(ev); break;
     }
   }
   const AIR_TH = { excellent: "ดีมาก", good: "ดี", fair: "พอใช้", poor: "แย่ — ควรระบาย", bad: "แย่มาก — ระบายอากาศ" };
@@ -186,7 +215,7 @@
   function renderKv() {
     const t = lastTele || {}, s = lastSys || { cleaning: {}, drive: {} };
     const rows = [["โหมด", t.state_name || "—"], ["ความเร็วสั่ง", t.v != null ? `${t.v} mm/s · หมุน ${t.w} mrad/s` : "—"], ["ล้อซ้าย / ขวา", t.duty_l != null ? `${t.duty_l} / ${t.duty_r} ‰` : "—"],
-      ["เสายกกล้อง", t.mast === 2 ? `จับสัญญาณ ${t.us_l} µs` : t.mast === 0 ? "พับ" : "—"], ["กล้องแกน X", t.us_r ? `${t.us_r} µs` : "ปล่อย"], ["ดูด / แปรง", `${s.cleaning.suction ? "เปิด" : "ปิด"} / ${s.cleaning.brush ? "เปิด" : "ปิด"}`],
+      ["เสายกกล้อง", t.us_l ? `${usToDeg(camAx.lift, t.us_l)}° (${t.us_l} µs)` : "ปล่อย"], ["มุมกล้อง", t.us_r ? `${usToDeg(camAx.tilt, t.us_r)}° (${t.us_r} µs)` : "ปล่อย"], ["ดูด / แปรง", `${s.cleaning.suction ? "เปิด" : "ปิด"} / ${s.cleaning.brush ? "เปิด" : "ปิด"}`],
       ["แบตเตอรี่", t.vbat_mV ? `${(t.vbat_mV / 1000).toFixed(2)} V` : "ยังไม่มี ADC ในเฟิร์มแวร์"],
  ["deadman Pi", `${s.drive.tripped ?? 0} ครั้ง`], ["Pi", `${s.cpu_temp_c ?? "—"} °C · SD ว่าง ${s.disk_free_mb ?? "—"} MB`]];
     $("kv").innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
@@ -307,7 +336,7 @@
     camCtl = c; const has = !!c; $("camctl-rows").classList.toggle("off", !has); $("zoom-col").classList.toggle("off", !has);
     if (!has) { $("zoom-v").textContent = "—"; $("zoom-tag").hidden = true; $("camctl-note").textContent = "กล้องนี้คุมซูมไม่ได้ (ไม่มีกล้อง / ภาพนิ่ง)"; return; }
     const z = +c.zoom; $("cc-zoom").max = c.zoom_max; $("cc-zoom").value = z; $("cc-zoom-o").textContent = `${z.toFixed(1)}×` + (c.sw_zoom ? " (ซอฟต์แวร์)" : z > 2 ? " · เกิน 2× กล้องขยายภาพ" : "");
-    $("zoom-v").textContent = `${z.toFixed(1)}×`; $("zoom-bar").style.height = `${(z - 1) / (c.zoom_max - 1) * 100}%`;
+    $("zoom-v").textContent = `${z.toFixed(1)}×`; if (!zoomDrag) { $("zoom-sl").max = c.zoom_max; $("zoom-sl").value = z; }
     $("zoom-tag").hidden = z <= 1.01; $("zoom-tag").textContent = `${z.toFixed(1)}×`; vp.classList.toggle("zoomed", z > 1.01);
     $("cc-af").checked = !!c.af; $("cc-af").disabled = !c.hw.af; $("cc-focus").disabled = c.af || !c.hw.focus; $("cc-focus").value = c.focus; $("cc-focus-o").textContent = (+c.focus).toFixed(2);
     $("camctl-note").textContent = c.sw_zoom ? "กล้องไม่มีซูม UVC — ครอปภาพ 1080p แทน (เกิน 2× ตัวเลขจะแตก)" : "ซูม UVC ครอปจากเซนเซอร์ 4K: ≤ 2× คมเท่าเดิม · ถ่าง 2 นิ้วบนภาพ = ซูม · ลาก = เลื่อน · แตะ 2 ครั้ง = 1×";
@@ -318,6 +347,10 @@
   $("cc-af").onchange = (e) => camSend({ af: e.target.checked });
   $("cc-focus").oninput = (e) => { $("cc-focus-o").textContent = (+e.target.value).toFixed(2); camSend({ focus: +e.target.value }); };
   $("cc-reset").onclick = () => { camSend({ zoom: 1, pan: 0, tilt: 0 }); if (camCtl) { camCtl.zoom = 1; camCtl.pan = 0; camCtl.tilt = 0; paintCam(camCtl); } };
+  let zoomDrag = false;
+  $("zoom-sl").addEventListener("pointerdown", () => { zoomDrag = true; });
+  ["pointerup", "pointercancel", "change"].forEach((ev) => $("zoom-sl").addEventListener(ev, () => { zoomDrag = false; }));
+  $("zoom-sl").addEventListener("input", (e) => zoomTo(+e.target.value));
   let zoomT = null;                                    // ปุ่ม +/− บนแผงกล้อง: แตะ = 0.2× · กดค้าง = ไต่ต่อเนื่อง
   document.querySelectorAll("[data-zoom]").forEach((b) => { const dir = +b.dataset.zoom;
     const stop = () => { clearInterval(zoomT); zoomT = null; b.classList.remove("hold"); };
