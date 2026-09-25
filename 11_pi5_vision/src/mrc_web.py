@@ -175,9 +175,14 @@ class Hub:
             # ESP32 เพิ่งบูต (เปิดเครื่อง / WDT / brownout) — ค่าเพดาน $L หายไปกับ RAM → ส่งซ้ำ · บอกคนขับถ้าไม่ใช่เปิดเครื่อง
             reason = ev.get("detail", "")
             if self.daemon: self.daemon.send_limits(self.limits["v_max"], self.limits["w_max"])
+            # C41: POWERON หลังเว็บรันมาแล้ว = ESP32 "ไฟดับแล้วติดใหม่" ไม่ใช่เปิดเครื่อง — เจอจริง 24 ก.ย. 5 ครั้งใน 90 s
+            #      (ESP32 เลี้ยงจาก USB ของ Pi ซึ่งจำกัดรวม 600 mA เมื่อ PSU ไม่ใช่ 5 A PD · เซอร์โวดึงจากขา 5V เดียวกัน → พอร์ตตัด)
+            power_loss = reason == "POWERON" and time.time() - self.started > 30
             self.events.append({"t": "log", "ts": time.time(),
-                                "level": "info" if reason == "POWERON" else "warn",
-                                "msg": f"ESP32 บูตใหม่ ({reason}) — ส่งเพดาน $L ซ้ำแล้ว" +
+                                "level": "info" if (reason == "POWERON" and not power_loss) else "bad" if power_loss else "warn",
+                                "msg": (f"ESP32 ไฟดับแล้วติดใหม่ ({reason}) — เซอร์โว/มอเตอร์ถูกปล่อยหมด · ถ้าเกิดตอนยกเสา = ไฟเลี้ยงไม่พอ "
+                                        "(เซอร์โวต้องได้ไฟจาก buck 5 V ไม่ใช่ขา 5V ของ ESP32/USB ของ Pi)") if power_loss else
+                                       f"ESP32 บูตใหม่ ({reason}) — ส่งเพดาน $L ซ้ำแล้ว" +
                                        (" · รีบูตจาก watchdog: loop ค้างเกิน 1 s" if "WDT" in reason else "")})
             if self.loop: asyncio.run_coroutine_threadsafe(self.broadcast(self.events[-1]), self.loop)
         if self.loop:

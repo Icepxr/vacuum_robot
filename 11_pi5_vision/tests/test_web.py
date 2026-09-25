@@ -382,3 +382,15 @@ def test_cam_controls_via_ws_and_rest(web, monkeypatch):
         assert c.get("/api/status").json()["cam_ctl"]["zoom"] == 5.0
         r = c.post("/api/cam", json={"zoom": 1, "pan": 0.25}).json()
         assert r["ok"] and r["zoom"] == 1.0 and r["pan"] == 0.25
+
+
+def test_poweron_after_uptime_is_power_loss_warning(web):
+    """C41: #E BOOT,POWERON ตอนเว็บรันมาแล้ว > 30 s = ESP32 ไฟดับแล้วติดใหม่ → log ระดับ bad (หน้าเว็บขึ้น toast แดง) + ยังส่ง $L ซ้ำ"""
+    c, master, backend, hub = web
+    hub.started -= 120
+    with c.websocket_connect("/ws") as ws:
+        ws.receive_json(); ws.receive_json()
+        os.write(master, P.encode("#", "E", 99, "BOOT", "POWERON"))
+        assert P.decode(read_line(master)).type == "L"
+        ev = _drain_until(ws, "log")
+        assert ev["level"] == "bad" and "ไฟดับ" in ev["msg"]
