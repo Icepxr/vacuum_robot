@@ -64,28 +64,36 @@
     lift: { cmd: "m", tele: "us_l", step: 2, sl: $("lift-sl"), lbl: $("lift-v"), row: $("lift-row"), us: 0, target: null, drag: false,
             min: () => cfg.liftMinDeg, max: () => cfg.liftMaxDeg, inv: () => cfg.liftInv, start: () => cfg.liftMinDeg, name: "เสา" },
   };
-  const degToUs = (a, d) => Math.round(US_0 + (a.inv() ? 180 - d : d) / 180 * (US_180 - US_0));
+  const degToUs = (a, d) => Math.round(US_0 + (a.inv() ? 180 - d : d) / 180 * (US_180 - US_0));   // d ทศนิยมได้
   const usToDeg = (a, us) => { const d = Math.round((us - US_0) / (US_180 - US_0) * 180); return a.inv() ? 180 - d : d; };
   const camDeg = (a) => a.target != null ? a.target : a.us ? usToDeg(a, a.us) : null;   // มุมที่ "รู้" ตอนนี้ (เป้า > จริง)
-  let servoSendT = {};
+  // C40 (25 ก.ย. — ผู้ใช้: "เด้งๆ ขึ้นๆลงๆ ไม่สมูท"): ต้นเหตุฝั่งเว็บ 2 อย่าง
+  //   1) ลากสไลเดอร์ใช้ debounce 60 ms → ระหว่างลากต่อเนื่องไม่ส่งเลย พอนิ้วชะงักค่อยส่งทีเดียว = กระตุกเป็นช่วงๆ → เปลี่ยนเป็น throttle ส่งทุก 50 ms
+  //   2) กดค้าง −/+ ส่งขั้นใหญ่ (5°/2°) ทุก 150 ms แต่เฟิร์มแวร์เดินเร็วกว่ามาก → วิ่ง 20–50 ms แล้วหยุดรอ ~100 ms = หยุด-วิ่ง-หยุด 7 ครั้ง/วิ
+  //      → กดค้าง = เดินต่อเนื่องที่ความเร็วคงที่ (HOLD_DPS) ส่งเป้าเล็กๆ ทุก 50 ms · แตะครั้งเดียว = 1°
+  const SEND_MS = 50, HOLD_TICK_MS = 50, HOLD_DELAY_MS = 250;
+  const HOLD_DPS = { tilt: 40, lift: 15 };               // °/s ตอนกดค้าง — ช้ากว่าเฟิร์มแวร์ (tilt ~187°/s · เสา ~37°/s) เฟิร์มแวร์จึงตามทันตลอด ไม่มีช่วงหยุดรอ
+  function camSendNow(a) { a.lastSend = performance.now(); a.sendT = null; send({ t: a.cmd, us: degToUs(a, a.target) }); }
   function camGoto(a, deg, immediate = true) {
-    deg = Math.max(a.min(), Math.min(a.max(), Math.round(deg))); a.target = deg;
-    a.lbl.textContent = `${deg}°`; a.sl.value = deg;
-    const fire = () => send({ t: a.cmd, us: degToUs(a, deg) });
-    if (immediate) fire();
-    else { clearTimeout(servoSendT[a.cmd]); servoSendT[a.cmd] = setTimeout(fire, 60); }   // ลากสไลเดอร์: รวมเป็น ≤ ~16 คำสั่ง/วิ
+    deg = Math.max(a.min(), Math.min(a.max(), deg)); a.target = deg;          // เก็บทศนิยมไว้ — µs ละเอียดกว่า 1° (1° = 11 µs)
+    a.lbl.textContent = `${Math.round(deg)}°`; if (!a.drag) a.sl.value = Math.round(deg);
+    const wait = SEND_MS - (performance.now() - (a.lastSend || 0));
+    if (immediate || wait <= 0) { clearTimeout(a.sendT); camSendNow(a); }
+    else if (!a.sendT) a.sendT = setTimeout(() => camSendNow(a), wait);      // throttle: ส่งค่าล่าสุดเมื่อครบ 50 ms (ไม่เลื่อนออกไปเรื่อยๆ แบบ debounce)
   }
-  function camNudge(a, dir) {
+  function camNudge(a, dir, deg = 1) {
     const cur = camDeg(a);
-    if (cur == null) { camGoto(a, a.start()); toast(`${a.name}: ผูกสัญญาณที่ ${a.target}° ก่อน แล้วค่อยกดอีกครั้ง`, "warn"); return; }
-    camGoto(a, cur + dir * a.step);
+    if (cur == null) { camGoto(a, a.start()); toast(`${a.name}: ผูกสัญญาณที่ ${Math.round(a.target)}° ก่อน แล้วค่อยกดอีกครั้ง`, "warn"); return false; }
+    camGoto(a, cur + dir * deg, false); return true;
   }
-  let holdT = null;
+  let holdT = null, holdD = null;
   document.querySelectorAll("[data-hold]").forEach((b) => {
     const [k, d] = b.dataset.hold.split(":"); const a = camAx[k], dir = +d;
-    const stop = () => { clearInterval(holdT); holdT = null; b.classList.remove("hold"); };
-    b.addEventListener("pointerdown", (e) => { e.preventDefault(); try { b.setPointerCapture(e.pointerId); } catch (_) {} b.classList.add("hold"); camNudge(a, dir);
-      clearInterval(holdT); holdT = setInterval(() => camNudge(a, dir), 150); });
+    const stop = () => { clearTimeout(holdD); clearInterval(holdT); holdT = holdD = null; b.classList.remove("hold"); };
+    b.addEventListener("pointerdown", (e) => { e.preventDefault(); try { b.setPointerCapture(e.pointerId); } catch (_) {} b.classList.add("hold");
+      stop(); b.classList.add("hold");
+      if (!camNudge(a, dir, 1)) return;                                         // แตะ = 1°
+      holdD = setTimeout(() => { holdT = setInterval(() => camNudge(a, dir, HOLD_DPS[k] * HOLD_TICK_MS / 1000), HOLD_TICK_MS); }, HOLD_DELAY_MS); });
     ["pointerup", "pointercancel", "lostpointercapture"].forEach((ev) => b.addEventListener(ev, stop));
   });
   for (const a of Object.values(camAx)) {
@@ -116,7 +124,7 @@
   });
   // ⚙ กล้อง: "ใช้มุมปัจจุบันเป็น ต่ำสุด/สูงสุด" — ไว้ไฟนอลขีดจากของจริง (ผู้ใช้ 22 ก.ย.)
   document.querySelectorAll("[data-setlim]").forEach((b) => b.onclick = () => {
-    const [k, which] = b.dataset.setlim.split(":"); const a = camAx[k]; const d = a.us ? usToDeg(a, a.us) : camDeg(a);
+    const [k, which] = b.dataset.setlim.split(":"); const a = camAx[k]; const d0 = a.us ? usToDeg(a, a.us) : camDeg(a); const d = d0 == null ? null : Math.round(d0);
     if (d == null) { toast(`${a.name}: ยังไม่รู้มุม — ขยับก่อน`, "warn"); return; }
     cfg[k + (which === "min" ? "MinDeg" : "MaxDeg")] = d; save(); applyCfg(); toast(`${a.name}: ${which === "min" ? "ต่ำสุด" : "สูงสุด"} = ${d}°`, "good");
   });
