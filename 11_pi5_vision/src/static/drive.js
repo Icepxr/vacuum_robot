@@ -6,7 +6,7 @@
   // C28: เพดานความเร็วเป็นของผู้ใช้ (cfg.vMax/wMax → {t:"limits"} → Pi → $L) · ESP32 clamp แค่ที่ฮาร์ดแวร์ 716 mm/s
   let V_MAX = 150;                                     // = cfg.vMax หลัง applyCfg
   const V_HW_MAX = 716, W_HW_MAX = 7950;
-  const DEFAULTS = { vMax: 300, wMax: 3000, maxPct: 50, turnGain: 2000, tiltMinDeg: 0, tiltMaxDeg: 180, tiltInv: false, liftMinDeg: 45, liftMaxDeg: 135, liftInv: false, camPad: true, rampMs: 250, deadzone: 0.12, turnScale: true, invY: false, invX: false,
+  const DEFAULTS = { vMax: 300, wMax: 3000, maxPct: 50, turnGain: 2000, tiltMinDeg: 0, tiltMaxDeg: 180, tiltInv: false, liftMinDeg: 45, liftMaxDeg: 135, liftInv: true, calVer: 2, camPad: true, rampMs: 250, deadzone: 0.12, turnScale: true, invY: false, invX: false,
     joySide: "left", joySize: "m", autoSuction: false, driveUi: "pad", curveTurn: 50, joySnap: true, fps: 10, gridOn: false, roiOn: true, mirror: false,
     suctionPct: 100, suctionIdleOff: 0, sound: true, vibrate: true, toastSec: 3, staleSec: 2,
     accent: "mint", density: "comfortable", bigButtons: false, wakeLock: true };
@@ -16,6 +16,10 @@
   const usDeg = (us) => Math.round((us - 500) / 2000 * 180);
   if (cfg.tiltMin != null) { cfg.tiltMinDeg = usDeg(cfg.tiltMin); cfg.tiltMaxDeg = usDeg(cfg.tiltMax); delete cfg.tiltMin; delete cfg.tiltMax; }
   if (cfg.liftMin != null) { cfg.liftMinDeg = usDeg(cfg.liftMin); cfg.liftMaxDeg = usDeg(cfg.liftMax); delete cfg.liftMin; delete cfg.liftMax; }
+  // C42 (25 ก.ย. ผู้ใช้: "0° แล้วเสายกสูง"): เสาจริงยกเมื่อพัลส์ "สั้นลง" (500 µs = บน) → กลับทิศเป็นค่าเริ่มต้น
+  // เครื่องที่เคยบันทึก liftInv:false ไว้ก่อนหน้า → บังคับครั้งเดียว + คืนขีดเสาเป็น 45–135° (= 1000–2000 µs ช่วงเดิม)
+  // เพราะขีดที่เคยตั้งไว้ถูกตั้งตอนทิศกลับด้าน — ใช้ต่อจะพาไปชนสุดทางอีกฝั่ง
+  if ((cfg.calVer || 1) < 2) { cfg.liftInv = true; cfg.liftMinDeg = 45; cfg.liftMaxDeg = 135; cfg.calVer = 2; }
   const save = () => { try { localStorage.setItem("mrc.drive.cfg", JSON.stringify(cfg)); } catch (e) {} };
 
   // ── apply cfg → DOM ──
