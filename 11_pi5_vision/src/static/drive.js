@@ -6,7 +6,7 @@
   // C28: เพดานความเร็วเป็นของผู้ใช้ (cfg.vMax/wMax → {t:"limits"} → Pi → $L) · ESP32 clamp แค่ที่ฮาร์ดแวร์ 716 mm/s
   let V_MAX = 150;                                     // = cfg.vMax หลัง applyCfg
   const V_HW_MAX = 716, W_HW_MAX = 7950;
-  const DEFAULTS = { vMax: 716, wMax: 7950, maxPct: 50, turnGain: 7950, spinMinPct: 70, tiltMinDeg: 0, tiltMaxDeg: 180, tiltInv: false, liftMinDeg: 45, liftMaxDeg: 135, liftInv: true, calVer: 3, camPad: true, rampMs: 250, deadzone: 0.12, turnScale: true, invY: false, invX: false,
+  const DEFAULTS = { vMax: 716, wMax: 7950, maxPct: 50, turnGain: 7950, spinMinPct: 70, tiltMinDeg: 0, tiltMaxDeg: 180, tiltInv: false, liftMinDeg: 45, liftMaxDeg: 135, liftInv: true, calVer: 4, camPad: true, rampMs: 250, deadzone: 0.12, turnScale: true, invY: false, invX: false,
     joySide: "left", joySize: "m", autoSuction: false, driveUi: "pad", curveTurn: 50, joySnap: true, fps: 10, gridOn: false, roiOn: true, mirror: false,
     suctionPct: 100, suctionIdleOff: 0, sound: true, vibrate: true, toastSec: 3, staleSec: 2,
     accent: "mint", density: "comfortable", bigButtons: false, wakeLock: true };
@@ -21,7 +21,9 @@
   // เพราะขีดที่เคยตั้งไว้ถูกตั้งตอนทิศกลับด้าน — ใช้ต่อจะพาไปชนสุดทางอีกฝั่ง
   if ((cfg.calVer || 1) < 2) { cfg.liftInv = true; cfg.liftMinDeg = 45; cfg.liftMaxDeg = 135; cfg.calVer = 2; }
   // C43 (26 ก.ย.): ความแรง 50/75/100 % ของกำลังเต็ม + หมุนแรงขึ้น — ค่าเดิมในเครื่อง (turnGain 2000 · สปีด 25 %) ทำให้หมุนได้แค่ ~3–4 V
-  if (cfg.calVer < 3) { cfg.turnGain = 7950; cfg.spinMinPct = 70; if (![50, 75, 100].includes(cfg.maxPct)) cfg.maxPct = 50; cfg.calVer = 3; }
+  if (cfg.calVer < 3) { cfg.spinMinPct = 70; if (![50, 75, 100].includes(cfg.maxPct)) cfg.maxPct = 50; }
+  // C44 (26 ก.ย. วัดสดตอนผู้ใช้กดหมุน: w สูงสุด ~2780 → ล้อ ±350 ‰): migration C43 ตั้ง turnGain 7950 แล้ว applyCfg ตัดทิ้งเหลือ wMax เก่า 3000 → ตั้งซ้ำ
+  if (cfg.calVer < 4) { cfg.turnGain = 7950; cfg.calVer = 4; }
   const save = () => { try { localStorage.setItem("mrc.drive.cfg", JSON.stringify(cfg)); } catch (e) {} };
 
   // ── apply cfg → DOM ──
@@ -32,7 +34,7 @@
   }
   function applyCfg() {
     cfg.vMax = Math.max(50, Math.min(V_HW_MAX, +cfg.vMax || V_HW_MAX)); cfg.wMax = Math.max(500, Math.min(W_HW_MAX, +cfg.wMax || W_HW_MAX));
-    if (cfg.turnGain > cfg.wMax) cfg.turnGain = cfg.wMax;
+    // C44: ไม่ตัด turnGain ถาวรตามเพดานที่ยังเป็นค่าเก่าในเครื่อง (ก่อน sys ของหุ่นมาถึง) — ตัดตอนใช้แทน (turnW)
     V_MAX = cfg.vMax;
     for (const k of ["tilt", "lift"]) { const lo = k + "MinDeg", hi = k + "MaxDeg"; cfg[lo] = Math.max(0, Math.min(180, +cfg[lo] || 0)); cfg[hi] = Math.max(0, Math.min(180, +cfg[hi] || 0)); if (cfg[lo] >= cfg[hi]) cfg[hi] = Math.min(180, cfg[lo] + 1); }
     root.dataset.campad = cfg.camPad ? 1 : 0; camApplyLimits();
@@ -295,9 +297,10 @@
     if (Math.hypot(x, y) < cfg.deadzone) x = y = 0;
     if (cfg.invY) y = -y; if (cfg.invX) x = -x;
     const tv = y * V_MAX * speedPct / 100;
-    let tw = -x * cfg.turnGain * (cfg.turnScale ? (1 - 0.5 * Math.abs(y)) : 1);
+    const turnW = Math.min(cfg.turnGain, cfg.wMax);
+    let tw = -x * turnW * (cfg.turnScale ? (1 - 0.5 * Math.abs(y)) : 1);
     // C43: หมุนอยู่กับที่ต้องแรงกว่าเดินตรง (ล้อไถลข้าง) → ใช้ % ที่มากกว่าระหว่างปุ่มความแรงกับ spinMinPct (เริ่มต้น 70 %)
-    if (stepInput) tw = -x * cfg.turnGain * (y ? cfg.curveTurn / 100 : Math.max(speedPct, cfg.spinMinPct) / 100);
+    if (stepInput) tw = -x * turnW * (y ? cfg.curveTurn / 100 : Math.max(speedPct, cfg.spinMinPct) / 100);
     if (!x && !y) { curV = curW = 0; if (driving) { driving = false; send({ t: "release" }); } return; }
     if (!driving) { driving = true; if (cfg.autoSuction && !suction) toggleSuction(); }
     const step = cfg.rampMs ? Math.min(1, dt / cfg.rampMs) : 1;
