@@ -3,198 +3,251 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-<meta name="theme-color" content="#0B1220">
-<title>MRC-001 · ขับ</title>
+<meta name="theme-color" content="#0B0718">
+<title>ARIA · MRC-001 POV Control</title>
 <link rel="stylesheet" href="/static/drive.css">
+<link rel="stylesheet" href="/static/drive-vr.css?v=20260927">
 </head>
 <body>
 <main class="cockpit" id="cockpit">
-  <div class="viewport">
-    <img id="cam" class="cam" alt="ภาพสดจากกล้องหุ่น">
-    <div id="grid" class="grid" hidden></div>
-    <div id="roi" class="roi" hidden><span class="roi-tag">กรอบที่อ่านตัวเลข</span><i class="h tl"></i><i class="h tr"></i><i class="h bl"></i><i class="h br"></i></div>
-    <div class="vignette"></div>
-    <span id="zoom-tag" class="zoom-tag" hidden>1.0×</span>
-  </div>
-
   <header class="hud">
+    <div class="brand" aria-label="ARIA Robot Control"><span class="brand-mark"><img src="/static/aria-logo-reference.png" alt="โลโก้ ARIA"></span><span class="brand-copy"><strong>ARIA</strong><small>ROBOT CONTROL <span>MRC-001</span></small></span></div>
     <div class="chips">
       <span id="mode" class="chip mode">กำลังเชื่อมต่อ</span>
       <span id="bat" class="chip">แบต —</span>
       <span id="link" class="chip">ลิงก์ —</span>
       <span id="cams" class="chip">กล้อง —</span>
-      <span id="air" class="chip" hidden>CO₂ —</span>
       <span id="mast" class="chip warn" hidden>เสายกอยู่</span>
       <span id="spin" class="chip warn" hidden>ไต่รอบดูด… ล้อออกตัวใน 1 วิ</span>
     </div>
     <div class="hud-r">
-      <button id="settings-btn" class="icon" type="button" aria-label="ตั้งค่า">⚙</button>
+      <button id="settings-btn" class="icon" type="button" aria-label="ตั้งค่า"><span aria-hidden="true">⚙</span><span class="settings-label">ตั้งค่า</span></button>
     </div>
+    <button id="air" class="air-overview" type="button" data-tone="offline" aria-label="คุณภาพอากาศ · เปิดรายละเอียด" title="eCO₂ เป็นค่าประมาณจาก VOC ไม่ใช่ CO₂ ที่วัดโดยตรง · AQI ของ ENS160 มีระดับ 1–5">
+      <span class="air-summary"><span class="air-dot" aria-hidden="true"></span><span>อากาศ</span><strong id="air-hud-state">รอข้อมูล</strong></span>
+      <span class="air-metric"><small>eCO₂ <i>ppm</i></small><b id="air-hud-co2">—</b></span>
+      <span class="air-metric"><small>TVOC <i>ppb</i></small><b id="air-hud-tvoc">—</b></span>
+      <span class="air-metric"><small>AQI <i>1–5</i></small><b id="air-hud-aqi">—</b></span>
+      <span class="air-metric"><small>อุณหภูมิ <i>°C</i></small><b id="air-hud-temp">—</b></span>
+      <span class="air-metric"><small>ความชื้น <i>%</i></small><b id="air-hud-rh">—</b></span>
+    </button>
   </header>
 
-  <div id="toast" class="toast" hidden></div>
+  <div class="workspace">
+    <section class="drive-panel panel" aria-label="การขับเคลื่อน">
+      <div class="panel-heading"><span class="eyebrow">01 / DRIVE</span><h1>ขับเคลื่อน</h1><p>กดค้างเพื่อเคลื่อนที่ · ปล่อยแล้วหยุด</p></div>
+      <div id="joy" class="joy" hidden>
+        <div class="joy-ring"><div class="joy-arc" id="arc"></div></div>
+        <div id="knob" class="joy-knob"></div>
+      </div>
+      <div id="pad" class="pad" hidden>
+        <div class="pad-grid">
+          <button type="button" data-dir="-1:1" aria-label="เลี้ยวซ้ายไปหน้า">↖</button>
+          <button type="button" data-dir="0:1" aria-label="เดินหน้า">▲</button>
+          <button type="button" data-dir="1:1" aria-label="เลี้ยวขวาไปหน้า">↗</button>
+          <button type="button" data-dir="-1:0" aria-label="หมุนซ้าย">◀</button>
+          <button type="button" data-dir="stop" class="pad-stop" aria-label="หยุด">■</button>
+          <button type="button" data-dir="1:0" aria-label="หมุนขวา">▶</button>
+          <button type="button" data-dir="-1:-1" aria-label="ถอยเลี้ยวซ้าย">↙</button>
+          <button type="button" data-dir="0:-1" aria-label="ถอยหลัง">▼</button>
+          <button type="button" data-dir="1:-1" aria-label="ถอยเลี้ยวขวา">↘</button>
+        </div>
+        <div class="pad-foot">
+          <button type="button" data-pct="25">ช้า</button><button type="button" data-pct="50">ปกติ</button><button type="button" data-pct="100">เต็ม</button>
+        </div>
+      </div>
+      <div class="dial" id="dial">
+        <div class="dial-head"><span>ความเร็วที่ใช้</span><div class="dial-num"><b id="spdnum">75</b><small>mm/s</small></div></div>
+        <input id="spd" class="dial-slider" type="range" min="10" max="100" value="50" step="5" aria-label="ความเร็ว">
+        <div class="dial-presets">
+          <button type="button" data-pct="25">ช้า</button>
+          <button type="button" data-pct="50" class="on">ปกติ</button>
+          <button type="button" data-pct="100">เต็ม</button>
+        </div>
+      </div>
+    </section>
 
-  <div id="joy" class="joy" hidden>
-    <div class="joy-ring"><div class="joy-arc" id="arc"></div></div>
-    <div id="knob" class="joy-knob"></div>
-  </div>
-  <!-- C36 ปุ่มทิศทาง 8 ทาง (ค่าเริ่มต้น): กดค้าง = ไป ปล่อย = หยุด · ▲▼ ตรงแน่นอน · ◀▶ หมุนอยู่กับที่ · มุม = เลี้ยวโค้ง -->
-  <div id="pad" class="pad" hidden>
-    <div class="pad-grid">
-      <button type="button" data-dir="-1:1" aria-label="เลี้ยวซ้ายไปหน้า">↖</button>
-      <button type="button" data-dir="0:1" aria-label="เดินหน้า">▲</button>
-      <button type="button" data-dir="1:1" aria-label="เลี้ยวขวาไปหน้า">↗</button>
-      <button type="button" data-dir="-1:0" aria-label="หมุนซ้าย">◀</button>
-      <button type="button" data-dir="stop" class="pad-stop" aria-label="หยุด">■</button>
-      <button type="button" data-dir="1:0" aria-label="หมุนขวา">▶</button>
-      <button type="button" data-dir="-1:-1" aria-label="ถอยเลี้ยวซ้าย">↙</button>
-      <button type="button" data-dir="0:-1" aria-label="ถอยหลัง">▼</button>
-      <button type="button" data-dir="1:-1" aria-label="ถอยเลี้ยวขวา">↘</button>
-    </div>
-    <div class="pad-foot">
-      <button type="button" data-pct="25">ช้า</button><button type="button" data-pct="50">ปกติ</button><button type="button" data-pct="100">เต็ม</button>
-    </div>
-  </div>
+    <section class="vision-panel" aria-label="ภาพสดจากหุ่น">
+      <div class="vision-heading"><div><span class="eyebrow">LIVE CAMERA / MRC-001</span><h2>มองผ่านหุ่น</h2></div><span id="live-state" class="live-badge is-offline"><i></i><span>รอภาพ</span></span></div>
+      <div class="viewport">
+        <img id="cam" class="cam" alt="ภาพสดจากกล้องหุ่น">
+        <div id="camera-offline" class="camera-offline"><span aria-hidden="true">◎</span><strong>ยังไม่มีภาพจากกล้อง</strong><small>ตรวจกล้องและลิงก์ก่อนขับ</small></div>
+        <div id="grid" class="grid" hidden></div>
+        <div id="roi" class="roi" hidden><span class="roi-tag">กรอบที่อ่านตัวเลข</span><i class="h tl"></i><i class="h tr"></i><i class="h bl"></i><i class="h br"></i></div>
+        <div class="vignette"></div>
+        <span id="zoom-tag" class="zoom-tag" hidden>1.0×</span>
+      </div>
+      <div class="vision-foot"><span>เล็งตัวเลขมิเตอร์ให้อยู่ในกรอบ แล้วกดถ่าย</span></div>
+    </section>
 
-  <!-- แผงกล้อง rev.3 (22 ก.ย.): คุมเป็น "มุม" (องศา) ด้วยสไลเดอร์ — ลากไปมุมที่ต้องการ · −/+ ขยับทีละขั้น (กดค้างได้) · ตัวเลข = มุมจริงจาก #T -->
-  <div class="campad" id="campad">
-    <div class="cam-row" id="tilt-row">
-      <span class="cam-lbl">มุมกล้อง</span>
-      <button class="cam-step" type="button" data-hold="tilt:-1" aria-label="ก้มกล้อง">−</button>
-      <input class="cam-slider" id="tilt-sl" type="range" min="0" max="180" step="1" value="90" aria-label="มุมกล้อง (องศา)">
-      <button class="cam-step" type="button" data-hold="tilt:1" aria-label="เงยกล้อง">+</button>
-      <b id="tilt-v">ปล่อย</b>
-    </div>
-    <div class="cam-row" id="lift-row">
-      <span class="cam-lbl">เสา</span>
-      <button class="cam-step" type="button" data-hold="lift:-1" aria-label="ลดเสา">−</button>
-      <input class="cam-slider" id="lift-sl" type="range" min="45" max="135" step="1" value="45" aria-label="เสา (องศา)">
-      <button class="cam-step" type="button" data-hold="lift:1" aria-label="ยกเสา">+</button>
-      <b id="lift-v">ปล่อย</b>
-    </div>
-    <div class="cam-row" id="zoom-col">
-      <span class="cam-lbl">ซูม</span>
-      <button class="cam-step" type="button" data-zoom="-1" aria-label="ซูมออก">−</button>
-      <input class="cam-slider" id="zoom-sl" type="range" min="1" max="5" step="0.1" value="1" aria-label="ซูม">
-      <button class="cam-step" type="button" data-zoom="1" aria-label="ซูมเข้า">+</button>
-      <b id="zoom-v">1.0×</b>
-    </div>
-    <div class="cam-foot">
-      <button type="button" data-cam="mid">กล้องตรง</button>
-      <button type="button" data-cam="down">พับเสา</button>
-      <button type="button" data-cam="release">ปล่อยเซอร์โว</button>
-    </div>
+    <section class="task-panel panel" aria-label="เครื่องมือของหุ่น">
+      <div class="panel-heading"><span class="eyebrow">02 / TOOLS</span><h2>เครื่องมือ</h2><p>กล้อง เสา และระบบเก็บขยะ</p></div>
+      <details class="camera-details" id="camera-details">
+        <summary>ปรับกล้องและเสา</summary>
+      <div class="campad" id="campad">
+        <div class="cam-row" id="tilt-row">
+          <span class="cam-lbl">มุมกล้อง</span>
+          <button class="cam-step" type="button" data-hold="tilt:-1" aria-label="ก้มกล้อง">−</button>
+          <input class="cam-slider" id="tilt-sl" type="range" min="0" max="180" step="1" value="90" aria-label="มุมกล้อง (องศา)">
+          <button class="cam-step" type="button" data-hold="tilt:1" aria-label="เงยกล้อง">+</button>
+          <b id="tilt-v">ปล่อย</b>
+        </div>
+        <div class="cam-row" id="lift-row">
+          <span class="cam-lbl">เสา</span>
+          <button class="cam-step" type="button" data-hold="lift:-1" aria-label="ลดเสา">−</button>
+          <input class="cam-slider" id="lift-sl" type="range" min="45" max="135" step="1" value="45" aria-label="เสา (องศา)">
+          <button class="cam-step" type="button" data-hold="lift:1" aria-label="ยกเสา">+</button>
+          <b id="lift-v">ปล่อย</b>
+        </div>
+        <div class="cam-row" id="zoom-col">
+          <span class="cam-lbl">ซูม</span>
+          <button class="cam-step" type="button" data-zoom="-1" aria-label="ซูมออก">−</button>
+          <input class="cam-slider" id="zoom-sl" type="range" min="1" max="5" step="0.1" value="1" aria-label="ซูม">
+          <button class="cam-step" type="button" data-zoom="1" aria-label="ซูมเข้า">+</button>
+          <b id="zoom-v">1.0×</b>
+        </div>
+        <div class="cam-foot">
+          <button type="button" data-cam="mid">กล้องตรง</button>
+          <button type="button" data-cam="down">พับเสา</button>
+          <button type="button" data-cam="release">ปล่อยเซอร์โว</button>
+        </div>
+      </div>
+      </details>
+      <button id="capture" class="dock-btn cap" type="button"><span class="ico" aria-hidden="true">◉</span><span>ถ่ายมิเตอร์</span><b id="capn">0 ใบ</b></button>
+      <div class="tools-label clean-label">ระบบเก็บขยะ</div>
+      <nav class="dock" aria-label="ระบบทำความสะอาด">
+        <button id="suction" class="dock-btn tog" type="button"><span class="ico" aria-hidden="true">◌</span><span>ดูดฝุ่น</span><b>ปิด</b></button>
+        <button id="brush" class="dock-btn tog" type="button"><span class="ico" aria-hidden="true">✳</span><span>แปรงข้าง</span><b>ปิด</b></button>
+      </nav>
+    </section>
   </div>
-  <div class="dial" id="dial">
-    <div class="dial-num"><b id="spdnum">75</b><small>mm/s</small></div>
-    <input id="spd" class="dial-slider" type="range" min="10" max="100" value="50" step="5" aria-label="ความเร็ว">
-    <div class="dial-presets">
-      <button type="button" data-pct="25">ช้า</button>
-      <button type="button" data-pct="50" class="on">ปกติ</button>
-      <button type="button" data-pct="100">เต็ม</button>
-    </div>
-  </div>
-
-  <nav class="dock">
-    <button id="suction" class="dock-btn tog" type="button"><span class="ico">◌</span><span>ดูดฝุ่น</span><b>ปิด</b></button>
-    <button id="brush" class="dock-btn tog" type="button"><span class="ico">✳</span><span>แปรงข้าง</span><b>ปิด</b></button>
-    <button id="capture" class="dock-btn cap" type="button"><span class="ico">◉</span><span>ถ่ายมิเตอร์</span><b id="capn">0 ใบ</b></button>
-  </nav>
-
-  <button id="estop" class="estop" type="button"><span>หยุด</span><small>ฉุกเฉิน</small></button>
+  <button id="estop" class="estop" type="button"><span class="estop-icon" aria-hidden="true">■</span><span>หยุดฉุกเฉิน</span><small>หยุดหุ่นทันที</small></button>
+  <div id="toast" class="toast" hidden role="status" aria-live="polite"></div>
 </main>
 
-<section id="sheet" class="sheet" hidden>
+<section id="sheet" class="sheet" hidden aria-labelledby="settings-title">
   <div class="sheet-head">
-    <div class="tabs" id="tabs">
-      <button data-tab="drive" class="on" type="button">ขับ</button>
-      <button data-tab="cam" type="button">กล้อง</button>
-      <button data-tab="clean" type="button">ทำความสะอาด</button>
-      <button data-tab="alert" type="button">การเตือน</button>
-      <button data-tab="screen" type="button">จอ</button>
-      <button data-tab="keys" type="button">ปุ่ม</button>
-      <button data-tab="status" type="button">สถานะ</button>
+    <div><span class="settings-eyebrow">ARIA / PREFERENCES</span><h2 id="settings-title">ตั้งค่าให้ถนัดมือ</h2><p>บันทึกอัตโนมัติบนเครื่องนี้</p></div>
+    <button id="sheet-close" class="icon" type="button" aria-label="กลับไปขับ">✕</button>
+  </div>
+  <div class="tabs" id="tabs" role="tablist" aria-label="หมวดตั้งค่า">
+    <button id="tab-use" data-tab="use" class="on" type="button" role="tab" aria-selected="true" aria-controls="pane-use">ใช้งาน</button>
+    <button id="tab-view" data-tab="view" type="button" role="tab" aria-selected="false" aria-controls="pane-view" tabindex="-1">ภาพและจอ</button>
+    <button id="tab-advanced" data-tab="advanced" type="button" role="tab" aria-selected="false" aria-controls="pane-advanced" tabindex="-1">ขั้นสูง</button>
+    <button id="tab-status" data-tab="status" type="button" role="tab" aria-selected="false" aria-controls="pane-status" tabindex="-1">สถานะ</button>
+  </div>
+  <div class="pane on" id="pane-use" data-pane="use" role="tabpanel" aria-labelledby="tab-use">
+    <div class="settings-card">
+      <h3>ขับแบบที่ถนัด</h3><p class="section-note">กดค้างเพื่อขับ ปล่อยแล้วหยุด</p>
+      <div class="choice-grid" aria-label="รูปแบบการขับ">
+        <button type="button" data-choice="driveUi:pad" aria-pressed="false"><span aria-hidden="true">✥</span><strong>ปุ่มทิศทาง</strong><small>เลือกทิศได้ชัดเจน</small></button>
+        <button type="button" data-choice="driveUi:joy" aria-pressed="false"><span aria-hidden="true">◎</span><strong>จอยลาก</strong><small>ลากนิ้วเพื่อเลี้ยว</small></button>
+      </div>
+      <div class="joy-preferences">
+        <label class="row"><span>จอยอยู่ด้าน</span><select data-cfg="joySide" aria-label="ด้านของจอย"><option value="left">ซ้าย</option><option value="right">ขวา</option></select></label>
+      </div>
     </div>
-    <button id="sheet-close" class="icon" type="button" aria-label="ปิด">✕</button>
+    <div class="settings-card">
+      <h3>ความเร็วที่ใช้</h3><p class="section-note">ปรับได้จากหน้าขับเช่นกัน · ไม่เปลี่ยนเพดานของหุ่น</p>
+      <div class="speed-options"><button type="button" data-pct="25">ช้า</button><button type="button" data-pct="50">ปกติ</button><button type="button" data-pct="100">เต็ม</button></div>
+      <label class="row range-row"><span>ปรับเอง</span><input data-cfg="maxPct" type="range" min="10" max="100" step="5" aria-label="ความเร็วที่ใช้"><output></output></label>
+    </div>
+    <div class="settings-card">
+      <h3>การตอบสนอง</h3>
+      <label class="row"><span>เสียงเตือน <small>เมื่อลิงก์หลุด หรือคำสั่งถูกปฏิเสธ</small></span><input data-cfg="sound" type="checkbox"></label>
+      <label class="row"><span>สั่นมือถือ <small>ขึ้นอยู่กับการรองรับของเครื่อง</small></span><input data-cfg="vibrate" type="checkbox"></label>
+    </div>
+    <p class="settings-hint">ค่ามอเตอร์และเซอร์โวอยู่ใน “ขั้นสูง” ไม่ต้องปรับสำหรับการใช้งานทั่วไป</p>
   </div>
-
-  <div class="pane on" data-pane="drive">
-    <label class="row"><span>รูปแบบการขับ <small>ปุ่มทิศทาง: ▲▼ ตรงแน่นอน · ◀▶ หมุนอยู่กับที่ · มุม = เลี้ยวโค้ง · กดค้างไป ปล่อยหยุด</small></span><select data-cfg="driveUi"><option value="pad">ปุ่มทิศทาง 8 ทาง</option><option value="joy">จอยลาก</option></select></label>
-    <label class="row"><span>ความแรงเลี้ยวโค้ง (ปุ่มมุม) <small>% ของความไวการหมุน · น้อย = โค้งกว้าง</small></span><input data-cfg="curveTurn" type="range" min="20" max="100" step="5"><output></output></label>
-    <label class="row"><span>จอย: ล็อกแกน <small>เอียงใกล้แนวตั้ง = ตรงเป๊ะ · ใกล้แนวนอน = หมุนอย่างเดียว (แก้ "คุมทิศยาก")</small></span><input data-cfg="joySnap" type="checkbox"></label>
-    <label class="row"><span>เพดานความเร็วสูงสุด <small>คุณตัดสินใจเอง · เริ่มต้น 300 (ต่ำกว่า ~180 มอเตอร์ไม่มีแรง) · สูงสุด 716 · ไม่มีกันชน — ที่ 300 หุ่นวิ่งต่อ ~20–30 cm ก่อนคุณหยุดทัน</small></span><input data-cfg="vMax" type="range" min="50" max="716" step="10"><output></output></label>
-    <label class="row"><span>ความเร็วที่ใช้ตอนนี้ <small>% ของเพดาน — ปรับจากหน้าจอหลักได้ด้วย</small></span><input data-cfg="maxPct" type="range" min="20" max="100" step="5"><output></output></label>
-    <label class="row"><span>เพดานการหมุน <small>mrad/s · เริ่มต้น 3000 (C31: 1500 หมุนไม่ไป — duty ต่ำกว่าแรงเสียดทาน)</small></span><input data-cfg="wMax" type="range" min="500" max="4000" step="100"><output></output></label>
-    <label class="row"><span>ความไวการหมุน <small>mrad/s ที่จอยสุดทาง (ไม่เกินเพดานการหมุน)</small></span><input data-cfg="turnGain" type="range" min="400" max="4000" step="50"><output></output></label>
-    <label class="row"><span>ความนุ่มตอนออกตัว <small>ms ไต่ถึงความเร็วที่ขอ</small></span><input data-cfg="rampMs" type="range" min="0" max="800" step="50"><output></output></label>
-    <label class="row"><span>โซนตายของจอย</span><input data-cfg="deadzone" type="range" min="0" max="0.35" step="0.05"><output></output></label>
-    <label class="row"><span>ลดความเร็วหมุนเมื่อวิ่งเร็ว <small>กันหมุนหวือตอนเต็มสปีด</small></span><input data-cfg="turnScale" type="checkbox"></label>
-    <label class="row"><span>กลับทิศเดินหน้า/ถอย</span><input data-cfg="invY" type="checkbox"></label>
-    <label class="row"><span>กลับทิศซ้าย/ขวา</span><input data-cfg="invX" type="checkbox"></label>
-    <label class="row"><span>จอยอยู่ด้าน</span><select data-cfg="joySide"><option value="left">ซ้าย</option><option value="right">ขวา</option></select></label>
-    <label class="row"><span>ขนาดจอย</span><select data-cfg="joySize"><option value="s">เล็ก</option><option value="m">กลาง</option><option value="l">ใหญ่</option></select></label>
-    <label class="row"><span>เปิดดูดอัตโนมัติเมื่อเริ่มขับ</span><input data-cfg="autoSuction" type="checkbox"></label>
-  </div>
-
-  <div class="pane" data-pane="cam">
-    <p class="fine">เซอร์โวคุมเป็น <b>องศา</b> (0–180° = พัลส์ 500–2500 µs ตามสเปกทั่วไปของ MG996R — ยังไม่ได้วัดตัวจริง C8) · ขีดจำกัดข้างล่างคือ "กลไกไม่ชน" — ตั้งจากที่ลองจริงเท่านั้น · วิธีหา: ขยายขีดให้กว้าง เลื่อนสไลเดอร์ช้าๆ จนถึงจุดที่กลไกเริ่มติด แล้วกด "ใช้มุมนี้"</p>
-    <label class="row"><span>มุมกล้อง — ต่ำสุด (ก้ม) <small>°</small></span><input data-cfg="tiltMinDeg" type="range" min="0" max="180" step="1"><output></output></label>
-    <label class="row"><span>มุมกล้อง — สูงสุด (เงย)</span><input data-cfg="tiltMaxDeg" type="range" min="0" max="180" step="1"><output></output></label>
-    <div class="row"><span>มุมกล้อง — ใช้มุมปัจจุบันเป็น</span><div class="btns"><button class="btn" type="button" data-setlim="tilt:min">ต่ำสุด</button><button class="btn" type="button" data-setlim="tilt:max">สูงสุด</button></div></div>
-    <label class="row"><span>มุมกล้อง — กลับทิศ <small>ถ้า + แล้วกล้องก้มแทนเงย</small></span><input data-cfg="tiltInv" type="checkbox"></label>
-    <label class="row"><span>เสา — พับสุด <small>° · ⚠ เกินช่วงจริง = เฟือง/ก้านชน</small></span><input data-cfg="liftMinDeg" type="range" min="0" max="180" step="1"><output></output></label>
-    <label class="row"><span>เสา — ยกสุด</span><input data-cfg="liftMaxDeg" type="range" min="0" max="180" step="1"><output></output></label>
-    <div class="row"><span>เสา — ใช้มุมปัจจุบันเป็น</span><div class="btns"><button class="btn" type="button" data-setlim="lift:min">พับสุด</button><button class="btn" type="button" data-setlim="lift:max">ยกสุด</button></div></div>
-    <label class="row"><span>เสา — กลับทิศ <small>ถ้า + แล้วเสาลดแทนยก</small></span><input data-cfg="liftInv" type="checkbox"></label>
-    <label class="row"><span>แผงกล้องบนหน้าจอ <small>สไลเดอร์มุม/ความสูง/ซูม</small></span><input data-cfg="camPad" type="checkbox"></label>
+  <div class="pane" id="pane-view" data-pane="view" role="tabpanel" aria-labelledby="tab-view">
+    <div class="settings-card">
+      <h3>ภาพจากหุ่น</h3>
+      <label class="row range-row"><span>ความลื่นของภาพ <small>ลดลงถ้า Wi-Fi ไม่เสถียร</small></span><input data-cfg="fps" type="range" min="2" max="15" step="1"><output></output></label>
+      <label class="row"><span>เส้นตารางช่วยเล็ง</span><input data-cfg="gridOn" type="checkbox"></label>
+      <label class="row"><span>กรอบอ่านตัวเลข</span><input data-cfg="roiOn" type="checkbox"></label>
+    </div>
+    <details class="settings-group"><summary><span>หน้าจอและปุ่ม<small>ขนาดปุ่ม สี และการแสดงผล</small></span></summary><div class="group-body">
+      <label class="row"><span>ปุ่มใหญ่พิเศษ</span><input data-cfg="bigButtons" type="checkbox"></label>
+      <label class="row"><span>กันจอดับขณะขับ</span><input data-cfg="wakeLock" type="checkbox"></label>
+      <label class="row"><span>แสดงแผงปรับกล้อง</span><input data-cfg="camPad" type="checkbox"></label>
+      <label class="row"><span>กลับภาพซ้าย–ขวา</span><input data-cfg="mirror" type="checkbox"></label>
+      <label class="row"><span>ขนาดจอย</span><select data-cfg="joySize"><option value="s">เล็ก</option><option value="m">กลาง</option><option value="l">ใหญ่</option></select></label>
+      <label class="row"><span>ความหนาแน่น HUD</span><select data-cfg="density"><option value="comfortable">สบายตา</option><option value="compact">กะทัดรัด</option></select></label>
+      <div class="row"><span>สีเน้น</span><div class="swatches" id="swatches">
+        <button type="button" data-accent="mint" style="--c:#AB79FF" aria-label="ม่วง ARIA"></button><button type="button" data-accent="sky" style="--c:#77D1F9" aria-label="ฟ้า"></button>
+        <button type="button" data-accent="amber" style="--c:#FFD27E" aria-label="อำพัน"></button><button type="button" data-accent="rose" style="--c:#FFA1C5" aria-label="ชมพู"></button>
+      </div></div>
+    </div></details>
+    <details class="settings-group"><summary><span>โฟกัสและซูม<small>ปรับความชัดเมื่ออ่านมิเตอร์</small></span></summary><div class="group-body">
     <div class="row col" id="camctl-rows">
-      <span>ซูม / โฟกัส <small id="camctl-note">บนภาพสด: ถ่าง 2 นิ้ว = ซูม · ลาก 1 นิ้ว (ตอนซูม) = เลื่อนกรอบ · แตะ 2 ครั้ง = กลับ 1×</small></span>
+      <span><small id="camctl-note">ถ่าง 2 นิ้วบนภาพเพื่อซูม · แตะ 2 ครั้งเพื่อกลับ 1×</small></span>
       <label class="row sub"><span>ซูม</span><input id="cc-zoom" type="range" min="1" max="5" step="0.1" value="1"><output id="cc-zoom-o">1.0×</output></label>
-      <label class="row sub"><span>โฟกัสอัตโนมัติ <small>ปิดแล้วตั้งระยะเองด้านล่าง — มิเตอร์อยู่ระยะเดิมทุกครั้ง ล็อกไว้ภาพจะไม่วูบตอนถ่าย</small></span><input id="cc-af" type="checkbox" checked></label>
-      <label class="row sub"><span>ระยะโฟกัส <small>0 = ไกล · 1 = ใกล้สุด (ใช้เมื่อปิดอัตโนมัติ)</small></span><input id="cc-focus" type="range" min="0" max="1" step="0.02" value="0.5"><output id="cc-focus-o">0.50</output></label>
+      <label class="row sub"><span>โฟกัสอัตโนมัติ</span><input id="cc-af" type="checkbox" checked></label>
+      <label class="row sub"><span>ระยะโฟกัส <small>ใช้เมื่อปิดอัตโนมัติ · 0 ไกล / 1 ใกล้</small></span><input id="cc-focus" type="range" min="0" max="1" step="0.02" value="0.5"><output id="cc-focus-o">0.50</output></label>
       <div class="btns"><button id="cc-reset" class="btn" type="button">ซูม 1× · กลางภาพ</button></div>
     </div>
-    <label class="row"><span>เฟรมเรตภาพสด <small>ลดลงถ้าภาพกระตุกบน Wi-Fi</small></span><input data-cfg="fps" type="range" min="2" max="15" step="1"><output></output></label>
-    <label class="row"><span>เส้นตารางช่วยเล็ง</span><input data-cfg="gridOn" type="checkbox"></label>
-    <label class="row"><span>แสดงกรอบที่ OCR อ่าน</span><input data-cfg="roiOn" type="checkbox"></label>
-    <label class="row"><span>กลับซ้าย-ขวา (กระจก)</span><input data-cfg="mirror" type="checkbox"></label>
+    </div></details>
+    <details class="settings-group" id="ocr-settings"><summary><span>พื้นที่อ่านมิเตอร์<small>เลือกเฉพาะบริเวณตัวเลขสำหรับ OCR</small></span></summary><div class="group-body">
     <div class="row col">
-      <span>ตั้งกรอบอ่านตัวเลข <small>ลากบนภาพสด แล้วบันทึก — มีผลกับการถ่ายครั้งถัดไป</small></span>
+      <span>ลากกรอบบนภาพ แล้วบันทึก <small>มีผลกับการถ่ายครั้งถัดไป</small></span>
       <div class="btns"><button id="roi-edit" class="btn" type="button">ลากกรอบบนภาพ</button><button id="roi-save" class="btn primary" type="button" disabled>บันทึกกรอบ</button><button id="roi-reset" class="btn" type="button">เต็มภาพ</button></div>
     </div>
+    </div></details>
   </div>
-
-  <div class="pane" data-pane="clean">
-    <label class="row"><span>แรงดูด <small>เฟิร์มแวร์ตอนนี้เป็นเปิด/ปิด (§3.5) — ค่ากลางยังไม่มีผล</small></span><input data-cfg="suctionPct" type="range" min="0" max="100" step="10"><output></output></label>
-    <p class="fine">แปรงข้าง = เปิด/ปิดจากปุ่มหน้าหลักเท่านั้น (ไม่มีระดับ) — เปิด = 5 V เต็มราง ไม่เกินพิกัดมอเตอร์ 6 V</p>
-    <label class="row"><span>ปิดดูดอัตโนมัติเมื่อหยุดนาน <small>วินาที · 0 = ไม่ปิด</small></span><input data-cfg="suctionIdleOff" type="range" min="0" max="120" step="10"><output></output></label>
+  <div class="pane" id="pane-advanced" data-pane="advanced" role="tabpanel" aria-labelledby="tab-advanced">
+    <p class="settings-warning">ปรับเมื่อจำเป็นเท่านั้น ค่าที่นี่มีผลกับการเคลื่อนที่และกลไกของหุ่น</p>
+    <details class="settings-group"><summary><span>ความเร็วและการเลี้ยว<small>เพดานมอเตอร์ การออกตัว และทิศทาง</small></span></summary><div class="group-body">
+      <p class="fine">ไม่มีระบบกันชนอัตโนมัติ · เพิ่มเพดานความเร็วเฉพาะเมื่อทดสอบกับหุ่นจริงแล้ว</p>
+      <label class="row"><span>เพดานความเร็ว <small>mm/s · ค่าเริ่มต้น 300</small></span><input data-cfg="vMax" type="range" min="50" max="716" step="10"><output></output></label>
+      <label class="row"><span>เพดานการหมุน <small>mrad/s · ค่าเริ่มต้น 3000</small></span><input data-cfg="wMax" type="range" min="500" max="4000" step="100"><output></output></label>
+      <label class="row"><span>ความไวการหมุน <small>ไม่เกินเพดานการหมุน</small></span><input data-cfg="turnGain" type="range" min="400" max="4000" step="50"><output></output></label>
+      <label class="row"><span>ความแรงเลี้ยวโค้ง <small>สำหรับปุ่มมุม · น้อย = โค้งกว้าง</small></span><input data-cfg="curveTurn" type="range" min="20" max="100" step="5"><output></output></label>
+      <label class="row"><span>ความนุ่มตอนออกตัว</span><input data-cfg="rampMs" type="range" min="0" max="800" step="50"><output></output></label>
+      <label class="row"><span>ลดการหมุนเมื่อวิ่งเร็ว</span><input data-cfg="turnScale" type="checkbox"></label>
+      <label class="row"><span>กลับทิศเดินหน้า/ถอย</span><input data-cfg="invY" type="checkbox"></label>
+      <label class="row"><span>กลับทิศซ้าย/ขวา</span><input data-cfg="invX" type="checkbox"></label>
+    </div></details>
+    <details class="settings-group"><summary><span>ความรู้สึกของจอย<small>ล็อกแนวตรงและระยะที่เริ่มตอบสนอง</small></span></summary><div class="group-body">
+      <label class="row"><span>ช่วยล็อกแนวตรง <small>ลากใกล้แนวตั้ง = ตรง · แนวนอน = หมุน</small></span><input data-cfg="joySnap" type="checkbox"></label>
+      <label class="row"><span>โซนตายของจอย <small>ระยะจากกลางจอยก่อนเริ่มขับ</small></span><input data-cfg="deadzone" type="range" min="0" max="0.35" step="0.05"><output></output></label>
+    </div></details>
+    <details class="settings-group calibration"><summary><span>คาลิเบรตกล้องและเสา<small>ขีดจำกัดและทิศทางเซอร์โว</small></span><span class="risk-tag">กลไก</span></summary><div class="group-body">
+      <p class="settings-warning">ตั้งขีดจากการทดลองจริงเท่านั้น ขยายช่วงมากเกินไปอาจทำให้เฟืองหรือก้านชน หยุดหุ่นก่อนปรับและขยับทีละน้อย</p>
+      <p class="fine">ค่าองศาเป็นการแปลงพัลส์ตามสเกลทั่วไป ยังไม่ได้วัดเทียบกับมุมของเซอร์โวจริง (C8)</p>
+      <h4>มุมกล้อง</h4>
+      <label class="row"><span>ก้มต่ำสุด</span><input data-cfg="tiltMinDeg" type="range" min="0" max="180" step="1"><output></output></label>
+      <label class="row"><span>เงยสูงสุด</span><input data-cfg="tiltMaxDeg" type="range" min="0" max="180" step="1"><output></output></label>
+      <div class="row col"><span>ใช้มุมปัจจุบันเป็นขีดจำกัด</span><div class="btns"><button class="btn" type="button" data-setlim="tilt:min">ก้มต่ำสุด</button><button class="btn" type="button" data-setlim="tilt:max">เงยสูงสุด</button></div></div>
+      <label class="row"><span>กลับทิศกล้อง <small>เมื่อ + แล้วก้มแทนเงย</small></span><input data-cfg="tiltInv" type="checkbox"></label>
+      <h4>เสายก</h4>
+      <label class="row"><span>พับสุด</span><input data-cfg="liftMinDeg" type="range" min="0" max="180" step="1"><output></output></label>
+      <label class="row"><span>ยกสุด</span><input data-cfg="liftMaxDeg" type="range" min="0" max="180" step="1"><output></output></label>
+      <div class="row col"><span>ใช้มุมปัจจุบันเป็นขีดจำกัด</span><div class="btns"><button class="btn" type="button" data-setlim="lift:min">พับสุด</button><button class="btn" type="button" data-setlim="lift:max">ยกสุด</button></div></div>
+      <label class="row"><span>กลับทิศเสา <small>เมื่อ + แล้วลดแทนยก</small></span><input data-cfg="liftInv" type="checkbox"></label>
+    </div></details>
+    <details class="settings-group"><summary><span>ระบบเก็บขยะ<small>การเปิดและปิดดูดอัตโนมัติ</small></span></summary><div class="group-body">
+      <label class="row"><span>เริ่มดูดเมื่อเริ่มขับ</span><input data-cfg="autoSuction" type="checkbox"></label>
+      <label class="row"><span>ปิดดูดเมื่อหยุดนาน <small>0 = ไม่ปิดอัตโนมัติ</small></span><input data-cfg="suctionIdleOff" type="range" min="0" max="120" step="10"><output></output></label>
+      <label class="row"><span>ค่าคำสั่งดูด <small>เฟิร์มแวร์ตอนนี้เป็นเปิด/ปิด ระดับกลางยังไม่มีผล</small></span><input data-cfg="suctionPct" type="range" min="0" max="100" step="10"><output></output></label>
+    </div></details>
+    <details class="settings-group"><summary><span>เวลาการแจ้งเตือน<small>ระยะเวลาแสดงข้อความและลิงก์เงียบ</small></span></summary><div class="group-body">
+      <label class="row"><span>แสดงข้อความนาน</span><input data-cfg="toastSec" type="range" min="1" max="8" step="1"><output></output></label>
+      <label class="row"><span>เตือนเมื่อ ESP32 เงียบเกิน</span><input data-cfg="staleSec" type="range" min="1" max="5" step="0.5"><output></output></label>
+    </div></details>
+    <details class="settings-group reset-group"><summary><span>คืนค่าเริ่มต้น<small>รวมค่าการขับและขีดจำกัดเซอร์โวในเครื่องนี้</small></span></summary><div class="group-body">
+      <p class="fine">ค่าคาลิเบรตที่บันทึกไว้จะถูกแทนที่ด้วยค่าเริ่มต้น ต้องตรวจกลไกอีกครั้งก่อนขับ</p>
+      <button id="cfg-reset" class="btn" type="button">ต้องการคืนค่าเริ่มต้น</button>
+      <div id="reset-confirm" class="reset-confirm" hidden><p>ยืนยันแทนที่ค่าตั้งค่าทั้งหมดบนเครื่องนี้?</p><div class="btns"><button id="cfg-reset-confirm" class="btn danger" type="button">ยืนยันคืนค่า</button><button id="cfg-reset-cancel" class="btn" type="button">ยกเลิก</button></div></div>
+    </div></details>
   </div>
-
-  <div class="pane" data-pane="alert">
-    <label class="row"><span>เสียงเตือน <small>ปฏิเสธคำสั่ง · ลิงก์หลุด · หยุดฉุกเฉิน</small></span><input data-cfg="sound" type="checkbox"></label>
-    <label class="row"><span>สั่นเครื่อง (มือถือ)</span><input data-cfg="vibrate" type="checkbox"></label>
-    <label class="row"><span>แสดงข้อความนานกี่วินาที</span><input data-cfg="toastSec" type="range" min="1" max="8" step="1"><output></output></label>
-    <label class="row"><span>เตือนเมื่อ ESP32 เงียบเกิน <small>วินาที</small></span><input data-cfg="staleSec" type="range" min="1" max="5" step="0.5"><output></output></label>
-  </div>
-
-  <div class="pane" data-pane="screen">
-    <div class="row"><span>สีเน้น</span><div class="swatches" id="swatches">
-      <button type="button" data-accent="mint" style="--c:#5EE1B5"></button><button type="button" data-accent="sky" style="--c:#6EC4FF"></button>
-      <button type="button" data-accent="amber" style="--c:#FFC46B"></button><button type="button" data-accent="rose" style="--c:#FF8FB1"></button></div></div>
-    <label class="row"><span>ความหนาแน่น HUD</span><select data-cfg="density"><option value="comfortable">สบายตา</option><option value="compact">กะทัดรัด</option></select></label>
-    <label class="row"><span>ปุ่มใหญ่พิเศษ (ใช้กลางแจ้ง/ถุงมือ)</span><input data-cfg="bigButtons" type="checkbox"></label>
-    <label class="row"><span>กันจอดับขณะขับ</span><input data-cfg="wakeLock" type="checkbox"></label>
-  </div>
-
-  <div class="pane" data-pane="keys">
+  <div class="pane" id="pane-status" data-pane="status" role="tabpanel" aria-labelledby="tab-status">
+    <div class="settings-card"><h3>สถานะหุ่น</h3><dl class="kv" id="kv"></dl></div>
+    <details class="settings-group"><summary><span>ปุ่มลัดและจอยเกม<small>คำแนะนำสำหรับคีย์บอร์ดและคอนโทรลเลอร์</small></span></summary><div class="group-body">
     <dl class="kv">
       <dt>W A S D / ลูกศร</dt><dd>ขับ (กด 2 ปุ่ม = เลี้ยวโค้ง)</dd><dt>Q / E</dt><dd>ซูมออก / เข้า</dd><dt>Space</dt><dd>หยุดฉุกเฉิน</dd><dt>C</dt><dd>ถ่ายมิเตอร์</dd><dt>F</dt><dd>ดูดฝุ่น เปิด/ปิด</dd><dt>G</dt><dd>แปรง เปิด/ปิด</dd><dt>1 2 3</dt><dd>ความเร็ว ช้า/ปกติ/เต็ม</dd>
       <dt>จอยเกม</dt><dd>สติ๊กซ้าย = ขับ · B/○ = หยุดฉุกเฉิน · A/✕ = ถ่าย · X/□ = ดูด · RT = เร่ง</dd>
-    </dl>
-  </div>
-
-  <div class="pane" data-pane="status">
-    <dl class="kv" id="kv"></dl>
+    </dl></div></details>
+    <details class="settings-group" id="air-details"><summary><span>คุณภาพอากาศ<small>ค่าจากเซนเซอร์บนหุ่น</small></span></summary><div class="group-body">
     <h4>คุณภาพอากาศ <small id="air-state">—</small></h4>
     <div class="air" id="air-tiles">
       <div class="tile"><b id="a-co2">—</b><span>eCO₂ <i>ppm</i></span><em id="a-rating"></em></div>
@@ -204,11 +257,27 @@
       <div class="tile"><b id="a-rh">—</b><span>ความชื้น <i>%</i></span></div>
     </div>
     <p class="fine" id="air-note">ENS160 ให้ eCO₂ ที่ประมาณจาก VOC (ไม่ใช่ CO₂ จริง) · ระดับตาม datasheet: &lt;600 ดีมาก · 600–800 ดี · 800–1000 พอใช้ · 1000–1500 แย่ ควรระบาย · &gt;1500 แย่มาก</p>
-    <h4>เหตุการณ์</h4><ul id="ev" class="ev"></ul>
-    <p class="fine"><a href="/">หน้าวินิจฉัยสำหรับช่าง</a> · ค่าตั้งค่าเก็บในเครื่องนี้ · <button id="cfg-reset" class="link" type="button">คืนค่าเริ่มต้น</button></p>
+    </div></details>
+    <details class="settings-group"><summary><span>เหตุการณ์ล่าสุด<small>ลิงก์และคำสั่งของหุ่น</small></span></summary><div class="group-body"><ul id="ev" class="ev"></ul></div></details>
+    <p class="fine"><a href="/">เปิดหน้าวินิจฉัยสำหรับช่าง ↗</a></p>
   </div>
 </section>
 
-<script src="/static/drive.js"></script>
+<section id="emergency-screen" class="emergency-screen" hidden role="alertdialog" aria-modal="true" aria-labelledby="emergency-title" aria-describedby="emergency-note emergency-status">
+  <div class="emergency-topline"><span>ARIA / SAFETY SYSTEM</span><span>CONTROL PAUSED</span></div>
+  <div class="emergency-card">
+    <div class="emergency-symbol" aria-hidden="true"><span>■</span></div>
+    <span class="emergency-eyebrow">DANGER · EMERGENCY STOP</span>
+    <h2 id="emergency-title">หยุดฉุกเฉิน</h2>
+    <p id="emergency-note">พักคำสั่งควบคุมจากหน้าจอนี้แล้ว<br>ตรวจให้แน่ใจว่าหุ่นหยุดจริงและพื้นที่ปลอดภัย</p>
+    <div id="emergency-status" class="emergency-status" role="status" aria-live="polite">กำลังส่งคำสั่งหยุด…</div>
+    <button id="emergency-retry" class="emergency-retry" type="button">ส่งคำสั่งหยุดอีกครั้ง</button>
+    <button id="emergency-ack" class="emergency-ack" type="button">ตรวจแล้ว · กลับหน้าควบคุม</button>
+    <small class="emergency-footnote">ไม่สั่งให้หุ่นเคลื่อนที่ · ปล่อยปุ่มและจอยก่อนเริ่มขับใหม่</small>
+  </div>
+  <div class="emergency-bottomline">หยุดตรวจสอบก่อนใช้งานต่อ · NO AUTOMATIC RESUME</div>
+</section>
+<script src="/static/drive-state.js?v=20260927"></script>
+<script src="/static/drive.js?v=20260927"></script>
 </body>
 </html>
