@@ -231,6 +231,17 @@ hub = Hub()
 app = FastAPI(title="MRC-001 control")
 
 
+@app.middleware("http")
+async def no_cache_ui(request, call_next):
+    """C44: หน้าเว็บ/JS ต้องไม่ถูก cache — วัดจริง 26 ก.ย. มือถือรีเฟรชแล้วยังรัน drive.js เก่า (ω 2250 = สูตรรุ่นก่อน)
+    เพราะ StaticFiles ไม่ส่ง Cache-Control → Safari cache แบบเดาเอง · no-cache = ใช้ได้แต่ต้องถาม Pi ก่อนทุกครั้ง (ไฟล์เล็ก ถาม LAN ~ms)"""
+    resp = await call_next(request)
+    path = request.url.path
+    if path in ("/", "/drive") or path.startswith("/static/"):
+        resp.headers["Cache-Control"] = "no-cache, must-revalidate"
+    return resp
+
+
 def read_readings(limit=50):
     if not JSONL_PATH.exists():
         return []
