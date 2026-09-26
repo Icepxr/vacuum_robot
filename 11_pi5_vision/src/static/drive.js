@@ -6,7 +6,7 @@
   // C28: เพดานความเร็วเป็นของผู้ใช้ (cfg.vMax/wMax → {t:"limits"} → Pi → $L) · ESP32 clamp แค่ที่ฮาร์ดแวร์ 716 mm/s
   let V_MAX = 150;                                     // = cfg.vMax หลัง applyCfg
   const V_HW_MAX = 716, W_HW_MAX = 7950;
-  const DEFAULTS = { vMax: 300, wMax: 3000, maxPct: 50, turnGain: 2000, tiltMinDeg: 0, tiltMaxDeg: 180, tiltInv: false, liftMinDeg: 45, liftMaxDeg: 135, liftInv: true, calVer: 2, camPad: true, rampMs: 250, deadzone: 0.12, turnScale: true, invY: false, invX: false,
+  const DEFAULTS = { vMax: 716, wMax: 7950, maxPct: 50, turnGain: 7950, spinMinPct: 70, tiltMinDeg: 0, tiltMaxDeg: 180, tiltInv: false, liftMinDeg: 45, liftMaxDeg: 135, liftInv: true, calVer: 4, camPad: true, rampMs: 250, deadzone: 0.12, turnScale: true, invY: false, invX: false,
     joySide: "left", joySize: "m", autoSuction: false, driveUi: "pad", curveTurn: 50, joySnap: true, fps: 10, gridOn: false, roiOn: true, mirror: false,
     suctionPct: 100, suctionIdleOff: 0, sound: true, vibrate: true, toastSec: 3, staleSec: 2,
     accent: "mint", density: "comfortable", bigButtons: false, wakeLock: true };
@@ -20,6 +20,10 @@
   // เครื่องที่เคยบันทึก liftInv:false ไว้ก่อนหน้า → บังคับครั้งเดียว + คืนขีดเสาเป็น 45–135° (= 1000–2000 µs ช่วงเดิม)
   // เพราะขีดที่เคยตั้งไว้ถูกตั้งตอนทิศกลับด้าน — ใช้ต่อจะพาไปชนสุดทางอีกฝั่ง
   if ((cfg.calVer || 1) < 2) { cfg.liftInv = true; cfg.liftMinDeg = 45; cfg.liftMaxDeg = 135; cfg.calVer = 2; }
+  // C43 (26 ก.ย.): ความแรง 50/75/100 % ของกำลังเต็ม + หมุนแรงขึ้น — ค่าเดิมในเครื่อง (turnGain 2000 · สปีด 25 %) ทำให้หมุนได้แค่ ~3–4 V
+  if (cfg.calVer < 3) { cfg.spinMinPct = 70; if (![50, 75, 100].includes(cfg.maxPct)) cfg.maxPct = 50; }
+  // C44 (26 ก.ย. วัดสดตอนผู้ใช้กดหมุน: w สูงสุด ~2780 → ล้อ ±350 ‰): migration C43 ตั้ง turnGain 7950 แล้ว applyCfg ตัดทิ้งเหลือ wMax เก่า 3000 → ตั้งซ้ำ
+  if (cfg.calVer < 4) { cfg.turnGain = 7950; cfg.calVer = 4; }
   const save = () => { try { localStorage.setItem("mrc.drive.cfg", JSON.stringify(cfg)); } catch (e) {} };
 
   // ── apply cfg → DOM ──
@@ -34,8 +38,8 @@
     clearTimeout(limitsT); limitsT = setTimeout(() => send({ t: "limits", v_max: cfg.vMax, w_max: cfg.wMax }), 250);
   }
   function applyCfg() {
-    cfg.vMax = Math.max(50, Math.min(V_HW_MAX, +cfg.vMax || 300)); cfg.wMax = Math.max(500, Math.min(W_HW_MAX, +cfg.wMax || 3000));
-    if (cfg.turnGain > cfg.wMax) cfg.turnGain = cfg.wMax;
+    cfg.vMax = Math.max(50, Math.min(V_HW_MAX, +cfg.vMax || V_HW_MAX)); cfg.wMax = Math.max(500, Math.min(W_HW_MAX, +cfg.wMax || W_HW_MAX));
+    // C44: ไม่ตัด turnGain ถาวรตามเพดานที่ยังเป็นค่าเก่าในเครื่อง (ก่อน sys ของหุ่นมาถึง) — ตัดตอนใช้แทน (turnW)
     V_MAX = cfg.vMax;
     for (const k of ["tilt", "lift"]) { const lo = k + "MinDeg", hi = k + "MaxDeg"; cfg[lo] = Math.max(0, Math.min(180, +cfg[lo] || 0)); cfg[hi] = Math.max(0, Math.min(180, +cfg[hi] || 0)); if (cfg[lo] >= cfg[hi]) cfg[hi] = Math.min(180, cfg[lo] + 1); }
     root.dataset.campad = cfg.camPad ? 1 : 0; camApplyLimits();
@@ -57,7 +61,7 @@
     if (streamFps !== cfg.fps) startStream();
     wake();
   }
-  const fmtOut = (k, v) => ({ tiltMinDeg: `${v}°`, tiltMaxDeg: `${v}°`, liftMinDeg: `${v}°`, liftMaxDeg: `${v}°`, vMax: `${v} mm/s${v > 300 ? " ⚠ เกินค่าเริ่มต้น" : ""}`, wMax: `${v} mrad/s`, maxPct: `${v}% · ${Math.round(V_MAX * v / 100)} mm/s`, turnGain: `${v}`, curveTurn: `${v}%`, rampMs: `${v} ms`, deadzone: `${v}`, fps: `${v} fps`,
+  const fmtOut = (k, v) => ({ tiltMinDeg: `${v}°`, tiltMaxDeg: `${v}°`, liftMinDeg: `${v}°`, liftMaxDeg: `${v}°`, vMax: `${v} mm/s${v >= V_HW_MAX ? " (เต็ม)" : ""}`, wMax: `${v} mrad/s`, maxPct: `${v}% · ${Math.round(V_MAX * v / 100)} mm/s`, turnGain: `${v}`, curveTurn: `${v}%`, spinMinPct: `${v}%`, rampMs: `${v} ms`, deadzone: `${v}`, fps: `${v} fps`,
     suctionPct: `${v}%`, suctionIdleOff: v ? `${v} s` : "ไม่ปิด", toastSec: `${v} s`, staleSec: `${v} s` })[k] ?? v;
   document.querySelectorAll("[data-cfg]").forEach((el) => el.addEventListener("input", () => {
     const k = el.dataset.cfg; cfg[k] = el.type === "checkbox" ? el.checked : (el.tagName === "SELECT" ? el.value : +el.value);
@@ -298,7 +302,7 @@
   const keys = new Set();
   window.addEventListener("keydown", (e) => { if (stopLatch.active || e.target.closest("#sheet, #emergency-screen")) return; if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return; if (e.repeat) return; const k = e.key.toLowerCase();
     if (k === " ") { e.preventDefault(); estop(); return; } if (k === "c") { capture(); return; } if (k === "f") { toggleSuction(); return; } if (k === "g") { toggleBrush(); return; }
-    if (k === "1") return setSpeed(25); if (k === "2") return setSpeed(50); if (k === "3") return setSpeed(100);
+    if (k === "1") return setSpeed(50); if (k === "2") return setSpeed(75); if (k === "3") return setSpeed(100);
     if (k === "q") return zoomBy(-0.5); if (k === "e") return zoomBy(0.5); keys.add(k); });
   window.addEventListener("keyup", (e) => { keys.delete(e.key.toLowerCase()); pump(); });
   window.addEventListener("blur", () => { keys.clear(); endJoy(); padHeld.clear(); document.querySelectorAll("#pad .hold").forEach((x) => x.classList.remove("hold")); });
@@ -325,8 +329,10 @@
     if (Math.hypot(x, y) < cfg.deadzone) x = y = 0;
     if (cfg.invY) y = -y; if (cfg.invX) x = -x;
     const tv = y * V_MAX * speedPct / 100;
-    let tw = -x * cfg.turnGain * (cfg.turnScale ? (1 - 0.5 * Math.abs(y)) : 1);
-    if (stepInput) tw = -x * cfg.turnGain * (y ? cfg.curveTurn / 100 : speedPct / 100);   // ปุ่ม: หมุนอยู่กับที่เร็วตามสปีดที่เลือก · ปุ่มมุม = โค้งคงที่
+    const turnW = Math.min(cfg.turnGain, cfg.wMax);
+    let tw = -x * turnW * (cfg.turnScale ? (1 - 0.5 * Math.abs(y)) : 1);
+    // C43: หมุนอยู่กับที่ต้องแรงกว่าเดินตรง (ล้อไถลข้าง) → ใช้ % ที่มากกว่าระหว่างปุ่มความแรงกับ spinMinPct (เริ่มต้น 70 %)
+    if (stepInput) tw = -x * turnW * (y ? cfg.curveTurn / 100 : Math.max(speedPct, cfg.spinMinPct) / 100);
     if (!x && !y) { curV = curW = 0; if (driving) { driving = false; send({ t: "release" }); } return; }
     if (!driving) { driving = true; if (cfg.autoSuction && !suction) toggleSuction(); }
     const step = cfg.rampMs ? Math.min(1, dt / cfg.rampMs) : 1;

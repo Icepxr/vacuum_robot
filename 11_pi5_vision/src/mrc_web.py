@@ -48,8 +48,8 @@ DISPLAY_HOLD_S = {"CAP": 4.0, "SAVED": 4.0, "READ": 8.0, "NOREAD": 6.0, "CAPFAIL
 CPU_HOT_C   = 80.0        # Pi 5 throttle ที่ 80 °C (ค่าจาก vcgencmd get_throttled ของ RPi — เตือนก่อนถึง)
 DISK_LOW_MB = 200         # ภาพ ~150 kB/รูป → 200 MB ≈ 1300 รูป ยังพอ 1 วันแต่ต้องรู้แล้ว
 DRIVE_REPEAT_S = 0.10               # ส่ง $V ซ้ำ 10 Hz ให้ G8 (300 ms) ผ่านด้วย margin 3×
-V_MAX_MM_S = 300                    # ค่าเริ่มต้นของเพดานที่ผู้ใช้ตั้งได้ (C28) · 19 ก.ย. C31: 150 = duty 21 % ขับเบา/หมุนไม่ไป → 300 (42 %) · ระยะหยุด ~185–285 mm (ไฟล์ 19 §19.8)
-W_MAX_MRAD_S = 3000                 # C31 19 ก.ย.: 1500 หมุนตัวไม่ไป (duty ~126 ‰ ต่ำกว่าแรงเสียดทานสถิต) → เพิ่ม + พื้น duty 200 ‰ ในเฟิร์มแวร์
+V_MAX_MM_S = 716                    # C43 26 ก.ย.: เพดาน = ฮาร์ดแวร์ (duty 100 %) · ความแรงเลือกจากปุ่ม 50/75/100 % บนหน้าขับ (ผู้ใช้) · ระยะหยุดที่ 716 ~585–815 mm (ไฟล์ 19 §19.8) · เดิม 300 (C31)
+W_MAX_MRAD_S = 7950                 # C43: หมุนอยู่กับที่เต็ม = duty 100 % ต่อล้อ (ผู้ใช้วัดตอนหมุนได้แค่ 4/6 V → ไม่เลี้ยว) · เดิม 3000 (C31) = 378 ‰
 V_HW_MAX_MM_S = 716                 # เพดานฮาร์ดแวร์: 152 rpm [วัดจริง M1] × π × Ø90 mm (ไฟล์ 19 §19.7) — ขอเกินก็ไม่ได้อยู่แล้ว
 W_HW_MAX_MRAD_S = 7950              # 716 / (180/2) mm ≈ 7.96 rad/s [คำนวณ] ต้องตรงกับ manual_core.h
 
@@ -229,6 +229,17 @@ class Hub:
 
 hub = Hub()
 app = FastAPI(title="MRC-001 control")
+
+
+@app.middleware("http")
+async def no_cache_ui(request, call_next):
+    """C44: หน้าเว็บ/JS ต้องไม่ถูก cache — วัดจริง 26 ก.ย. มือถือรีเฟรชแล้วยังรัน drive.js เก่า (ω 2250 = สูตรรุ่นก่อน)
+    เพราะ StaticFiles ไม่ส่ง Cache-Control → Safari cache แบบเดาเอง · no-cache = ใช้ได้แต่ต้องถาม Pi ก่อนทุกครั้ง (ไฟล์เล็ก ถาม LAN ~ms)"""
+    resp = await call_next(request)
+    path = request.url.path
+    if path in ("/", "/drive") or path.startswith("/static/"):
+        resp.headers["Cache-Control"] = "no-cache, must-revalidate"
+    return resp
 
 
 def read_readings(limit=50):

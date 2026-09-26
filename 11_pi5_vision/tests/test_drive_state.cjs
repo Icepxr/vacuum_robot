@@ -57,7 +57,7 @@ test('active and waiting-for-neutral states can survive refresh', () => {
 
 // Run the actual browser script against a minimal DOM and WebSocket double.
 // Nothing connects to a Pi or sends commands outside this test process.
-function browserHarness(savedStop = '') {
+function browserHarness(savedStop = '', savedCfg = null) {
   const handlers = {}, intervals = [], sent = [], nodes = new Map(), storage = new Map();
   if (savedStop) storage.set('aria.drive.stop', savedStop);
   const document = { activeElement: null, hidden: false };
@@ -85,14 +85,14 @@ function browserHarness(savedStop = '') {
   const context = { document, window, navigator: { getGamepads: () => gamepad ? [gamepad] : [] },
     WebSocket: class { constructor() { socket = this; this.readyState = 1; } send(json) { sent.push(JSON.parse(json)); } },
     location: { protocol: 'http:', host: 'test.invalid' },
-    localStorage: { getItem: () => null, setItem() {} }, sessionStorage: { getItem: k => storage.get(k), setItem: (k, v) => storage.set(k, v), removeItem: k => storage.delete(k) },
+    localStorage: { getItem: () => savedCfg && JSON.stringify(savedCfg), setItem: (k, v) => { savedCfg = JSON.parse(v); } }, sessionStorage: { getItem: k => storage.get(k), setItem: (k, v) => storage.set(k, v), removeItem: k => storage.delete(k) },
     setInterval: (fn, ms) => { intervals.push({ fn, ms }); return intervals.length; }, clearInterval() {}, setTimeout: () => 0, clearTimeout() {}, requestAnimationFrame: fn => fn(),
     performance: { now: (() => { let time = 0; return () => time += 100; })() },
     fetch: () => Promise.resolve({ json: () => Promise.resolve(null) }), console };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../src/static/drive.js'), 'utf8'), context);
   socket.onopen();
   const pump = intervals.find(i => i.ms === 100).fn;
-  return { nodes, sent, pump, socket, storage,
+  return { nodes, sent, pump, socket, storage, config: () => savedCfg,
     key: key => handlers.keydown.forEach(fn => fn({ key, target: new Element(), repeat: false, preventDefault() {} })),
     gamepad: (axes, stop = false) => { gamepad = { axes, buttons: Array.from({ length: 8 }, (_, i) => ({ pressed: i === 1 && stop, value: 0 })) }; } };
 }
@@ -124,4 +124,19 @@ test('actual sys event updates all air HUD metrics; disconnect removes stale val
   assert.equal(h.nodes.get('air-hud-aqi').textContent, '2'); assert.equal(h.nodes.get('air-hud-temp').textContent, '27.4'); assert.equal(h.nodes.get('air-hud-rh').textContent, '58');
   h.socket.onclose(); assert.equal(h.nodes.get('air-hud-co2').textContent, '—'); assert.equal(h.nodes.get('air-hud-state').textContent, 'ลิงก์หลุด');
   assert.equal(h.nodes.get('air-state').textContent, 'ลิงก์หลุด'); assert.equal(h.nodes.get('a-co2').textContent, '—'); assert.equal(h.nodes.get('a-rating').textContent, '');
+});
+
+test('merged UI preserves C43/C44 calibration and keyboard power presets', () => {
+  const h = browserHarness('', { calVer: 2, vMax: 300, wMax: 3000, turnGain: 2000, maxPct: 25 });
+  h.key('1'); assert.equal(h.config().calVer, 4); assert.equal(h.config().turnGain, 7950);
+  assert.equal(h.config().spinMinPct, 70); assert.equal(h.config().maxPct, 50);
+  assert.equal(h.config().wMax, 3000); // Retain a saved ceiling without destructively clamping turnGain.
+  h.key('2'); assert.equal(h.config().maxPct, 75); h.key('3'); assert.equal(h.config().maxPct, 100);
+});
+
+test('merged HTML keeps unique IDs and exposes the latest rotation setting', () => {
+  const html = fs.readFileSync(path.join(__dirname, '../src/static/drive.html'), 'utf8');
+  const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map(m => m[1]);
+  assert.equal(new Set(ids).size, ids.length); assert.match(html, /data-cfg="spinMinPct"/);
+  assert.doesNotMatch(html, /data-pct="25"|<<<<<<<|>>>>>>>/);
 });

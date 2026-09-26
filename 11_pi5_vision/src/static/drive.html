@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="theme-color" content="#0B0718">
 <title>ARIA · MRC-001 POV Control</title>
-<link rel="stylesheet" href="/static/drive.css">
+<link rel="stylesheet" href="/static/drive.css?v=c44">
 <link rel="stylesheet" href="/static/drive-vr.css?v=20260927">
 </head>
 <body>
@@ -53,16 +53,16 @@
           <button type="button" data-dir="1:-1" aria-label="ถอยเลี้ยวขวา">↘</button>
         </div>
         <div class="pad-foot">
-          <button type="button" data-pct="25">ช้า</button><button type="button" data-pct="50">ปกติ</button><button type="button" data-pct="100">เต็ม</button>
+          <button type="button" data-pct="50">50%</button><button type="button" data-pct="75">75%</button><button type="button" data-pct="100">100%</button>
         </div>
       </div>
       <div class="dial" id="dial">
         <div class="dial-head"><span>ความเร็วที่ใช้</span><div class="dial-num"><b id="spdnum">75</b><small>mm/s</small></div></div>
         <input id="spd" class="dial-slider" type="range" min="10" max="100" value="50" step="5" aria-label="ความเร็ว">
         <div class="dial-presets">
-          <button type="button" data-pct="25">ช้า</button>
-          <button type="button" data-pct="50" class="on">ปกติ</button>
-          <button type="button" data-pct="100">เต็ม</button>
+          <button type="button" data-pct="50" class="on">50%</button>
+          <button type="button" data-pct="75">75%</button>
+          <button type="button" data-pct="100">100%</button>
         </div>
       </div>
     </section>
@@ -149,7 +149,7 @@
     </div>
     <div class="settings-card">
       <h3>ความเร็วที่ใช้</h3><p class="section-note">ปรับได้จากหน้าขับเช่นกัน · ไม่เปลี่ยนเพดานของหุ่น</p>
-      <div class="speed-options"><button type="button" data-pct="25">ช้า</button><button type="button" data-pct="50">ปกติ</button><button type="button" data-pct="100">เต็ม</button></div>
+      <div class="speed-options"><button type="button" data-pct="50">50%</button><button type="button" data-pct="75">75%</button><button type="button" data-pct="100">100%</button></div>
       <label class="row range-row"><span>ปรับเอง</span><input data-cfg="maxPct" type="range" min="10" max="100" step="5" aria-label="ความเร็วที่ใช้"><output></output></label>
     </div>
     <div class="settings-card">
@@ -198,9 +198,10 @@
     <p class="settings-warning">ปรับเมื่อจำเป็นเท่านั้น ค่าที่นี่มีผลกับการเคลื่อนที่และกลไกของหุ่น</p>
     <details class="settings-group"><summary><span>ความเร็วและการเลี้ยว<small>เพดานมอเตอร์ การออกตัว และทิศทาง</small></span></summary><div class="group-body">
       <p class="fine">ไม่มีระบบกันชนอัตโนมัติ · เพิ่มเพดานความเร็วเฉพาะเมื่อทดสอบกับหุ่นจริงแล้ว</p>
-      <label class="row"><span>เพดานความเร็ว <small>mm/s · ค่าเริ่มต้น 300</small></span><input data-cfg="vMax" type="range" min="50" max="716" step="10"><output></output></label>
-      <label class="row"><span>เพดานการหมุน <small>mrad/s · ค่าเริ่มต้น 3000</small></span><input data-cfg="wMax" type="range" min="500" max="4000" step="100"><output></output></label>
-      <label class="row"><span>ความไวการหมุน <small>ไม่เกินเพดานการหมุน</small></span><input data-cfg="turnGain" type="range" min="400" max="4000" step="50"><output></output></label>
+      <label class="row"><span>เพดานความเร็ว <small>mm/s · ค่าเริ่มต้น 716 = กำลังเต็ม · ปุ่ม 50/75/100 % คิดจากค่านี้</small></span><input data-cfg="vMax" type="range" min="50" max="716" step="10"><output></output></label>
+      <label class="row"><span>เพดานการหมุน <small>mrad/s · ค่าเริ่มต้น 7950 (C43)</small></span><input data-cfg="wMax" type="range" min="500" max="7950" step="50"><output></output></label>
+      <label class="row"><span>ความไวการหมุน <small>จำกัดด้วยเพดานการหมุนตอนใช้งาน</small></span><input data-cfg="turnGain" type="range" min="400" max="7950" step="50"><output></output></label>
+      <label class="row"><span>ความแรงหมุนขั้นต่ำ <small>ปุ่ม ◀▶ ใช้ค่าที่มากกว่าระหว่างค่านี้กับความแรงที่เลือก</small></span><input data-cfg="spinMinPct" type="range" min="30" max="100" step="5"><output></output></label>
       <label class="row"><span>ความแรงเลี้ยวโค้ง <small>สำหรับปุ่มมุม · น้อย = โค้งกว้าง</small></span><input data-cfg="curveTurn" type="range" min="20" max="100" step="5"><output></output></label>
       <label class="row"><span>ความนุ่มตอนออกตัว</span><input data-cfg="rampMs" type="range" min="0" max="800" step="50"><output></output></label>
       <label class="row"><span>ลดการหมุนเมื่อวิ่งเร็ว</span><input data-cfg="turnScale" type="checkbox"></label>
@@ -244,7 +245,7 @@
     <div class="settings-card"><h3>สถานะหุ่น</h3><dl class="kv" id="kv"></dl></div>
     <details class="settings-group"><summary><span>ปุ่มลัดและจอยเกม<small>คำแนะนำสำหรับคีย์บอร์ดและคอนโทรลเลอร์</small></span></summary><div class="group-body">
     <dl class="kv">
-      <dt>W A S D / ลูกศร</dt><dd>ขับ (กด 2 ปุ่ม = เลี้ยวโค้ง)</dd><dt>Q / E</dt><dd>ซูมออก / เข้า</dd><dt>Space</dt><dd>หยุดฉุกเฉิน</dd><dt>C</dt><dd>ถ่ายมิเตอร์</dd><dt>F</dt><dd>ดูดฝุ่น เปิด/ปิด</dd><dt>G</dt><dd>แปรง เปิด/ปิด</dd><dt>1 2 3</dt><dd>ความเร็ว ช้า/ปกติ/เต็ม</dd>
+      <dt>W A S D / ลูกศร</dt><dd>ขับ (กด 2 ปุ่ม = เลี้ยวโค้ง)</dd><dt>Q / E</dt><dd>ซูมออก / เข้า</dd><dt>Space</dt><dd>หยุดฉุกเฉิน</dd><dt>C</dt><dd>ถ่ายมิเตอร์</dd><dt>F</dt><dd>ดูดฝุ่น เปิด/ปิด</dd><dt>G</dt><dd>แปรง เปิด/ปิด</dd><dt>1 2 3</dt><dd>ความแรง 50 / 75 / 100 %</dd>
       <dt>จอยเกม</dt><dd>สติ๊กซ้าย = ขับ · B/○ = หยุดฉุกเฉิน · A/✕ = ถ่าย · X/□ = ดูด · RT = เร่ง</dd>
     </dl></div></details>
     <details class="settings-group" id="air-details"><summary><span>คุณภาพอากาศ<small>ค่าจากเซนเซอร์บนหุ่น</small></span></summary><div class="group-body">

@@ -162,7 +162,7 @@ def test_drive_repeats_V_at_10hz_then_deadman_sends_S(web):
 def test_drive_clamped_to_user_limits_default(web):
     c, master, backend, hub = web
     hub.drive(999, -9999)
-    assert (hub.drive_v, hub.drive_w) == (300, -3000)
+    assert (hub.drive_v, hub.drive_w) == (716, -7950)          # C43: เพดานเริ่มต้น = ฮาร์ดแวร์
 
 
 def test_user_limits_raise_cap_and_send_L_clamped_at_hw(web):
@@ -394,3 +394,10 @@ def test_poweron_after_uptime_is_power_loss_warning(web):
         assert P.decode(read_line(master)).type == "L"
         ev = _drain_until(ws, "log")
         assert ev["level"] == "bad" and "ไฟดับ" in ev["msg"]
+
+
+def test_ui_is_not_cached(web):
+    """C44: มือถือรีเฟรชแล้วยังได้ JS เก่า → หน้า/ไฟล์ static ต้องมี Cache-Control: no-cache"""
+    c, *_ = web
+    for path in ("/drive", "/static/drive.js"):
+        assert "no-cache" in c.get(path).headers.get("cache-control", "")
