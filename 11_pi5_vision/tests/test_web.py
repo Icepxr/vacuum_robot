@@ -162,7 +162,7 @@ def test_drive_repeats_V_at_10hz_then_deadman_sends_S(web):
 def test_drive_clamped_to_user_limits_default(web):
     c, master, backend, hub = web
     hub.drive(999, -9999)
-    assert (hub.drive_v, hub.drive_w) == (300, -3000)
+    assert (hub.drive_v, hub.drive_w) == (716, -7950)          # C43: เพดานเริ่มต้น = ฮาร์ดแวร์
 
 
 def test_user_limits_raise_cap_and_send_L_clamped_at_hw(web):
