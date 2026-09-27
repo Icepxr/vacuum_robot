@@ -3,37 +3,40 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#2e1065">
+  <meta name="theme-color" content="#211036">
   <title>ARIA — ต้นแบบหลังบ้านหอพัก</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=aria-orbit-1">
+  <link rel="stylesheet" href="theme.css?v=aria-orbit-1">
 </head>
 <body>
+  <a class="skip-link" href="#page-content">ข้ามไปเนื้อหา</a>
   <div class="app-shell">
     <aside class="sidebar" aria-label="เมนูหลัก">
-      <div class="brand"><div class="brand-symbol" aria-hidden="true">✦</div><div><strong>ARIA</strong><span>Metering Assistant</span></div></div>
-      <div class="side-label">WORKSPACE</div>
+      <div class="brand"><div class="logo-window"><img src="../aria-logo-reference.png" alt="ARIA"></div><span class="brand-caption">INTELLIGENT METERING</span></div>
+      <div class="workspace-card"><span class="workspace-icon" data-icon="rooms" aria-hidden="true"></span><div><strong>หอพักตัวอย่าง</strong><small>10 ห้อง · 20 มิเตอร์</small></div><span class="workspace-demo">DEMO</span></div>
+      <div class="side-label">พื้นที่จัดการ</div>
       <nav class="side-nav" id="side-nav">
-        <button type="button" data-page="home"><span aria-hidden="true">◫</span> หน้าหลัก</button>
-        <button type="button" data-page="review"><span aria-hidden="true">◉</span> ยืนยันค่ามิเตอร์ <em id="nav-review-count"></em></button>
-        <button type="button" data-page="bills"><span aria-hidden="true">▤</span> บิล</button>
-        <button type="button" data-page="rooms"><span aria-hidden="true">▦</span> ห้องและมิเตอร์</button>
-        <button type="button" data-page="settings"><span aria-hidden="true">⚙</span> ตั้งค่า</button>
+        <button type="button" data-page="home"><span data-icon="home" aria-hidden="true"></span><span class="nav-label">หน้าหลัก</span></button>
+        <button type="button" data-page="review"><span data-icon="review" aria-hidden="true"></span><span class="nav-label">ยืนยันค่า<span class="nav-desktop">มิเตอร์</span></span><em id="nav-review-count"></em></button>
+        <button type="button" data-page="bills"><span data-icon="bills" aria-hidden="true"></span><span class="nav-label">บิล</span></button>
+        <button type="button" data-page="rooms"><span data-icon="rooms" aria-hidden="true"></span><span class="nav-label">ห้อง<span class="nav-desktop">และมิเตอร์</span></span></button>
+        <button type="button" data-page="settings"><span data-icon="settings" aria-hidden="true"></span><span class="nav-label">ตั้งค่า</span></button>
       </nav>
       <div class="sidebar-bottom">
-        <div class="side-device"><span class="device-dot"></span><div><strong>MRC-001</strong><small>ข้อมูลหุ่นล่าสุด: 16 ก.ย. 20:12</small></div></div>
-        <div class="sidebar-note">ต้นแบบข้อมูลตัวอย่าง<br>ไม่มีการเชื่อมต่อ Pi หรือส่งอีเมล</div>
+        <div class="side-device"><span data-icon="robot" aria-hidden="true"></span><div><strong>MRC-001</strong><small>ยังไม่เชื่อมต่อหุ่นจริง</small></div><span class="device-dot"></span></div>
+        <div class="sidebar-note">ARIA / จากภาพสู่ข้อมูลที่มั่นใจ<br>ต้นแบบ · ไม่มีการส่งอีเมลจริง</div>
       </div>
     </aside>
     <div class="main-area">
       <header class="topbar">
-        <div class="top-left"><span class="top-brand">ARIA</span><span class="top-divider">/</span><span id="top-page-name">หน้าหลัก</span></div>
-        <div class="top-right"><span class="demo-badge">● DEMO · 10 ห้อง</span><span class="cycle-tag">รอบกันยายน 2569</span><span class="avatar" aria-label="ผู้ให้เช่าตัวอย่าง">อ</span></div>
+        <div class="top-left"><span class="mobile-logo logo-window"><img src="../aria-logo-reference.png" alt="ARIA"></span><span class="top-brand">ARIA</span><span class="top-divider">/</span><span id="top-page-name">หน้าหลัก</span></div>
+        <div class="top-right"><span class="cycle-tag"><span data-icon="calendar" aria-hidden="true"></span> กันยายน 2569</span><span class="demo-badge">DEMO · ข้อมูลตัวอย่าง</span><span class="avatar" aria-label="ผู้ให้เช่าตัวอย่าง">อ</span></div>
       </header>
       <main id="page-content" tabindex="-1"></main>
     </div>
   </div>
   <div id="modal-root"></div>
   <div id="toast" role="status" aria-live="polite"></div>
-  <script src="app.js"></script>
+  <script src="app.js?v=aria-orbit-1"></script>
 </body>
 </html>

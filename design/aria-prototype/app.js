@@ -1,4 +1,20 @@
 // Standalone ARIA design prototype. All data is fictional and stays in memory.
+const iconPaths={
+  home:'<rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/>',
+  review:'<rect x="3" y="5" width="18" height="14" rx="3"/><path d="m8 12 3 3 5-6"/>',
+  bills:'<path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z"/><path d="M9 8h6M9 12h6"/>',
+  rooms:'<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 7h1m4 0h1M9 11h1m4 0h1M10 21v-5h4v5"/>',
+  settings:'<path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/>',
+  robot:'<rect x="4" y="7" width="16" height="13" rx="4"/><path d="M12 7V3m-3 0h6M1 12v4m22-4v4M8 13h8M9 17h6"/>',
+  calendar:'<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4m10-4v4M3 11h18"/>',
+  camera:'<path d="m8 5 1-2h6l1 2h3a2 2 0 0 1 2 2v12H3V7a2 2 0 0 1 2-2Z"/><circle cx="12" cy="12" r="4"/>',
+  mail:'<rect x="3" y="5" width="18" height="14" rx="3"/><path d="m3 7 9 6 9-6"/>',
+  arrow:'<path d="M4 12h16m-6-6 6 6-6 6"/>',
+  water:'<path d="M12 3S5 11 5 15a7 7 0 0 0 14 0c0-4-7-12-7-12Z"/>',
+  electric:'<path d="m13 2-9 12h7l-1 8 10-13h-7l1-7Z"/>'
+};
+const icon=name=>`<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${iconPaths[name]||iconPaths.review}</svg>`;
+document.querySelectorAll('[data-icon]').forEach(node=>node.innerHTML=icon(node.dataset.icon));
 const rooms = [
   {id:"101",tenant:"วราภรณ์ ใจดี",email:"waraporn@example.com",rent:3500,water:{prev:1231,ocr:1244,confirmed:1244,confidence:.97},electric:{prev:3502,ocr:3611,confirmed:3611,confidence:.96}},
   {id:"102",tenant:"ศักดิ์ชัย แสนสุข",email:"sakchai@example.com",rent:3700,water:{prev:987,ocr:998,confirmed:998,confidence:.98},electric:{prev:2140,ocr:2233,confirmed:2233,confidence:.95}},
@@ -35,7 +51,7 @@ const roomStatus=room=>{
   return {text:"พร้อมตรวจบิล",tone:"good"};
 };
 const status=(text,tone="")=>`<span class="status ${tone}">${esc(text)}</span>`;
-const readingDisplay=(reading,type)=>reading.ocr==null?`<span class="muted">ยังไม่อ่าน</span>`:`<span class="meter-mini ${type}"><span class="type">${type==="water"?"◈":"ϟ"}</span><span>${num(reading.prev)}</span><span class="arrow">→</span><strong>${num(reading.confirmed??reading.ocr)}</strong></span>`;
+const readingDisplay=(reading,type)=>reading.ocr==null?`<span class="muted">ยังไม่อ่าน</span>`:`<span class="meter-mini ${type}"><span class="type">${icon(type)}</span><span>${num(reading.prev)}</span><span class="arrow">→</span><strong>${num(reading.confirmed??reading.ocr)}</strong></span>`;
 const liveInvoice=room=>{
   if(room.vacant||!hasPair(room))return null;
   const waterUnits=room.water.confirmed-room.water.prev;
@@ -57,7 +73,7 @@ const billStatus=room=>{
 };
 const totals=()=>({captured:rooms.filter(capturedRoom).length,review:reviewQueue().length,ready:rooms.filter(r=>billStatus(r).kind==="draft").length,sent:state.sent.size});
 function toast(message){const node=document.getElementById("toast");node.textContent=message;node.classList.add("show");clearTimeout(toast.timer);toast.timer=setTimeout(()=>node.classList.remove("show"),3400)}
-function setPage(page){state.page=page;render();window.scrollTo({top:0,behavior:"smooth"});document.getElementById("page-content").focus()}
+function setPage(page){state.page=page;render();document.getElementById("page-content").focus({preventScroll:true});window.scrollTo({top:0,behavior:"instant"})}
 function render(){
   const names={home:"หน้าหลัก",review:"ยืนยันค่ามิเตอร์",bills:"บิล",rooms:"ห้องและมิเตอร์",settings:"ตั้งค่า"};
   document.getElementById("top-page-name").textContent=names[state.page];
@@ -82,13 +98,18 @@ function homeAttention(){
   return list.map(x=>`<button class="attention-item" data-page="${x.page}" ${x.reviewKey?`data-review-target="${x.reviewKey}"`:""} ${x.roomId?`data-room-target="${x.roomId}"`:""}><span class="attention-icon ${x.tone}">${x.icon}</span><span class="attention-copy"><strong>${x.title}</strong><span>${x.desc}</span></span><span class="attention-chevron">›</span></button>`).join("")||`<div class="empty">ไม่มีรายการเร่งด่วน</div>`;
 }
 function renderHome(){const t=totals();return `<section class="page">
-  ${pageHead("ARIA / OVERVIEW","รอบบิลกันยายน 2569","ภาพรวมการอ่านมิเตอร์ของหอตัวอย่าง 10 ห้อง · ห้องละมิเตอร์น้ำและไฟ",`<button class="btn primary" data-page="review">ตรวจค่าที่ค้าง ${t.review} ค่า <span aria-hidden="true">→</span></button>`)}
-  <div class="info-banner"><span class="spark">✦</span><div><strong>ข้อมูลตัวอย่าง</strong> ตัวเลข รูปมิเตอร์ และชื่อผู้เช่าในหน้านี้ใช้ทดลองหน้าจอเท่านั้น ยังไม่เชื่อม Pi หรือคลาวด์</div></div>
+  ${pageHead("YOUR METERING WORKSPACE","ภาพรวม","ทุกค่าที่อ่าน ทุกบิลที่ส่ง อยู่ในที่เดียว",`<span class="overview-date">${icon('calendar')}รอบกันยายน 2569</span>`)}
+  <div class="orbit-hero">
+    <div class="hero-orbits" aria-hidden="true"><i></i><i></i><i></i><span>✦</span></div>
+    <div class="hero-copy"><span class="hero-kicker"><span></span> ARIA · INTELLIGENT METERING</span><h2>จากภาพที่หุ่นอ่าน<br>สู่บิลที่คุณมั่นใจ</h2><p>รอบนี้อ่านครบ ${t.captured} จาก 10 ห้อง<br>ตรวจค่าที่เหลือ แล้วไปต่อที่บิลได้เลย</p><div class="hero-actions"><button class="btn primary" data-page="review">ตรวจค่าที่ค้าง ${t.review} ค่า ${icon('arrow')}</button><button class="btn hero-secondary" data-page="rooms">ดูห้องทั้งหมด</button></div></div>
+    <div class="hero-progress"><svg viewBox="0 0 180 180" aria-hidden="true"><circle class="progress-track" cx="90" cy="90" r="74"/><circle class="progress-value" cx="90" cy="90" r="74" pathLength="100" stroke-dasharray="${t.captured/rooms.length*100} 100"/></svg><div class="progress-copy"><span>อ่านครบแล้ว</span><strong>${t.captured}<small> / 10</small></strong><span>ห้องตัวอย่าง</span></div><span class="progress-caption">METER CAPTURE / THIS CYCLE</span></div>
+  </div>
+  <div class="demo-note">${icon('review')}<span>กำลังดูข้อมูลตัวอย่าง · ยังไม่เชื่อม Pi หรือคลาวด์ และไม่ส่งอีเมลจริง</span></div>
   <div class="grid stat-grid">
-    <div class="card stat-card"><div class="label">อ่านมิเตอร์ครบ</div><div class="number">${t.captured}<small> / 10 ห้อง</small></div><div class="hint">มีรูปน้ำและไฟครบทั้งคู่</div></div>
-    <div class="card stat-card"><div class="label">ค่ารอยืนยัน</div><div class="number warn">${t.review}<small> ค่า</small></div><div class="hint">ตรวจรูปก่อนนำไปคิดบิล</div></div>
-    <div class="card stat-card"><div class="label">บิลพร้อมตรวจ</div><div class="number accent">${t.ready}<small> ใบ</small></div><div class="hint">ยืนยันครบและมีอีเมล</div></div>
-    <div class="card stat-card"><div class="label">อีเมลส่งแล้ว</div><div class="number good">${t.sent}<small> ฉบับ</small></div><div class="hint">ในต้นแบบเป็นการจำลองเท่านั้น</div></div>
+    <div class="card stat-card"><span class="stat-icon mint">${icon('camera')}</span><div class="label">อ่านมิเตอร์ครบ</div><div class="number">${t.captured}<small> / 10 ห้อง</small></div><div class="hint">มีรูปน้ำและไฟครบทั้งคู่</div></div>
+    <div class="card stat-card"><span class="stat-icon amber">${icon('review')}</span><div class="label">ค่ารอยืนยัน</div><div class="number warn">${t.review}<small> ค่า</small></div><div class="hint">ตรวจรูปก่อนนำไปคิดบิล</div></div>
+    <div class="card stat-card"><span class="stat-icon violet">${icon('bills')}</span><div class="label">บิลพร้อมตรวจ</div><div class="number accent">${t.ready}<small> ใบ</small></div><div class="hint">ยืนยันครบและมีอีเมล</div></div>
+    <div class="card stat-card"><span class="stat-icon mint">${icon('mail')}</span><div class="label">อีเมลส่งแล้ว</div><div class="number good">${t.sent}<small> ฉบับ</small></div><div class="hint">การส่งจำลอง</div></div>
   </div>
   <div class="grid two-col">
     <div class="card card-pad"><div class="card-head"><div><h2>ต้องดูก่อน</h2><p>รายการที่อาจทำให้บิลคลาดเคลื่อน</p></div><button class="text-link" data-page="review">ไปหน้ายืนยัน →</button></div><div class="attention-list">${homeAttention()}</div></div>
