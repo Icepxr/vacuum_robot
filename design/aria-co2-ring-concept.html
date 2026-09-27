@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>eCO₂ · outer ring concept</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f4f0f8; color: #382945; font: 14px system-ui, sans-serif; }
+    main { max-width: 660px; margin: auto; padding: 30px 22px 36px; text-align: center; }
+    .eyebrow { color: #927caa; font-size: 10px; letter-spacing: 2px; }
+    h1 { font-size: 24px; font-weight: 600; letter-spacing: -.6px; margin: 9px 0 5px; }
+    .note { color: #8c7b98; font-size: 12px; margin: 0; line-height: 1.7; }
+    .display { width: min(340px, 100%); aspect-ratio: 1; margin: 26px auto 22px; position: relative; }
+    .display svg { display: block; width: 100%; height: 100%; border-radius: 50%; box-shadow: 0 18px 40px #49346224; }
+    .ring { fill: none; stroke-linecap: round; }
+    .value { fill: #f5efff; font: 500 43px 'Segoe UI', Arial, sans-serif; font-variant-numeric: tabular-nums; letter-spacing: -1.5px; }
+    .muted { fill: #a69ab6; font: 9px 'Segoe UI', Arial, sans-serif; }
+    .metric { fill: #dfd5ed; font: 500 10px 'Segoe UI', Arial, sans-serif; }
+    .status { color: #b6a0cf; }
+    .status[data-state="unknown"] { color: #71677f; opacity: .55; }
+    .status[data-state="bad"] { color: #f197a9; }
+    .slash { display: none; }
+    .status[data-state="bad"] .slash { display: block; }
+    .controls { max-width: 430px; margin: auto; }
+    .row { display: flex; gap: 7px; justify-content: center; flex-wrap: wrap; margin: 9px 0 17px; }
+    .label { color: #9684a4; font-size: 11px; }
+    button { border: 1px solid #ded2e8; background: transparent; color: #806b91; border-radius: 20px; padding: 8px 13px; font: inherit; font-size: 12px; cursor: pointer; min-height: 36px; }
+    button[aria-pressed="true"] { background: #6c4789; border-color: #6c4789; color: #fff; }
+    button:focus-visible, summary:focus-visible { outline: 3px solid #b88cda; outline-offset: 3px; }
+    details { margin-top: 22px; color: #8c789b; font-size: 12px; }
+    summary { cursor: pointer; list-style-position: inside; }
+    .legend { display: flex; justify-content: center; flex-wrap: wrap; gap: 15px; margin: 15px 0 8px; }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .legend svg { width: 17px; height: 17px; color: #816795; }
+    .fine { font-size: 11px; color: #a18fad; line-height: 1.7; }
+    @media (max-width: 400px) { main { padding: 22px 18px; } .display { width: 290px; max-width: 100%; } button { padding-inline: 11px; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">DISPLAY STUDY 03</div>
+    <h1>วงแหวน eCO₂</h1>
+    <p class="note">แบบร่างหน้าเดียว · ข้อมูลและสถานะตัวอย่าง</p>
+  </header>
+  <div class="display">
+    <svg id="screen" viewBox="0 0 240 240" role="img" aria-label="พรีวิวจอกลม eCO2">
+      <defs>
+        <clipPath id="round"><circle cx="120" cy="120" r="120"/></clipPath>
+        <radialGradient id="surface" cx="48%" cy="40%" r="65%">
+          <stop offset="0" stop-color="#221332"/>
+          <stop offset="1" stop-color="#100b1b"/>
+        </radialGradient>
+        <symbol id="link" viewBox="0 0 20 20">
+          <g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 6 6 6a4 4 0 0 0 0 8h2M12 6h2a4 4 0 0 1 0 8h-2M6 10h8"/>
+          </g>
+        </symbol>
+        <symbol id="camera" viewBox="0 0 20 20">
+          <g fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round">
+            <path d="M6 5 7.5 3.5h5L14 5h2a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"/>
+            <circle cx="10" cy="10.5" r="3"/>
+          </g>
+        </symbol>
+        <symbol id="wifi" viewBox="0 0 20 20">
+          <g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+            <path d="M2 7a12 12 0 0 1 16 0M5 10a8 8 0 0 1 10 0M8 13a3 3 0 0 1 4 0"/>
+          </g><circle cx="10" cy="16" r="1" fill="currentColor"/>
+        </symbol>
+        <symbol id="drive" viewBox="0 0 20 20">
+          <g fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="12" width="14" height="5" rx="2.5"/>
+            <path d="M10 12V7"/><circle cx="10" cy="4.5" r="2.5"/>
+          </g>
+        </symbol>
+        <symbol id="route" viewBox="0 0 20 20">
+          <g fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+            <circle cx="4" cy="15" r="2"/><circle cx="16" cy="5" r="2"/>
+            <path d="M6 15h5a3 3 0 0 0 0-6H9a2 2 0 0 1 0-4h5"/>
+          </g>
+        </symbol>
+        <symbol id="thermo" viewBox="0 0 12 14">
+          <g fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round">
+            <path d="M4 8.5V3a2 2 0 0 1 4 0v5.5a3 3 0 1 1-4 0Z"/><path d="M6 5v5"/>
+          </g>
+        </symbol>
+        <symbol id="drop" viewBox="0 0 12 14">
+          <path d="M6 1C5 3 2 6 2 8.5a4 4 0 0 0 8 0C10 6 7 3 6 1Z" fill="none" stroke="currentColor" stroke-width="1.1"/>
+        </symbol>
+      </defs>
+      <g clip-path="url(#round)" text-anchor="middle">
+        <rect width="240" height="240" fill="url(#surface)"/>
+        <path id="track" class="ring" stroke="#34263f" stroke-width="8"/>
+        <path id="glow" class="ring" stroke-width="13" opacity=".07"/>
+        <path id="level" class="ring" stroke-width="8"/>
+        <circle id="tip" r="4"/>
+        <g id="pi-status" class="status" data-state="ok" transform="translate(72 43)">
+          <title>ลิงก์ Pi — ตัวอย่างเชื่อมต่อ</title><use href="#link" width="17" height="17"/>
+          <path class="slash" d="M2 17 17 1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+        </g>
+        <g id="camera-status" class="status" data-state="ok" transform="translate(98 43)">
+          <title>กล้อง — ตัวอย่างพร้อม</title><use href="#camera" width="17" height="17"/>
+          <path class="slash" d="M2 17 17 1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+        </g>
+        <g id="wifi-status" class="status" data-state="ok" transform="translate(124 43)">
+          <title>เครือข่าย/IP — สถานะตัวอย่าง ไม่ใช่การยืนยันอินเทอร์เน็ต</title><use href="#wifi" width="17" height="17"/>
+          <path class="slash" d="M2 17 17 1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+        </g>
+        <g id="mode-status" class="status" data-state="ok" transform="translate(150 43)">
+          <title>โหมดขับเอง — ใช้สัญลักษณ์ ไม่มีข้อความโหมดบนจอ</title><use id="mode-icon" href="#drive" width="17" height="17"/>
+        </g>
+        <text id="value" class="value" x="120" y="126">539</text>
+        <text class="muted" x="120" y="146" letter-spacing=".6">eCO₂ ppm</text>
+        <text class="muted" x="120" y="179"><tspan fill="#71617f">TVOC </tspan><tspan id="tvoc" fill="#d6c9e5">23</tspan><tspan> ppb</tspan></text>
+        <g color="#9281a3"><use href="#thermo" x="65" y="199" width="10" height="12"/><use href="#drop" x="129" y="199" width="10" height="12"/></g>
+        <text id="temp" class="metric" x="94" y="209">29°</text>
+        <text id="humidity" class="metric" x="156" y="209">55%</text>
+      </g>
+    </svg>
+  </div>
+  <section class="controls" aria-label="ลองข้อมูลตัวอย่าง">
+    <div class="label">ค่าตัวอย่าง · ppm</div>
+    <div class="row" id="values">
+      <button type="button" data-value="539" aria-pressed="true">539</button>
+      <button type="button" data-value="920" aria-pressed="false">920</button>
+      <button type="button" data-value="1680" aria-pressed="false">1680</button>
+      <button type="button" data-value="none" aria-pressed="false">ไม่มีข้อมูล</button>
+    </div>
+    <div class="label">สถานะไอคอน</div>
+    <div class="row" id="states">
+      <button type="button" data-state="ok" aria-pressed="true">ปกติ</button>
+      <button type="button" data-state="camera" aria-pressed="false">กล้องขาด</button>
+      <button type="button" data-state="pi" aria-pressed="false">ลิงก์ขาด</button>
+      <button type="button" data-state="unknown" aria-pressed="false">ยังไม่ทราบ</button>
+    </div>
+    <div class="row" id="modes">
+      <button type="button" data-mode="drive" aria-pressed="true">ไอคอนขับเอง</button>
+      <button type="button" data-mode="route" aria-pressed="false">ไอคอนภารกิจ</button>
+    </div>
+  </section>
+  <details>
+    <summary>ความหมายไอคอน</summary>
+    <div class="legend">
+      <span><svg aria-hidden="true"><use href="#link" width="17" height="17"/></svg>ลิงก์ Pi</span>
+      <span><svg aria-hidden="true"><use href="#camera" width="17" height="17"/></svg>กล้อง</span>
+      <span><svg aria-hidden="true"><use href="#wifi" width="17" height="17"/></svg>เครือข่าย/IP</span>
+      <span><svg aria-hidden="true"><use href="#drive" width="17" height="17"/></svg>โหมดขับ</span>
+    </div>
+    <p class="fine">สีเรียบ = พร้อม · ขีดทับแดง = ขัดข้อง · เทาจาง = ไม่ทราบ<br>รูปแบบสำหรับคุยดีไซน์ ไม่ใช่ข้อมูลสดหรือคำสั่งควบคุมหุ่น</p>
+  </details>
+</main>
+<script>
+  // Concept only. No network requests, robot commands or firmware dependencies.
+  // Reuses the renderer's existing 400–2000 ppm scale and band boundaries.
+  // Ring sits on the display perimeter; its outer stroke reaches the round clip.
+  const center = { x: 120, y: 120 }, radius = 116;
+  const colors = ['#9ed9bd', '#c3d79a', '#e6cf94', '#ebad86', '#ed96a4'];
+  const state = { value: 539, status: 'ok', mode: 'drive' };
+  const $ = id => document.getElementById(id);
+  function point(angle) {
+    const radians = angle * Math.PI / 180;
+    return [center.x + radius * Math.cos(radians), center.y + radius * Math.sin(radians)];
+  }
+  function arc(start, end) {
+    const [x1,y1] = point(start), [x2,y2] = point(end);
+    return 'M' + x1 + ',' + y1 + ' A' + radius + ',' + radius + ' 0 ' + (end-start > 180 ? 1 : 0) + ' 1 ' + x2 + ',' + y2;
+  }
+  function render() {
+    const available = state.value !== null && state.status !== 'pi' && state.status !== 'unknown';
+    const fraction = available ? Math.min(1, Math.max(0, (state.value-400)/1600)) : 0;
+    const band = available ? [600,800,1000,1500].filter(v => state.value >= v).length : 0;
+    const color = colors[band], end = 135 + fraction * 270;
+    $('track').setAttribute('d', arc(135,405));
+    for (const id of ['glow','level']) {
+      $(id).setAttribute('d', fraction > 0 ? arc(135,end) : '');
+      $(id).setAttribute('stroke',color);
+    }
+    const [x,y] = point(end);
+    $('tip').setAttribute('cx',x); $('tip').setAttribute('cy',y);
+    $('tip').setAttribute('fill',color); $('tip').style.display = fraction > 0 ? '' : 'none';
+    $('value').textContent = available ? state.value : '—';
+    $('tvoc').textContent = available ? '23' : '—';
+    $('temp').textContent = state.status === 'pi' || state.status === 'unknown' ? '—°' : '29°';
+    $('humidity').textContent = state.status === 'pi' || state.status === 'unknown' ? '—%' : '55%';
+    for (const id of ['pi-status','camera-status','wifi-status','mode-status']) {
+      $(id).dataset.state = state.status === 'unknown' || state.status === 'pi' ? 'unknown' : 'ok';
+    }
+    if(state.status === 'pi') $('pi-status').dataset.state = 'bad';
+    if(state.status === 'camera') $('camera-status').dataset.state = 'bad';
+    $('mode-icon').setAttribute('href', '#' + state.mode);
+    const names = { 'pi-status':'ลิงก์ Pi', 'camera-status':'กล้อง', 'wifi-status':'เครือข่าย/IP', 'mode-status':'โหมด' };
+    for(const [id,name] of Object.entries(names)) {
+      $(id).querySelector('title').textContent = name + ' — ' + ({ok:'พร้อม (ตัวอย่าง)',bad:'ขัดข้อง (ตัวอย่าง)',unknown:'ยังไม่ทราบ'}[$(id).dataset.state]);
+    }
+    $('screen').setAttribute('aria-label', 'พรีวิว eCO2 ' + (available ? state.value + ' ppm' : 'ไม่มีข้อมูล') + ' สถานะตัวอย่าง ' + state.status);
+  }
+  for(const [id,key,attribute] of [['values','value','value'],['states','status','state'],['modes','mode','mode']]) {
+    $(id).querySelectorAll('button').forEach(button => button.addEventListener('click', () => {
+      const value = button.dataset[attribute];
+      state[key] = key === 'value' ? value === 'none' ? null : Number(value) : value;
+      $(id).querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed',String(b === button)));
+      render();
+    }));
+  }
+  render();
+</script>
+</body>
+</html>

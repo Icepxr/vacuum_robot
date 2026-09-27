@@ -4,8 +4,12 @@
 // ไลบรารี LovyanGFX (GC9A01 native · SPI DMA) · วาดลง sprite ใน PSRAM แล้ว push ทีเดียว (ไม่กะพริบ) · ~5 fps พอสำหรับสถานะ
 // ข้อมูลที่จอโชว์แต่ ESP32 ไม่รู้เอง (IP ของ Pi · ค่ามิเตอร์ล่าสุด · CO2) มาจาก Pi ทางเฟรม $D ทุก 1 s (+ทันทีเมื่อมีเหตุการณ์)
 // C35 (21 ก.ย.): จอ "นิ่ง" ไม่สลับหน้าเอง — หน้าปกติ = อากาศ · เปลี่ยนเฉพาะเมื่อมีเหตุ (ถ่ายภาพ/ค่าอ่าน/Pi มีปัญหา/ยังไม่มี browser)
-//   ลำดับความสำคัญ: E-STOP > Pi เงียบ > เหตุการณ์ (evt) > ปัญหาร้ายแรง (warn NOIP/HOT) > ไม่มี browser (IP) > อากาศ (+แถบเตือน NOCAM/DISK/NOAIR)
+//   ลำดับความสำคัญ: E-STOP > Pi เงียบ > เหตุการณ์ (evt) > ปัญหาร้ายแรง (warn NOIP/HOT) > local deadman > ข้อมูลเก่า/ไม่มี browser > อากาศ (+คำเตือน NOCAM/DISK/NOAIR)
 //   เวลาค้างของเหตุการณ์อยู่ที่ Pi (DISPLAY_HOLD_S ใน mrc_web.py) — จอโชว์ตามเฟรมล่าสุดเท่านั้น ไม่มี timer เอง
+// Approved ring refresh (27 ก.ย.): perimeter eCO2 gauge / subsystem & mode icons / short event copy / red stop.
+// No ARIA wordmark, character face, Manual/Mission text, fake progress or inferred internet connectivity.
+// Display-only: existing flags/events plus local deadman presentation; no pin, protocol, actuator or interlock changes.
+// Preview + host-only checks: design/ARIA-DISPLAY.md; still requires target build and physical-screen QA.
 #include <Arduino.h>
 
 struct TftInfo {            // ที่ Pi ส่งมา ($D) — ว่าง = ยังไม่ได้รับ
