@@ -14,7 +14,7 @@ Wants=network-online.target
 User=uchida
 WorkingDirectory=/home/uchida/mrc
 Environment=MRC_DATA_DIR=/home/uchida/mrc/data
-ExecStart=/home/uchida/mrc/.venv/bin/python /home/uchida/mrc/src/mrc_web.py --serial /dev/ttyAMA0 --camera 0 --port 8000
+ExecStart=/home/uchida/mrc/.venv/bin/python /home/uchida/mrc/src/mrc_web.py --serial /dev/ttyAMA0 --port 8000
 Restart=always
 RestartSec=2
 # ไม่มีกล้อง → แอปรันต่อด้วยภาพนิ่ง (open_camera_or_fallback) ไม่ต้องพึ่ง Restart วน

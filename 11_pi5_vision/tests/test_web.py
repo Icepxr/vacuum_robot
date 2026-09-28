@@ -401,3 +401,45 @@ def test_ui_is_not_cached(web):
     c, *_ = web
     for path in ("/drive", "/static/drive.js"):
         assert "no-cache" in c.get(path).headers.get("cache-control", "")
+
+
+def test_camera_reconnects_when_running_camera_goes_stale(tmp_path, monkeypatch):
+    """C45: กล้องที่เปิดได้แล้วหยุดส่งเฟรม (USB หลุด-กลับ) → ปิดตัวเก่า · ภาพนิ่งระหว่างรอ · เปิดตัวใหม่ได้ก็สลับกลับ"""
+    import asyncio, types
+    monkeypatch.setattr(W, "DATA_DIR", tmp_path); monkeypatch.setattr(W, "IMAGE_DIR", tmp_path / "images")
+    monkeypatch.setattr(W, "CAMERA_RETRY_S", 0.01); monkeypatch.setattr(W, "CAMERA_STALE_S", 0.05)
+    made = []
+    class FakeCam:
+        def __init__(self, *a, **k):
+            if len(made) == 2: raise RuntimeError("ยังไม่กลับมา")          # ครั้งที่ 3 ยังหาไม่เจอ → ต้องลองต่อ
+            self.age = 0.0; self.closed = False; made.append(self)
+        def frame_age_s(self): return self.age
+        def latest(self): return b"frame"
+        def close(self): self.closed = True
+    monkeypatch.setattr(W.D, "UsbCameraBackend", FakeCam)
+    args = types.SimpleNamespace(camera=-1, engine="sevenseg", run_id="t")
+    W.hub.cam_fallback = False
+    W.hub.backend = W.open_camera_or_fallback(args); W.hub.daemon = types.SimpleNamespace(backend=W.hub.backend)
+    first = W.hub.backend
+    first.age = 10.0                                                       # หลุด
+    async def run():
+        t = asyncio.create_task(W.camera_hotplug())
+        for _ in range(200):
+            await asyncio.sleep(0.01)
+            if len(made) >= 2 and W.hub.backend is made[1]: break
+        t.cancel()
+    asyncio.run(run())
+    assert first.closed and len(made) == 2 and W.hub.backend is made[1] and W.hub.daemon.backend is made[1]
+    assert W.hub.cam_fallback is False
+    W.hub.daemon = None; W.hub.backend = None
+
+
+def test_find_camera_prefers_stable_by_id(monkeypatch):
+    """C45: -1 = หาเองจาก /dev/v4l/by-id (BRIO ก่อน) · ไม่มี = 0 · ใส่เลขเอง = ใช้ตามนั้น"""
+    import glob
+    monkeypatch.setattr(glob, "glob", lambda pat: ["/dev/v4l/by-id/usb-Other_Cam-video-index0",
+                                                   "/dev/v4l/by-id/usb-046d_Logitech_BRIO_B91427CE-video-index0"])
+    assert W.D.find_camera(-1).endswith("BRIO_B91427CE-video-index0")
+    assert W.D.find_camera(2) == 2
+    monkeypatch.setattr(glob, "glob", lambda pat: [])
+    assert W.D.find_camera(-1) == 0

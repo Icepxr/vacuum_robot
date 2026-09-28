@@ -452,13 +452,27 @@ async def sys_ticker():
 
 CAMERA_RETRY_S = 5.0
 
+CAMERA_STALE_S = 5.0     # C45 กล้องที่เปิดอยู่ไม่ส่งเฟรมเกินนี้ = หลุด (ถอด/ไฟ USB กระตุก) → ปิดแล้วหาใหม่
+
 async def camera_hotplug():
-    """ไม่มีกล้องตอนสตาร์ท (cam_fallback) → ลองเปิดใหม่ทุก 5 s · เปิดได้ก็สลับ backend ให้ daemon/stream ทันที
-    (เจอจริง 18 ก.ย.: เสียบ BRIO หลัง service ขึ้น → ไม่มีภาพจนกว่าจะ restart)"""
+    """ทุก 5 s: (1) ไม่มีกล้องตอนสตาร์ท (cam_fallback) → ลองเปิด · (2) C45 กล้องที่เปิดอยู่เงียบ > 5 s → ปิดแล้วหาใหม่
+    เจอจริง 18 ก.ย.: เสียบ BRIO หลัง service ขึ้น → ไม่มีภาพ · 28 ก.ย.: USB หลุด-กลับ BRIO กลายเป็น video1 → ไม่มีภาพจนรีบูต"""
     while True:
         await asyncio.sleep(CAMERA_RETRY_S)
-        if not hub.cam_fallback or hub.cam_args is None:
+        if hub.cam_args is None:
             continue
+        age = getattr(hub.backend, "frame_age_s", None)
+        if not hub.cam_fallback:
+            if age is None or age() <= CAMERA_STALE_S:
+                continue
+            D.log(f"⚠ กล้องไม่ส่งเฟรม {age():.0f} s — ปิดแล้วหาใหม่ (ถอด/ไฟ USB กระตุก?)")
+            hub.on_event({"t": "log", "level": "warn", "msg": "กล้องหลุด — กำลังหาใหม่"})
+            old = hub.backend
+            try: await asyncio.to_thread(old.close)            # ปล่อยอุปกรณ์เก่าก่อน ไม่งั้นเปิดตัวเดิมซ้ำไม่ได้ (busy)
+            except Exception: pass                             # noqa: BLE001
+            hub.backend = still_fallback()
+            if hub.daemon: hub.daemon.backend = hub.backend
+            hub.cam_fallback = True
         try:
             cam = await asyncio.to_thread(D.UsbCameraBackend, hub.cam_args.camera,
                                           engine=hub.cam_args.engine, run_id=hub.cam_args.run_id)
@@ -514,13 +528,18 @@ def pi_ips():
 def open_camera_or_fallback(args):
     """เปิดกล้อง USB · ถ้าไม่มี (ยังไม่เสียบ / ถอดไป) ให้รันต่อด้วยภาพนิ่งแทนที่จะตาย —
     ไม่งั้น systemd Restart=always จะวนเปิดใหม่ทุก 2 s และหน้าเว็บ/ลิงก์ ESP32 ไม่ขึ้นเลยทั้งที่ขับได้โดยไม่มีภาพ
-    cam_ok ใน /api/status จะเป็น False → หน้าเว็บโชว์ "ไม่มีภาพ" (เสียบกล้องแล้วต้องรีสตาร์ท service — ยังไม่ทำ hot-plug)"""
+    cam_ok ใน /api/status จะเป็น False → หน้าเว็บโชว์ "ไม่มีภาพ" · camera_hotplug ลองใหม่ทุก 5 s"""
+    hub.cam_args = args                       # C45: เก็บเสมอ — กล้องที่เปิดได้ตอนนี้อาจหลุดทีหลัง
     try:
         return D.UsbCameraBackend(args.camera, engine=args.engine, run_id=args.run_id)
     except RuntimeError as e:
         D.log(f"⚠ {e} — รันต่อโดยไม่มีกล้อง")
     hub.cam_fallback = True
-    hub.cam_args = args
+    return still_fallback()
+
+
+def still_fallback():
+    """ภาพนิ่งแทนกล้อง: รูปล่าสุดที่ถ่ายไว้ หรือป้าย NO CAMERA"""
     imgs = sorted(IMAGE_DIR.glob("*.jpg"), key=lambda p: p.stat().st_mtime) if IMAGE_DIR.exists() else []
     if imgs:
         D.log(f"ใช้รูปล่าสุดแทนภาพสด: {imgs[-1].name}")

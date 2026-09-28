@@ -6,7 +6,9 @@ SERIAL_PORT = "/dev/ttyAMA0"     # ต้องมี enable_uart=1 + ปิด 
 SERIAL_BAUD = 115200
 
 # ── กล้อง (Logitech BRIO 4K · USB) ──
-CAMERA_INDEX = 0                 # /dev/video0 — ถ้า Pi มีกล้องอื่นเสียบก่อนอาจเลื่อนเป็น 2
+CAMERA_INDEX = -1                # -1 = หาเอง (C45): /dev/v4l/by-id/*-video-index0 ก่อน (ชื่อคงที่ตามรุ่น+serial) · ใส่ 0/1/… = บังคับ /dev/videoN
+# C45 (28 ก.ย.): เสียบใหม่/ไฟ USB กระตุก → BRIO กลับมาเป็น /dev/video1 ไม่ใช่ video0 → ล็อก index 0 ไว้ = ไม่มีภาพจนรีบูต
+CAMERA_BY_ID_GLOB = "/dev/v4l/by-id/usb-*-video-index0"
 CAMERA_SIZE  = (1920, 1080)      # MJPG 1080p · อ่านเฟรม ~61 ms (ไฟล์ 19 §19.4.1) · 4K ช้า 4× ขับไม่ได้ (C36)
 
 # ── เซนเซอร์อากาศ ENS160 + AHT21 บน I2C-1 (GPIO2 SDA ขา 3 · GPIO3 SCL ขา 5 · 3.3 V) ──

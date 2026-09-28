@@ -72,6 +72,16 @@ def uvc_list_ctrls(dev):
     return ctrls
 
 
+def find_camera(index=CFG.CAMERA_INDEX):
+    """C45 เลือกอุปกรณ์กล้อง: index ≥ 0 = ใช้ตามนั้น · -1 = ชื่อคงที่ใน /dev/v4l/by-id (BRIO ขึ้นก่อน) · ไม่เจอ = 0
+    (เลข /dev/videoN เปลี่ยนได้ทุกครั้งที่ USB หลุด-กลับ แต่ by-id ผูกกับรุ่น+serial ของกล้อง)"""
+    if isinstance(index, int) and index >= 0:
+        return index
+    import glob
+    found = sorted(glob.glob(CFG.CAMERA_BY_ID_GLOB), key=lambda p: ("BRIO" not in p, p))
+    return found[0] if found else 0
+
+
 class UsbCameraBackend:
     """BRIO ผ่าน OpenCV/V4L2 · MJPG 1080p เปิดค้างใน thread · เก็บเฟรม BGR ล่าสุด 1 เฟรม
     ตัวเลข: cap.read() ≈ 61 ms · imwrite 14 ms · resize 6 ms [วัดจริง 11 ก.ย. — ไฟล์ 19 §19.4.1]
@@ -84,6 +94,7 @@ class UsbCameraBackend:
         self.cv2, self.MR = cv2, MR
         self.engine, self.run_id, self.meter_type = engine, run_id, meter_type
         self.cfg = MR.load_config()
+        index = find_camera(index)
         cap = cv2.VideoCapture(index, cv2.CAP_V4L2)
         if not cap.isOpened():
             raise RuntimeError(f"เปิดกล้อง index {index} ไม่ได้")
@@ -91,7 +102,7 @@ class UsbCameraBackend:
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, size[0])
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, size[1])
         got = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
-        log(f"กล้อง index {index}: {got[0]}x{got[1]}" + ("" if got == tuple(size) else f"  ⚠ ขอ {size}"))
+        log(f"กล้อง {index}: {got[0]}x{got[1]}" + ("" if got == tuple(size) else f"  ⚠ ขอ {size}"))
         self._cap = cap
         self._frame, self._frame_ts = None, 0.0
         self._lock = threading.Lock()
@@ -117,6 +128,11 @@ class UsbCameraBackend:
                     self._frame, self._frame_ts = frame, time.monotonic()
             else:
                 time.sleep(0.05)
+
+    def frame_age_s(self):
+        """C45 วินาทีตั้งแต่เฟรมล่าสุด (inf = ยังไม่เคยได้) — camera_hotplug ใช้ตัดสินว่ากล้องหลุดกลางทาง"""
+        with self._lock:
+            return time.monotonic() - self._frame_ts if self._frame is not None else float("inf")
 
     def latest(self, max_age_s=1.0):
         with self._lock:
@@ -452,7 +468,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", default=CFG.SERIAL_PORT)
     ap.add_argument("--baud", type=int, default=CFG.SERIAL_BAUD)
-    ap.add_argument("--camera", type=int, default=CFG.CAMERA_INDEX, help="index ของกล้อง USB")
+    ap.add_argument("--camera", type=int, default=CFG.CAMERA_INDEX, help="index ของกล้อง USB · -1 = หาเองจาก /dev/v4l/by-id")
     ap.add_argument("--image", help="ใช้รูปนี้แทนกล้อง (ทดสอบลิงก์)")
     ap.add_argument("--engine", choices=["sevenseg", "tesseract", "ssocr"], default="sevenseg")
     ap.add_argument("--meter-type", default="water")
