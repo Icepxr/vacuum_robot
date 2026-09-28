@@ -45,11 +45,8 @@ constexpr int GATE_BRUSH   = PIN_BRUSH_PWM;
 constexpr int GATE_SERVO   = PIN_SERVO_MAST;
 
 // ── ค่าเวลาของ interlock (ไฟล์ 18 §18.3 — ทั้งคู่เป็น [ประมาณการ]) ──
-constexpr uint32_t SETTLE_MS        = 300;   // เว้นระหว่างแปรง ↔ เซอร์โว (ราง 5 V)
 constexpr uint32_t BLOWER_SPINUP_MS = 1000;  // เว้นหลังเปิด blower ก่อนสั่งล้อ (ราง 12 V)
 
-static uint32_t lastServoCmdMs   = 0;
-static uint32_t lastBrushStartMs = 0;
 static uint32_t lastBlowerOnMs   = 0;
 
 // ── จำแนกว่าคำสั่งนั้น "จ่ายไฟให้อะไร" ────────────────────────
@@ -82,11 +79,6 @@ static bool isWheelMove(const String& c) {
   return w == "d" || w == "r" || w == "dl" || w == "dr" ||
          w == "t2" || w == "t2l" || w == "t2r" || w == "t3" || w == "t5";
 }
-static bool isServoMove(const String& c) {
-  const String w = firstWord(c);
-  return w == "v1" || w == "v2" || w == "hold" || w == "us" ||
-         w == "c" || w == "+" || w == "-";
-}
 
 static void stopAllSystems(const char* why) {
   Serial.printf("\n>>> หยุดทุกระบบ: %s\n", why);
@@ -102,33 +94,8 @@ static void stopAllSystems(const char* why) {
 static bool interlockAllows(char sys, const String& sub, bool force) {
   const uint32_t now = millis();
 
-  // ── R1 · ราง 5 V "มอเตอร์เล็ก" — แปรง inrush 3.0 A + เซอร์โว stall
-  //    ไฟล์ 18 §18.2: เซอร์โว 2 ตัว = 8.0 A เกินพิกัด buck 6 A อยู่ 33 %
-  //    แม้เซอร์โว 1 ตัวก็เหลือแค่ 0.5 A (8.3 %) ซึ่งน้อยกว่าความคลาดเคลื่อนของตัวเลขเอง
-  //    → กติกานี้ห้ามข้าม ไม่ว่ากรณีใด
-  if (sys == 'b' && isBrushStart(sub)) {
-    if (servoAttachedNow()) {
-      Serial.println("[R1] ปฏิเสธ: เซอร์โวยังจับสัญญาณอยู่ — สั่ง `sv off` ก่อน");
-      Serial.println("     เหตุผล: แปรง inrush 3.0 A + เซอร์โว stall บนราง 5 V เดียวกัน (ไฟล์ 18 §18.2)");
-      return false;
-    }
-    if (now - lastServoCmdMs < SETTLE_MS) {
-      Serial.printf("[R1] ปฏิเสธ: เพิ่งสั่งเซอร์โวไป — รออีก %lu ms\n",
-                    (unsigned long)(SETTLE_MS - (now - lastServoCmdMs)));
-      return false;
-    }
-  }
-  if (sys == 's' && isServoMove(sub)) {
-    if (brushOnNow()) {
-      Serial.println("[R1] ปฏิเสธ: แปรงยังหมุนอยู่ — สั่ง `bl bs` ก่อน");
-      return false;
-    }
-    if (now - lastBrushStartMs < SETTLE_MS) {
-      Serial.printf("[R1] ปฏิเสธ: เพิ่งสั่งแปรงไป — รออีก %lu ms\n",
-                    (unsigned long)(SETTLE_MS - (now - lastBrushStartMs)));
-      return false;
-    }
-  }
+  // ── ~~R1 แปรง ↔ เซอร์โว~~ ยกออก 29 ก.ย. (C50 · ผู้ใช้สั่ง): ตั้งบนสมมติฐานเซอร์โวอยู่ราง 5 V ร่วมกับแปรง (ไฟล์ 18 §18.2 · C12)
+  //    ผู้ใช้ยืนยัน 25 ก.ย. (C41) ว่าเซอร์โวรับไฟ 6 V จาก buck แยก
 
   // ── R2 · ราง 12 V — ล้อพีค 5.0 A + blower 2.4 A = 7.4 A บน buck 8 A (เหลือ 7.5 %)
   //    และ inrush ของ blower ยังไม่เคยวัด → ห้ามให้ช่วงออกตัวทั้งสองซ้อนกัน
@@ -239,8 +206,6 @@ static void route(String line) {
 
   // จำเวลาไว้ "ก่อน" ส่งต่อ เพราะ routine ของโมดูลเป็นแบบ blocking
   // ถ้าจับเวลาหลังจบ ช่วงที่โหลดกำลังกินไฟจริงจะไม่ถูกนับ
-  if (sys == 's' && isServoMove(sub))   lastServoCmdMs   = millis();
-  if (sys == 'b' && isBrushStart(sub))  lastBrushStartMs = millis();
   if (sys == 'b' && isBlowerStart(sub)) lastBlowerOnMs   = millis();
 
   switch (sys) {
