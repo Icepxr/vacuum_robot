@@ -6,17 +6,15 @@
 //   R2  เปิดดูดแล้วต้องเว้น 1000 ms ก่อนล้อออกตัว (ราง 12 V margin 7.5 % · ไฟล์ 18 §18.2)
 //       → ไม่ปฏิเสธแล้ว: รับ $V ไว้ แต่ล้อ = 0 จนพ้นช่วง แล้วออกตัวเองจาก $V ถัดไป · บอก HUD ด้วย flag SPINUP_HOLD
 //   R2' ห้ามเปิดดูดขณะล้อหมุน (NOT_STOPPED) — เหตุผลเดียวกัน (inrush ยังไม่วัด)
-//   R1  แปรง ↔ เซอร์โว: $C ที่เปิดแปรงขณะเซอร์โวจับสัญญาณ → ปฏิเสธ MAST_UP (ราง 5 V เกิน 33 % · C12)
-//       ⚠ กว้างเกินไป — ควรห้ามเฉพาะตอนเซอร์โว*กำลังขยับ* แต่ต้องวัดกระแสค้างสุด (M6) ก่อนแคบลง
+//   ~~R1 แปรง ↔ เซอร์โว (MAST_UP / SERVO_MOVING / BRUSH_SPINUP)~~ ยกออก 29 ก.ย. (C50 · ผู้ใช้สั่ง): ตั้งบนสมมติฐาน
+//       เซอร์โวอยู่ราง 5 V ร่วมกับแปรง (C12) — ผู้ใช้ยืนยัน 25 ก.ย. (C41) ว่าเซอร์โวรับไฟ 6 V จาก buck แยก → เหตุผลเดิมไม่มีแล้ว
 //   G7  แปรง: เพดานอยู่ที่ blower_test/config.h (BRUSH_DUTY_MAX_PCT — บนราง 5 V = 100 %) ไม่ clamp ซ้ำที่นี่ (C30: เลข 40 % เดิมมาจากยุคราง 12 V)
 //   mission กำลังเดิน → $V/$C ถูกปฏิเสธ IN_MISSION (สองสมองสั่งล้อพร้อมกันไม่ได้ — ไม่เกิดในแมนวล)
 // ที่ยกออก (C28): G2 MAST_UP ใน $V และการหยุดล้อเมื่อเสายก (ไฟล์ 08: ห่างขีดพลิก 24 เท่า) ·
 //   G14 เปลี่ยนจาก "ห้ามเกิน 150" เป็น "เพดานที่ผู้ใช้ตั้งเอง ($L)" clamp ที่ฮาร์ดแวร์ 716 mm/s เท่านั้น
 #include "manual.h"
-#include "servo_x.h"
 
 void motorSetLR(int l, int r); void motorStop(const char*);
-bool servoAttachedNow();
 bool missionRunning();
 void blowerCommand(const String&); bool blowerOnNow(); bool brushOnNow();
 
@@ -68,8 +66,6 @@ void manualHalt(const char* why) {
 
 const char* manualSetCleaning(int suctionPct, int brushPct) {
   if (missionRunning()) return "IN_MISSION";
-  if (brushPct > 0 && servoAttachedNow()) return "MAST_UP";          // R1
-  if (brushPct > 0 && !brushOnNow() && servoXMoving()) return "SERVO_MOVING";   // R1 กับเซอร์โว X (C30) — เฉพาะตอนเริ่มแปรงขณะ X เดินอยู่
   if (brushPct > 100) brushPct = 100;                                 // เพดานจริงอยู่ใน brushSet() ตาม BRUSH_DUTY_MAX_PCT
   const bool suctionOn = suctionPct > 0;
   if (suctionOn && !blowerOnNow()) {

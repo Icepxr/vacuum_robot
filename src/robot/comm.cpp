@@ -123,7 +123,6 @@ void handleLine(char* line, size_t len) {
       if (n < 2) { nack(rseq, "BAD_ARGS"); return; }
       const int us = (int)f[1];
       if (us == 0) { servoXRelease("Pi สั่ง $X,0"); ack(rseq); return; }
-      if (brushOnNow() && millis() - brushOnSinceMsNow() < 1000) { nack(rseq, "BRUSH_SPINUP"); return; }   // R1: ราง 5 V — inrush แปรงยังไม่วัด (C30)
       if (!servoXMoveTo(us)) { nack(rseq, "OUT_OF_RANGE"); return; }
       ack(rseq);
       return;
@@ -134,7 +133,6 @@ void handleLine(char* line, size_t len) {
       const int us = (int)f[1];
       if (us == 0) { servoStop("Pi สั่ง $M,0"); ack(rseq); return; }
       if (us < MAST_US_MIN || us > MAST_US_MAX) { nack(rseq, "OUT_OF_RANGE"); return; }   // C47/C48: ต่ำสุด 300 (เดิม 500)
-      if (brushOnNow() && millis() - brushOnSinceMsNow() < 1000) { nack(rseq, "BRUSH_SPINUP"); return; }   // R1 ราง 5 V
       if (!servoSetTarget(us)) { nack(rseq, "SERVO_FAIL"); return; }
       ack(rseq);
       return;
