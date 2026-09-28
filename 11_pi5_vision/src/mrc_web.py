@@ -34,6 +34,7 @@ import capture_daemon as D          # noqa: E402
 import mrc_config as CFG            # noqa: E402 — พอร์ต/กล้อง/บัส อยู่ที่เดียว
 import air_sensor as AIR            # noqa: E402
 import mrc_protocol as P            # noqa: E402
+import aria_store as S              # noqa: E402 — รูปรอคนขับตัดสิน + ทะเบียนมิเตอร์ (F10)
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 DATA_DIR = Path(os.environ.get("MRC_DATA_DIR", Path(__file__).resolve().parent.parent / "data"))
@@ -212,6 +213,11 @@ class Hub:
             self.last_reading = ev               # {"t":"reading","value":…,"confidence":…}
             if self.air and self.air.available:  # แนบอากาศ ณ เวลาถ่าย (ใช้กับข้อมูลหอพัก/ARIA ทีหลัง)
                 ev["air"] = {k: self.air.latest.get(k) for k in ("eco2_ppm", "tvoc_ppb", "aqi", "temp_c", "rh_pct", "validity")}
+            lid = ev.get("local_id")
+            if lid and S.get_pending(lid) is not None:   # F10: แถวรอคนขับตัดสินในป๊อปอัพ — เติมอากาศ/นาฬิกา ณ ตอนนี้ลงแถว (F1/F3)
+                S.attach(lid, air=ev.get("air"), clock_synced=S.clock_synced())
+                ev["pending"] = True
+                ev["crop_url"] = f"/crops/{lid}.jpg" if (S.DATA_DIR / "crops" / f"{lid}.jpg").is_file() else None
             c = self.cam_controls()                # C36 ซูม/โฟกัสที่ใช้ตอนถ่าย — ภาพที่เซฟคือเฟรมหลังซูม (UVC ครอปในกล้อง) จึงต้องรู้ว่าซูมเท่าไหร่
             if c: ev["cam"] = {k: c[k] for k in ("zoom", "pan", "tilt", "af", "focus")}
             v = ev.get("value")
@@ -254,13 +260,11 @@ class Hub:
         cam_ok = self.backend is not None and self.backend.latest() is not None and not self.cam_fallback
         temp = cpu_temp_c()
         du = shutil.disk_usage(DATA_DIR if DATA_DIR.exists() else Path("/"))
-        pending = 0
-        if JSONL_PATH.exists():
-            pending = sum(1 for l in JSONL_PATH.read_text(encoding="utf-8").splitlines()
-                          if l.strip() and '"synced_at": null' in l)
+        sc = S.sync_counts()                     # F10: นับจาก sync_state.json · แถวรอตัดสินไม่นับเป็นรอ sync
         return {"t": "sys", "ts": time.time(), "uptime_s": round(time.time() - self.started),
                 "cam_ok": cam_ok, "cam_fallback": self.cam_fallback, "cpu_temp_c": temp, "disk_free_mb": du.free // 2**20,
-                "pending_sync": pending, "link": link, "last_capture": self.last_capture, "last_reading": self.last_reading,
+                "pending_sync": sc["pending_rows"], "pending_crops": sc["pending_crops"], "sync_errors": sc["sync_errors"],
+                "pending_decisions": sc["pending_decisions"], "warn": self.display_warn(), "link": link, "last_capture": self.last_capture, "last_reading": self.last_reading,
                 "esp32_supports": ["CAPTURE_REQ", "$K", "$V", "$S", "$E", "$C", "$P", "$L", "$X", "$M", "$D", "#T"],
                 "tele": (self.daemon.tele if self.daemon else None),
                 "drive": {"v": self.drive_v, "w": self.drive_w, "active": self.drive_last_mono is not None,
@@ -326,6 +330,37 @@ def image(name: str):
     if not p.is_file():
         return JSONResponse({"error": "not found"}, status_code=404)
     return FileResponse(p)
+
+
+@app.get("/crops/{name}")
+def crop_image(name: str):
+    p = (S.DATA_DIR / "crops" / Path(name).name)
+    if p.suffix != ".jpg" or not p.is_file():
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return FileResponse(p, media_type="image/jpeg")
+
+
+@app.get("/api/pending")
+def api_pending():
+    """F10 รูปที่ยังไม่ได้ตัดสิน (รวมที่ค้างจากเน็ตหลุด/ปิดแอป) + ห้องจากทะเบียนสำหรับตัวเลือกในป๊อปอัพ"""
+    reg = S.load_registry()
+    rooms = sorted({str(m.get("room")) for m in reg["meters"] if m.get("room")})
+    items = [{k: r.get(k) for k in ("local_id", "captured_at", "value", "raw_text", "confidence", "pending_since")}
+             | {"crop_url": f"/crops/{r['local_id']}.jpg" if r.get("crop_path") else None} for r in S.list_pending()]
+    return JSONResponse({"items": items, "rooms": rooms, "registry_version": reg["registry_version"],
+                         "ttl_days": S.PENDING_TTL.days})
+
+
+@app.post("/api/pending/{lid}")
+async def api_decide(lid: str, body: dict):
+    """{"keep": true, "room_id": "204", "meter_type": "water"} | {"keep": false} → เก็บ (ลง readings.jsonl) หรือลบทิ้ง"""
+    ok, r = S.decide(lid, bool(body.get("keep")), body.get("room_id"), body.get("meter_type"))
+    if not ok:
+        return JSONResponse({"ok": False, "reason": r}, status_code=404 if r == "not_pending" else 400)
+    ev = {"t": "decided", "local_id": lid, "keep": bool(body.get("keep")),
+          "room_id": r.get("room_id"), "meter_type": r.get("meter_type"), "meter_id": r.get("meter_id")}
+    hub.on_event(ev)
+    return JSONResponse({"ok": True, **ev})
 
 
 @app.post("/api/capture")
@@ -487,9 +522,19 @@ def display_payload():
             len(hub.clients), hub.display_warn(), evt, arg)
 
 
+PURGE_EVERY_S = 3600      # F10 ลบรูปที่ค้างตัดสินเกิน 7 วัน — เช็คชั่วโมงละครั้งพอ
+
 async def sys_ticker():
+    last_purge = float("-inf")   # รอบแรกทันทีหลังบูต — time.monotonic() นับจากบูต ถ้าเริ่มที่ 0 หุ่นที่เปิดแค่ครั้งละ < 1 ชม. จะไม่เคยลบเลย
     while True:
         await asyncio.sleep(1.0)
+        if time.monotonic() - last_purge > PURGE_EVERY_S:
+            last_purge = time.monotonic()
+            try:
+                n = await asyncio.to_thread(S.purge_expired)
+                if n: hub.on_event({"t": "log", "level": "warn", "msg": f"ลบรูปที่ไม่ได้ตัดสินเกิน {S.PENDING_TTL.days} วัน {n} รูป"})
+            except Exception as e:                                   # noqa: BLE001 — เก็บกวาดพังต้องไม่ล้มเว็บ
+                D.log(f"purge_expired พัง: {e}")
         if hub.daemon:
             try: hub.daemon.send_display(*display_payload())        # จอ GC9A01 (C32) — ส่งเสมอ ไม่ต้องมี client
             except Exception: pass                                   # noqa: BLE001
@@ -621,6 +666,12 @@ def main():
         # daemon ที่ไม่มี serial: ใช้ capture_now ได้ แต่ไม่ฟัง ESP32
         import pty
         master, slave = pty.openpty()          # พอร์ตปลอมให้ daemon เปิดได้ — ไม่มีใครส่งอะไรมา
+        # ต้องมีคนอ่านฝั่ง master ทิ้ง: ไม่งั้นบัฟเฟอร์ pty เต็มหลังส่ง $D ไปไม่กี่นาที แล้ว send_display ใน sys_ticker
+        # บล็อก event loop ทั้งเว็บ (เจอจริงบน Mac 29 ก.ย. — เว็บค้างทั้งหมด CPU 0 %) · บน Pi จริง ESP32 อ่าน UART อยู่ตลอดจึงไม่เกิด
+        def _drain():
+            while True:
+                os.read(master, 4096)
+        threading.Thread(target=_drain, name="pty-drain", daemon=True).start()
         hub.daemon = D.CaptureDaemon(os.ttyname(slave), backend, on_event=hub.on_event)
         D.log("โหมด --no-serial: ไม่ฟัง ESP32")
     else:

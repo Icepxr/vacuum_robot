@@ -1,0 +1,12 @@
+# ติดตั้ง: sudo cp ~/mrc/systemd/mrc-sync.{service,timer} /etc/systemd/system/ && sudo systemctl daemon-reload
+#          sudo systemctl enable --now mrc-sync.timer
+[Unit]
+Description=Run MRC-001 ARIA sync every 5 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+RandomizedDelaySec=30
+
+[Install]
+WantedBy=timers.target

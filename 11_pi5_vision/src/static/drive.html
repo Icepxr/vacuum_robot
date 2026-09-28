@@ -7,6 +7,7 @@
 <title>ARIA · MRC-001 POV Control</title>
 <link rel="stylesheet" href="/static/drive.css?v=c44">
 <link rel="stylesheet" href="/static/drive-vr.css?v=20260927">
+<link rel="stylesheet" href="/static/review.css?v=f10">
 </head>
 <body>
 <main class="cockpit" id="cockpit">
@@ -114,6 +115,7 @@
       </div>
       </details>
       <button id="capture" class="dock-btn cap" type="button"><span class="ico" aria-hidden="true">◉</span><span>ถ่ายมิเตอร์</span><b id="capn">0 ใบ</b></button>
+      <button id="review-badge" class="review-badge" type="button" hidden>รูปรอตัดสิน <b id="review-n">0</b></button>
       <div class="tools-label clean-label">ระบบเก็บขยะ</div>
       <nav class="dock" aria-label="ระบบทำความสะอาด">
         <button id="suction" class="dock-btn tog" type="button"><span class="ico" aria-hidden="true">◌</span><span>ดูดฝุ่น</span><b>ปิด</b></button>
@@ -124,6 +126,29 @@
   <button id="estop" class="estop" type="button"><span class="estop-icon" aria-hidden="true">■</span><span>หยุดฉุกเฉิน</span><small>หยุดหุ่นทันที</small></button>
   <div id="toast" class="toast" hidden role="status" aria-live="polite"></div>
 </main>
+
+<!-- F10 ป๊อปอัพหลังถ่าย: เลือกห้อง + ชนิด แล้ว เก็บ / ไม่เอา · ไม่กด = ค้างบน Pi 7 วัน -->
+<div id="review" class="review" hidden role="dialog" aria-modal="true" aria-labelledby="review-title">
+  <div class="review-card">
+    <div class="review-head"><h2 id="review-title">เก็บรูปนี้ไหม</h2><span id="review-meta" class="review-meta"></span></div>
+    <div class="review-crop"><img id="review-img" alt="รูปหน้าปัดที่ถ่าย"><span id="review-noimg" hidden>ไม่มีรูป crop (OCR/กรอบมีปัญหา)</span></div>
+    <div class="review-ocr"><small>OCR อ่านได้</small><strong id="review-value">—</strong><small id="review-conf"></small></div>
+    <label class="review-field">เลขห้อง
+      <input id="review-room" inputmode="text" autocomplete="off" maxlength="10" list="review-rooms" placeholder="เช่น 204" required>
+      <datalist id="review-rooms"></datalist>
+    </label>
+    <fieldset class="review-type"><legend>ชนิดมิเตอร์</legend>
+      <label><input type="radio" name="review-type" value="water"> น้ำ</label>
+      <label><input type="radio" name="review-type" value="electric"> ไฟ</label>
+    </fieldset>
+    <p id="review-err" class="review-err" hidden></p>
+    <div class="review-actions">
+      <button id="review-discard" type="button" class="review-btn discard">ไม่เอา · ลบรูป</button>
+      <button id="review-keep" type="button" class="review-btn keep">เก็บ</button>
+    </div>
+    <button id="review-later" type="button" class="review-later">ไว้ตัดสินทีหลัง (เก็บบน Pi 7 วัน)</button>
+  </div>
+</div>
 
 <section id="sheet" class="sheet" hidden aria-labelledby="settings-title">
   <div class="sheet-head">
@@ -282,6 +307,7 @@
   <div class="emergency-bottomline">หยุดตรวจสอบก่อนใช้งานต่อ · NO AUTOMATIC RESUME</div>
 </section>
 <script src="/static/drive-state.js?v=20260927"></script>
-<script src="/static/drive.js?v=c51"></script>
+<script src="/static/drive.js?v=c51-f10"></script>
+<script src="/static/review.js?v=f10"></script>
 </body>
 </html>

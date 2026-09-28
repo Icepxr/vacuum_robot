@@ -1,144 +1,177 @@
 #!/usr/bin/env python3
 """
-sync_supabase.py — ส่งค่าที่อ่านไว้ในเครื่องขึ้น Supabase
+sync_supabase.py — ส่งแถวที่คนขับกด "เก็บ" + รูป crop + สถานะ Pi ขึ้น ARIA ผ่าน Edge Function `ingest`
 
-**แยกจาก meter_reader.py โดยตั้งใจ** — การอ่านมิเตอร์ต้องไม่รอเครือข่าย
-ถ้าเน็ตหลุด สคริปต์นี้ล้มเหลวได้โดยไม่กระทบภารกิจ แล้วค่อยรันใหม่ทีหลัง
+**แยกจากเว็บ/การถ่ายโดยตั้งใจ** — การถ่ายต้องไม่รอเครือข่าย · เน็ตล้ม = หยุดเงียบๆ ข้อมูลในเครื่องครบ รอบหน้าส่งต่อ
+เปลี่ยน 29 ก.ย. 2026 (D6 · design/aria-data-spec-v1.md §3):
+  - ไม่ถือ service key / anon key แล้ว — ใช้ token ของอุปกรณ์ (x-device-token) คลาวด์เก็บแค่ SHA-256
+  - ส่งเฉพาะแถวที่ driver_decision = "kept" (F10) · แถวเก่าก่อนมีป๊อปอัพอยู่บน Pi อย่างเดียว
+  - ไม่เขียนทับ readings.jsonl แล้ว — สถานะการส่งอยู่ใน data/sync_state.json (aria_store) · เหตุผลอยู่ที่ aria_store
+  - ส่งแถวก่อน แล้วค่อยส่ง crop (คลาวด์ใช้แถวพิสูจน์ว่า local_id เป็นของอุปกรณ์นี้)
 
-ตั้งค่าผ่านตัวแปรสภาพแวดล้อม (อย่าใส่คีย์ลงในไฟล์ที่ commit):
-    export SUPABASE_URL="https://<ref>.supabase.co"
-    export SUPABASE_KEY="<anon or service key>"
+ตั้งค่า (อย่าใส่ token ลงไฟล์ที่ commit):
+    ARIA_DEVICE_TOKEN_FILE=/etc/mrc/aria_device_token   (ค่าเริ่ม · สิทธิ์ 600)   หรือ  ARIA_DEVICE_TOKEN=...
+    ARIA_INGEST_URL=https://brvlfwrmkoyjnrhvfesq.supabase.co/functions/v1/ingest   (ค่าเริ่ม)
 
 ใช้งาน:
-    python sync_supabase.py            # ส่งเฉพาะที่ยังไม่ได้ส่ง
-    python sync_supabase.py --dry-run  # ดูว่าจะส่งอะไรบ้าง ไม่ส่งจริง
+    python sync_supabase.py                 # ส่งที่ค้าง
+    python sync_supabase.py --dry-run       # ดูว่าจะส่งอะไร ไม่ส่งจริง
+    python sync_supabase.py --retry-errors  # ส่งแถวที่คลาวด์เคยปฏิเสธซ้ำอีกรอบ
 """
 import argparse
 import json
 import os
+import shutil
 import sys
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-import requests
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import aria_store as S  # noqa: E402
 
-DATA_DIR = Path(os.environ.get("MRC_DATA_DIR", Path(__file__).resolve().parent.parent / "data"))
-JSONL_PATH = DATA_DIR / "readings.jsonl"
-TABLE = "meter_readings"
-TIMEOUT = 10
+INGEST_URL = os.environ.get("ARIA_INGEST_URL", "https://brvlfwrmkoyjnrhvfesq.supabase.co/functions/v1/ingest").rstrip("/")
+TOKEN_FILE = Path(os.environ.get("ARIA_DEVICE_TOKEN_FILE", "/etc/mrc/aria_device_token"))
+LOCAL_STATUS_URL = os.environ.get("MRC_STATUS_URL", "http://127.0.0.1:8000/api/status")
+TIMEOUT = 15
 BATCH = 50
+MAX_CROP_BYTES = 1_048_576   # = file_size_limit ของ bucket crops และ MAX_CROP_BYTES ใน Edge Function
+# ต้องตรงกับ whitelist ใน public.ingest_readings (aria/supabase/migrations/…_ingest.sql)
+ROW_FIELDS = ("local_id", "captured_at", "decided_at", "run_id", "room_id", "meter_type", "raw_text", "value",
+              "confidence", "image_path", "source", "meter_id", "registry_version", "clock_synced", "ocr_engine", "air")
 
 
-def load_records():
-    """คืน (records, bad_lines) — บรรทัดที่ parse ไม่ได้ต้องเก็บไว้เขียนกลับ
-    ไม่งั้น rewrite() จะลบมันทิ้งถาวร ทั้งที่อาจกู้ด้วยมือได้"""
-    if not JSONL_PATH.exists():
-        return [], []
-    out, bad = [], []
-    for i, line in enumerate(JSONL_PATH.read_text(encoding="utf-8").splitlines()):
-        stripped = line.strip()
-        if not stripped:
-            continue
-        try:
-            out.append((i, json.loads(stripped)))
-        except json.JSONDecodeError:
-            print(f"  บรรทัดที่ {i+1} JSON เสีย — เก็บไว้ไม่ลบทิ้ง", file=sys.stderr)
-            bad.append(line)
-    return out, bad
+def now_iso():
+    return datetime.now(timezone.utc).isoformat()
 
 
-def rewrite(records, bad_lines=()):
-    """เขียนไฟล์ใหม่ทั้งไฟล์ผ่านไฟล์ชั่วคราว กันไฟดับกลางคันแล้วไฟล์พัง"""
-    tmp = JSONL_PATH.with_suffix(".jsonl.tmp")
-    with tmp.open("w", encoding="utf-8") as f:
-        for _, r in records:
-            f.write(json.dumps(r, ensure_ascii=False) + "\n")
-        for line in bad_lines:        # บรรทัดที่ parse ไม่ได้ ต้องอยู่ต่อ ไม่ใช่หายไป
-            f.write(line + "\n")
-        f.flush()
-        os.fsync(f.fileno())
-    tmp.replace(JSONL_PATH)
-    # os.replace เป็น atomic แต่ตัว rename ยังค้างใน directory cache
-    # ถ้าไฟดับตรงนี้อาจได้ไฟล์เก่ากลับมา = เสีย synced_at ทั้งชุด = ส่งซ้ำ
-    fd = os.open(str(JSONL_PATH.parent), os.O_RDONLY)
+def token():
+    t = os.environ.get("ARIA_DEVICE_TOKEN", "").strip()
+    if t:
+        return t
     try:
-        os.fsync(fd)
-    finally:
-        os.close(fd)
+        return TOKEN_FILE.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def http(method, path, tok, body=None, ctype="application/json"):
+    """คืน (status, dict) · เครือข่ายล้ม = (None, {"error": ...})"""
+    data = json.dumps(body).encode() if isinstance(body, (dict, list)) else body
+    req = urllib.request.Request(INGEST_URL + path, data=data, method=method,
+                                 headers={"x-device-token": tok, "Content-Type": ctype})
+    try:
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+            return r.status, json.loads(r.read() or b"{}")
+    except urllib.error.HTTPError as e:
+        try:
+            return e.code, json.loads(e.read() or b"{}")
+        except ValueError:
+            return e.code, {}
+    except (urllib.error.URLError, OSError, TimeoutError) as e:
+        return None, {"error": str(e)}
+
+
+def local_status():
+    """สถานะจากเว็บบน Pi (กล้อง/อากาศ/อุณหภูมิ/รหัสเตือน) · เว็บไม่รัน = ไม่มีค่าพวกนี้ ไม่ใช่ error"""
+    try:
+        with urllib.request.urlopen(LOCAL_STATUS_URL, timeout=2) as r:
+            return json.loads(r.read())
+    except (urllib.error.URLError, OSError, ValueError):
+        return {}
+
+
+def heartbeat(counts):
+    st = local_status()
+    air = st.get("air") or {}
+    try:
+        disk = shutil.disk_usage(S.DATA_DIR if S.DATA_DIR.exists() else Path("/")).free // 2**20
+    except OSError:
+        disk = None
+    return {"pending_rows": counts["pending_rows"], "pending_crops": counts["pending_crops"],
+            "pending_decisions": counts["pending_decisions"], "app_version": os.environ.get("MRC_APP_VERSION"),
+            "disk_free_mb": disk, "clock_synced": S.clock_synced(), "warn": st.get("warn"),
+            "cam_ok": st.get("cam_ok"), "air_available": air.get("available") if air else None,
+            "cpu_temp_c": st.get("cpu_temp_c")}
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--retry-errors", action="store_true")
     args = ap.parse_args()
 
-    url = os.environ.get("SUPABASE_URL", "").rstrip("/")
-    key = os.environ.get("SUPABASE_KEY", "")
-    if not args.dry_run and (not url or not key):
-        sys.exit("ต้องตั้ง SUPABASE_URL และ SUPABASE_KEY ก่อน")
-
-    records, bad_lines = load_records()
-    pending = [(i, r) for i, r in records if not r.get("synced_at")]
-    print(f"ทั้งหมด {len(records)} รายการ · ยังไม่ได้ส่ง {len(pending)} รายการ")
-    if not pending:
-        return
+    state = S.load_sync_state()
+    rows = S.kept_rows()
+    ent = lambda lid: state.setdefault(lid, {"row": None, "crop": None, "error": None})   # noqa: E731
+    todo = [r for r in rows if not (state.get(r["local_id"]) or {}).get("row")
+            and (args.retry_errors or not (state.get(r["local_id"]) or {}).get("error"))]
+    print(f"แถวที่เก็บแล้ว {len(rows)} · รอส่ง {len(todo)} · รอตัดสินบน Pi {len(S.list_pending())}")
 
     if args.dry_run:
-        for _, r in pending[:10]:
-            print(f"  {r.get('captured_at')}  value={r.get('value')}  raw={r.get('raw_text')!r}")
-        if len(pending) > 10:
-            print(f"  ... และอีก {len(pending)-10} รายการ")
-        return
+        for r in todo[:10]:
+            print(f"  {r.get('captured_at')}  ห้อง {r.get('room_id')} {r.get('meter_type')}  value={r.get('value')}")
+        return 0
 
-    # 🔴 ต้องเป็น upsert ไม่ใช่ insert ธรรมดา
-    # local_id เป็น unique — ถ้าส่งซ้ำด้วย insert PostgREST จะมองทั้ง array เป็น
-    # INSERT statement เดียว → duplicate key ทำให้ rollback ทั้ง batch รวมรายการใหม่
-    # ที่ยังไม่เคยส่งด้วย → ได้ 409 → break → ทุกรอบต่อจากนี้ค้างที่เดิมถาวร
-    # และการส่งซ้ำเกิดได้ง่ายมาก: กด Ctrl-C, ไฟดับ, หรือ response หายกลางทาง
-    # หลังเซิร์ฟเวอร์บันทึกไปแล้ว (ซึ่งเกิดแน่ในสนามแข่ง)
-    # ด้วย merge-duplicates การส่งซ้ำกลายเป็น no-op — ระบบกู้ตัวเองได้
-    endpoint = f"{url}/rest/v1/{TABLE}?on_conflict=local_id"
-    headers = {
-        "apikey": key,
-        "Authorization": f"Bearer {key}",
-        "Content-Type": "application/json",
-        "Prefer": "return=minimal,resolution=merge-duplicates",
-    }
+    tok = token()
+    if not tok:
+        print(f"ไม่มี token ของอุปกรณ์ — ตั้ง ARIA_DEVICE_TOKEN หรือวางไฟล์ที่ {TOKEN_FILE}", file=sys.stderr)
+        return 2
 
+    # 1) แถว (ส่ง heartbeat ไปกับชุดแรก · ไม่มีแถวก็ส่ง heartbeat อย่างเดียว ให้ ARIA รู้ว่า Pi ยังอยู่)
+    batches = [todo[i:i + BATCH] for i in range(0, len(todo), BATCH)] or [[]]
     sent = 0
-    for start in range(0, len(pending), BATCH):
-        chunk = pending[start:start + BATCH]
-        payload = [{
-            "local_id":    r["local_id"],
-            "captured_at": r["captured_at"],
-            "run_id":      r.get("run_id"),
-            "meter_type":  r.get("meter_type"),
-            "raw_text":    r.get("raw_text"),
-            "value":       r.get("value"),
-            "confidence":  r.get("confidence"),
-            "image_path":  r.get("image_path"),
-        } for _, r in chunk]
-        try:
-            resp = requests.post(endpoint, headers=headers, json=payload, timeout=TIMEOUT)
-        except requests.RequestException as e:
-            print(f"  ส่งไม่สำเร็จ (เครือข่าย): {e} — หยุดไว้ก่อน ข้อมูลในเครื่องยังครบ")
-            break
-        if resp.status_code not in (200, 201, 204):
-            print(f"  เซิร์ฟเวอร์ตอบ {resp.status_code}: {resp.text[:300]}")
-            print("  หยุดไว้ก่อน ข้อมูลในเครื่องยังครบ ไม่มีอะไรหาย")
-            break
-        now = datetime.now(timezone.utc).isoformat()
-        for _, r in chunk:
-            r["synced_at"] = now
-        sent += len(chunk)
-        # บันทึกทุก chunk ไม่ใช่รอตอนจบ — ถ้าโปรเซสตายกลางคัน หน้าต่างความเสียหาย
-        # จะเหลือแค่ 1 chunk (50 แถว) แทนที่จะเป็นทั้งไฟล์
-        rewrite(records, bad_lines)
-        print(f"  ส่งแล้ว {sent}/{len(pending)}")
+    for n, chunk in enumerate(batches):
+        body = {"rows": [{k: r.get(k) for k in ROW_FIELDS} for r in chunk]}
+        if n == 0:
+            body["heartbeat"] = heartbeat(S.sync_counts())
+        code, resp = http("POST", "/readings", tok, body)
+        if code != 200:
+            print(f"  ส่งแถวไม่สำเร็จ ({code}): {resp.get('error', resp)} — หยุดไว้ก่อน ข้อมูลในเครื่องครบ")
+            S.save_sync_state(state)
+            return 1
+        t = now_iso()
+        for lid in resp.get("accepted", []):
+            ent(lid).update(row=t, error=None)
+        for rej in resp.get("rejected", []):
+            if rej.get("local_id"):
+                ent(rej["local_id"])["error"] = str(rej.get("reason"))[:300]
+                print(f"  คลาวด์ปฏิเสธ {rej.get('local_id')}: {rej.get('reason')}")
+        sent += len(resp.get("accepted", []))
+        S.save_sync_state(state)      # บันทึกทุกชุด — ตายกลางคันเสียแค่ชุดเดียว (ส่งซ้ำก็เป็น no-op ฝั่งคลาวด์)
 
-    rewrite(records, bad_lines)   # เผื่อกรณี break ออกมาก่อนส่งได้สักรายการ
-    print(f"เสร็จ — ส่งสำเร็จ {sent} รายการ · เหลือ {len(pending)-sent} รายการไว้รอบหน้า")
+    # 2) crop ของแถวที่ขึ้นแล้ว
+    crops = 0
+    for r in rows:
+        e = state.get(r["local_id"]) or {}
+        if not e.get("row") or e.get("crop") or not r.get("crop_path"):
+            continue
+        p = S.DATA_DIR / r["crop_path"]
+        if not p.is_file():
+            continue                   # crop หาย (ลบมือ?) — แถวยังใช้ได้ ARIA โชว์ "ไม่มีรูป"
+        if p.stat().st_size > MAX_CROP_BYTES:
+            # คลาวด์ปฏิเสธทันทีโดยไม่อ่าน body → ฝั่งนี้ค้างจน timeout แล้วขวาง crop อื่นทุกรอบ · ข้ามถาวร
+            ent(r["local_id"])["crop"] = "too_large"
+            print(f"  crop {r['local_id']} ใหญ่ {p.stat().st_size} B เกิน {MAX_CROP_BYTES} — ไม่ส่ง")
+            S.save_sync_state(state)
+            continue
+        code, resp = http("PUT", f"/crops/{r['local_id']}", tok, p.read_bytes(), "image/jpeg")
+        if code == 200:
+            ent(r["local_id"])["crop"] = now_iso(); crops += 1
+        elif code == 410:
+            ent(r["local_id"])["crop"] = "expired"     # F8 คลาวด์ลบรูปอายุเกิน 12 เดือนแล้ว ไม่ต้องส่งซ้ำ
+        elif code is None:
+            print(f"  ส่ง crop ไม่สำเร็จ (เครือข่าย): {resp.get('error')} — รอบหน้าส่งต่อ")
+            break
+        else:
+            print(f"  crop {r['local_id']} ได้ {code}: {resp.get('error', resp)}")
+        S.save_sync_state(state)
+
+    S.save_sync_state(state)
+    print(f"เสร็จ — แถว {sent} · crop {crops}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

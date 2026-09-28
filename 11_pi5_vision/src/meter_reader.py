@@ -301,9 +301,9 @@ def _fsync_dir(path):
         os.close(fd)
 
 
-def save_reading(ts, rid, img_name, raw, value, conf, run_id, meter_type, source_name=None):
-
-    rec = {
+def build_record(ts, rid, img_name, raw, value, conf, run_id, meter_type, source_name=None, ocr_engine=None):
+    """แถวเดียวกับที่ลง readings.jsonl แต่ยังไม่เขียน — เว็บใช้เป็นแถวรอคนขับตัดสิน (aria_store · F10)"""
+    return {
         "local_id": rid,
         "captured_at": ts.isoformat(),
         "run_id": run_id,
@@ -313,12 +313,29 @@ def save_reading(ts, rid, img_name, raw, value, conf, run_id, meter_type, source
         "confidence": round(conf, 4),
         "image_path": f"images/{img_name}",
         "source": source_name,
+        "ocr_engine": ocr_engine,
         "synced_at": None,
         # ── ฟิลด์ schema กลางที่ ARIA (ระบบหอพัก) ต้องใช้ — ใส่ตั้งแต่แถวแรกเพื่อไม่ต้อง migrate (C23 ข้อ 1–2) ──
         "meter_id": None,                  # ผูกห้อง/มิเตอร์ — ยังไม่มีทะเบียนมิเตอร์ ใส่ทีหลังได้
         "status": "ocr",                   # ocr → confirmed | rejected (ผู้ให้เช่าเป็นคนเปลี่ยน ไม่ใช่หุ่น)
         "confirmed_value": None,           # ค่าที่คนยืนยัน — คนละฟิลด์กับ value เสมอ
     }
+
+
+def crop_jpeg(cropped_bgr, max_w=640, quality=85):
+    """crop หน้าปัดสำหรับขึ้นคลาวด์ (ไฟล์ 20 §20.2a) · ย่อด้านกว้างไม่เกิน max_w · คืน bytes หรือ None"""
+    if cropped_bgr is None or cropped_bgr.size == 0:
+        return None
+    h, w = cropped_bgr.shape[:2]
+    if w > max_w:
+        cropped_bgr = cv2.resize(cropped_bgr, (max_w, max(1, round(h * max_w / w))), interpolation=cv2.INTER_AREA)
+    ok, buf = cv2.imencode(".jpg", cropped_bgr, [cv2.IMWRITE_JPEG_QUALITY, quality])
+    return buf.tobytes() if ok else None
+
+
+def save_reading(ts, rid, img_name, raw, value, conf, run_id, meter_type, source_name=None):
+    """เส้นทางเดิมของ CLI (--source folder/usb): เขียนลง readings.jsonl ทันที ไม่ผ่านป๊อปอัพ"""
+    rec = build_record(ts, rid, img_name, raw, value, conf, run_id, meter_type, source_name)
     JSONL_PATH.parent.mkdir(parents=True, exist_ok=True)
     with JSONL_PATH.open("a", encoding="utf-8") as f:
         f.write(json.dumps(rec, ensure_ascii=False) + "\n")
