@@ -7,12 +7,15 @@
   let V_MAX = 150;                                     // = cfg.vMax หลัง applyCfg
   const V_HW_MAX = 716, W_HW_MAX = 7950;
   // C47: เสาไปได้ถึง 189° (= 400 µs เพราะกลับทิศ) · ESP32 รับ $M ต่ำสุด 400 µs (pins.h MAST_US_MIN) · มุมกล้องยัง 0–180
-  // C48: เสาตั้ง "0° ของแขน" ได้ (liftZero = องศาบนสเกลดิบที่เป็นพับสุด) — ตัวเลขบนเว็บ = องศาแขนจากพับสุด · ESP32 ยังคุยเป็น µs
-  //   สเกลดิบ: 0–180° = 2500–500 µs (กลับทิศ) · เสาไปได้ถึง 300 µs (pins.h MAST_US_MIN) = ดิบ 198°
-  const RAW_TOP = { tilt: 180, lift: 198 };
-  const zeroOf = (k) => k === "lift" ? (+cfg.liftZero || 0) : 0;
-  const degLo = (k) => -zeroOf(k), degHi = (k) => RAW_TOP[k] - zeroOf(k);
-  const DEFAULTS = { vMax: 716, wMax: 7950, maxPct: 50, turnGain: 7950, spinMinPct: 70, tiltMinDeg: 0, tiltMaxDeg: 180, tiltInv: false, liftMinDeg: 45, liftMaxDeg: 135, liftInv: true, liftZero: 0, calVer: 4, camPad: true, rampMs: 250, deadzone: 0.12, turnScale: true, invY: false, invX: false,
+  // C48/C49: เสานับ "องศาแขน" จากจุด 0° ที่ผู้ใช้ตั้ง — เก็บเป็น µs (liftZeroUs) ไม่ใช่องศาดิบ
+  //   ไม่งั้นติ๊ก "กลับทิศเสา" แล้วจุด 0° กระโดดไปที่อื่น (บั๊ก C48 เจอจริง 28 ก.ย.) · 1° = 2000/180 = 11.1 µs · กลับทิศ = + ไปทางพัลส์สั้น
+  //   ESP32 รับเสา 300–2500 µs (pins.h MAST_US_MIN/MAX) · มุมกล้องยังเป็นสเกล 0–180° = 500–2500 µs แบบเดิม
+  const US_PER_DEG = 2000 / 180, MAST_US = [300, 2500];
+  const liftSign = () => cfg.liftInv ? -1 : 1;
+  const liftZeroUs = () => +cfg.liftZeroUs || (cfg.liftInv ? 2500 : 500);          // ยังไม่ตั้ง 0° = ปลายพัลส์ฝั่งที่เป็น 0° ของสเกลเดิม
+  const degLo = (k) => k !== "lift" ? 0 : Math.ceil(Math.min((MAST_US[0] - liftZeroUs()) / US_PER_DEG * liftSign(), (MAST_US[1] - liftZeroUs()) / US_PER_DEG * liftSign()));
+  const degHi = (k) => k !== "lift" ? 180 : Math.floor(Math.max((MAST_US[0] - liftZeroUs()) / US_PER_DEG * liftSign(), (MAST_US[1] - liftZeroUs()) / US_PER_DEG * liftSign()));
+  const DEFAULTS = { vMax: 716, wMax: 7950, maxPct: 50, turnGain: 7950, spinMinPct: 70, tiltMinDeg: 0, tiltMaxDeg: 180, tiltInv: false, liftMinDeg: 45, liftMaxDeg: 135, liftInv: true, liftZeroUs: 0, calVer: 5, camPad: true, rampMs: 250, deadzone: 0.12, turnScale: true, invY: false, invX: false,
     joySide: "left", joySize: "m", autoSuction: false, driveUi: "pad", curveTurn: 50, joySnap: true, fps: 10, camQ: "high", gridOn: false, roiOn: true, mirror: false,
     suctionPct: 100, suctionIdleOff: 0, sound: true, vibrate: true, toastSec: 3, staleSec: 2,
     accent: "mint", density: "comfortable", bigButtons: false, wakeLock: true };
@@ -30,6 +33,8 @@
   if (cfg.calVer < 3) { cfg.spinMinPct = 70; if (![50, 75, 100].includes(cfg.maxPct)) cfg.maxPct = 50; }
   // C44 (26 ก.ย. วัดสดตอนผู้ใช้กดหมุน: w สูงสุด ~2780 → ล้อ ±350 ‰): migration C43 ตั้ง turnGain 7950 แล้ว applyCfg ตัดทิ้งเหลือ wMax เก่า 3000 → ตั้งซ้ำ
   if (cfg.calVer < 4) { cfg.turnGain = 7950; cfg.calVer = 4; }
+  // C49: จุด 0° จาก C48 เก็บเป็นองศาดิบ (สเกลกลับทิศ) → แปลงเป็น µs ครั้งเดียว
+  if (cfg.calVer < 5) { if (cfg.liftZero) cfg.liftZeroUs = Math.round(500 + (180 - cfg.liftZero) / 180 * 2000); delete cfg.liftZero; cfg.calVer = 5; }
   const save = () => { try { localStorage.setItem("mrc.drive.cfg", JSON.stringify(cfg)); } catch (e) {} };
 
   // ── apply cfg → DOM ──
@@ -74,6 +79,7 @@
     const k = el.dataset.cfg; cfg[k] = el.type === "checkbox" ? el.checked : (el.tagName === "SELECT" ? el.value : +el.value);
     save(); applyCfg();
     if (k === "vMax" || k === "wMax") pushLimits();
+    if (k === "liftInv") { cfg.liftMinDeg = 0; cfg.liftMaxDeg = degHi("lift"); camAx.lift.target = null; save(); applyCfg(); toast(`กลับทิศเสาแล้ว — 0° ยังอยู่ที่ ${liftZeroUs()} µs · กด + ทีละครั้ง`, "warn"); }
   }));
   document.querySelectorAll("#swatches button").forEach((b) => b.onclick = () => { cfg.accent = b.dataset.accent; save(); applyCfg(); });
   document.querySelectorAll("[data-choice]").forEach((b) => b.onclick = () => {
@@ -93,10 +99,10 @@
     lift: { cmd: "m", tele: "us_l", step: 2, sl: $("lift-sl"), lbl: $("lift-v"), row: $("lift-row"), us: 0, target: null, drag: false,
             min: () => cfg.liftMinDeg, max: () => cfg.liftMaxDeg, inv: () => cfg.liftInv, start: () => cfg.liftMinDeg, name: "เสา", key: "lift" },
   };
-  const rawZero = (a) => a.key === "lift" ? zeroOf("lift") : 0;
-  const degToUs = (a, d) => { const r = d + rawZero(a); return Math.round(US_0 + (a.inv() ? 180 - r : r) / 180 * (US_180 - US_0)); };   // d = องศาแขน (ทศนิยมได้)
-  const usToRaw = (a, us) => { const d = Math.round((us - US_0) / (US_180 - US_0) * 180); return a.inv() ? 180 - d : d; };
-  const usToDeg = (a, us) => usToRaw(a, us) - rawZero(a);
+  const degToUs = (a, d) => a.key === "lift" ? Math.round(liftZeroUs() + liftSign() * d * US_PER_DEG)          // d = องศาแขน (ทศนิยมได้)
+                                             : Math.round(US_0 + (a.inv() ? 180 - d : d) / 180 * (US_180 - US_0));
+  const usToDeg = (a, us) => a.key === "lift" ? Math.round((us - liftZeroUs()) / US_PER_DEG * liftSign() * 10) / 10
+                                             : (() => { const d = Math.round((us - US_0) / (US_180 - US_0) * 180); return a.inv() ? 180 - d : d; })();
   const camDeg = (a) => a.target != null ? a.target : a.us ? usToDeg(a, a.us) : null;   // มุมที่ "รู้" ตอนนี้ (เป้า > จริง)
   // C40 (25 ก.ย. — ผู้ใช้: "เด้งๆ ขึ้นๆลงๆ ไม่สมูท"): ต้นเหตุฝั่งเว็บ 2 อย่าง
   //   1) ลากสไลเดอร์ใช้ debounce 60 ms → ระหว่างลากต่อเนื่องไม่ส่งเลย พอนิ้วชะงักค่อยส่งทีเดียว = กระตุกเป็นช่วงๆ → เปลี่ยนเป็น throttle ส่งทุก 50 ms
@@ -158,7 +164,7 @@
   document.querySelectorAll("[data-setzero]").forEach((b) => b.onclick = () => {
     const a = camAx[b.dataset.setzero];
     if (!a.us) { toast(`${a.name}: ต้องจับสัญญาณอยู่ก่อน (ขยับให้เซอร์โวนิ่งที่พับสุด)`, "warn"); return; }
-    cfg.liftZero = usToRaw(a, a.us); cfg.liftMinDeg = 0; cfg.liftMaxDeg = degHi("lift"); a.target = 0; save(); applyCfg();
+    cfg.liftZeroUs = a.us; cfg.liftMinDeg = 0; cfg.liftMaxDeg = degHi("lift"); a.target = 0; save(); applyCfg();
     toast(`${a.name}: ตำแหน่งนี้ (${a.us} µs) = 0° · ขีดบนชั่วคราว ${cfg.liftMaxDeg}° — กด + ทีละครั้งหาสุดจริง`, "good");
   });
   document.querySelectorAll("[data-setlim]").forEach((b) => b.onclick = () => {
