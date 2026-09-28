@@ -7,8 +7,12 @@
   let V_MAX = 150;                                     // = cfg.vMax หลัง applyCfg
   const V_HW_MAX = 716, W_HW_MAX = 7950;
   // C47: เสาไปได้ถึง 189° (= 400 µs เพราะกลับทิศ) · ESP32 รับ $M ต่ำสุด 400 µs (pins.h MAST_US_MIN) · มุมกล้องยัง 0–180
-  const DEG_TOP = { tilt: 180, lift: 189 };
-  const DEFAULTS = { vMax: 716, wMax: 7950, maxPct: 50, turnGain: 7950, spinMinPct: 70, tiltMinDeg: 0, tiltMaxDeg: 180, tiltInv: false, liftMinDeg: 45, liftMaxDeg: 135, liftInv: true, calVer: 4, camPad: true, rampMs: 250, deadzone: 0.12, turnScale: true, invY: false, invX: false,
+  // C48: เสาตั้ง "0° ของแขน" ได้ (liftZero = องศาบนสเกลดิบที่เป็นพับสุด) — ตัวเลขบนเว็บ = องศาแขนจากพับสุด · ESP32 ยังคุยเป็น µs
+  //   สเกลดิบ: 0–180° = 2500–500 µs (กลับทิศ) · เสาไปได้ถึง 300 µs (pins.h MAST_US_MIN) = ดิบ 198°
+  const RAW_TOP = { tilt: 180, lift: 198 };
+  const zeroOf = (k) => k === "lift" ? (+cfg.liftZero || 0) : 0;
+  const degLo = (k) => -zeroOf(k), degHi = (k) => RAW_TOP[k] - zeroOf(k);
+  const DEFAULTS = { vMax: 716, wMax: 7950, maxPct: 50, turnGain: 7950, spinMinPct: 70, tiltMinDeg: 0, tiltMaxDeg: 180, tiltInv: false, liftMinDeg: 45, liftMaxDeg: 135, liftInv: true, liftZero: 0, calVer: 4, camPad: true, rampMs: 250, deadzone: 0.12, turnScale: true, invY: false, invX: false,
     joySide: "left", joySize: "m", autoSuction: false, driveUi: "pad", curveTurn: 50, joySnap: true, fps: 10, camQ: "high", gridOn: false, roiOn: true, mirror: false,
     suctionPct: 100, suctionIdleOff: 0, sound: true, vibrate: true, toastSec: 3, staleSec: 2,
     accent: "mint", density: "comfortable", bigButtons: false, wakeLock: true };
@@ -43,7 +47,8 @@
     cfg.vMax = Math.max(50, Math.min(V_HW_MAX, +cfg.vMax || V_HW_MAX)); cfg.wMax = Math.max(500, Math.min(W_HW_MAX, +cfg.wMax || W_HW_MAX));
     // C44: ไม่ตัด turnGain ถาวรตามเพดานที่ยังเป็นค่าเก่าในเครื่อง (ก่อน sys ของหุ่นมาถึง) — ตัดตอนใช้แทน (turnW)
     V_MAX = cfg.vMax;
-    for (const k of ["tilt", "lift"]) { const top = DEG_TOP[k], lo = k + "MinDeg", hi = k + "MaxDeg"; cfg[lo] = Math.max(0, Math.min(top, +cfg[lo] || 0)); cfg[hi] = Math.max(0, Math.min(top, +cfg[hi] || 0)); if (cfg[lo] >= cfg[hi]) cfg[hi] = Math.min(top, cfg[lo] + 1); }
+    for (const k of ["tilt", "lift"]) { const L = degLo(k), H = degHi(k), lo = k + "MinDeg", hi = k + "MaxDeg"; cfg[lo] = Math.max(L, Math.min(H, +cfg[lo] || 0)); cfg[hi] = Math.max(L, Math.min(H, +cfg[hi] || 0)); if (cfg[lo] >= cfg[hi]) cfg[hi] = Math.min(H, cfg[lo] + 1);
+      document.querySelectorAll(`[data-cfg="${lo}"], [data-cfg="${hi}"]`).forEach((el) => { el.min = L; el.max = H; }); }
     root.dataset.campad = cfg.camPad ? 1 : 0; camApplyLimits();
     root.dataset.accent = cfg.accent; root.dataset.density = cfg.density; root.dataset.big = cfg.bigButtons ? 1 : 0;
     root.dataset.joyside = cfg.joySide; root.dataset.driveui = cfg.driveUi; root.dataset.mirror = cfg.mirror ? 1 : 0;
@@ -86,10 +91,12 @@
     tilt: { cmd: "x", tele: "us_r", step: 5, sl: $("tilt-sl"), lbl: $("tilt-v"), row: $("tilt-row"), us: 0, target: null, drag: false,
             min: () => cfg.tiltMinDeg, max: () => cfg.tiltMaxDeg, inv: () => cfg.tiltInv, start: () => Math.round((cfg.tiltMinDeg + cfg.tiltMaxDeg) / 2), name: "มุมกล้อง" },
     lift: { cmd: "m", tele: "us_l", step: 2, sl: $("lift-sl"), lbl: $("lift-v"), row: $("lift-row"), us: 0, target: null, drag: false,
-            min: () => cfg.liftMinDeg, max: () => cfg.liftMaxDeg, inv: () => cfg.liftInv, start: () => cfg.liftMinDeg, name: "เสา" },
+            min: () => cfg.liftMinDeg, max: () => cfg.liftMaxDeg, inv: () => cfg.liftInv, start: () => cfg.liftMinDeg, name: "เสา", key: "lift" },
   };
-  const degToUs = (a, d) => Math.round(US_0 + (a.inv() ? 180 - d : d) / 180 * (US_180 - US_0));   // d ทศนิยมได้
-  const usToDeg = (a, us) => { const d = Math.round((us - US_0) / (US_180 - US_0) * 180); return a.inv() ? 180 - d : d; };
+  const rawZero = (a) => a.key === "lift" ? zeroOf("lift") : 0;
+  const degToUs = (a, d) => { const r = d + rawZero(a); return Math.round(US_0 + (a.inv() ? 180 - r : r) / 180 * (US_180 - US_0)); };   // d = องศาแขน (ทศนิยมได้)
+  const usToRaw = (a, us) => { const d = Math.round((us - US_0) / (US_180 - US_0) * 180); return a.inv() ? 180 - d : d; };
+  const usToDeg = (a, us) => usToRaw(a, us) - rawZero(a);
   const camDeg = (a) => a.target != null ? a.target : a.us ? usToDeg(a, a.us) : null;   // มุมที่ "รู้" ตอนนี้ (เป้า > จริง)
   // C40 (25 ก.ย. — ผู้ใช้: "เด้งๆ ขึ้นๆลงๆ ไม่สมูท"): ต้นเหตุฝั่งเว็บ 2 อย่าง
   //   1) ลากสไลเดอร์ใช้ debounce 60 ms → ระหว่างลากต่อเนื่องไม่ส่งเลย พอนิ้วชะงักค่อยส่งทีเดียว = กระตุกเป็นช่วงๆ → เปลี่ยนเป็น throttle ส่งทุก 50 ms
@@ -147,6 +154,13 @@
     else { send({ t: "x", us: 0 }); send({ t: "m", us: 0 }); camAx.tilt.target = camAx.lift.target = null; }
   });
   // ⚙ กล้อง: "ใช้มุมปัจจุบันเป็น ต่ำสุด/สูงสุด" — ไว้ไฟนอลขีดจากของจริง (ผู้ใช้ 22 ก.ย.)
+  // C48 "ตั้งตำแหน่งนี้เป็น 0°" — ตำแหน่งจริงตอนนี้ (#T) = พับสุด = 0° ของแขน · ขีดใหม่ 0 → สุดที่ ESP32 รับ (หาสุดจริงต่อด้วย +)
+  document.querySelectorAll("[data-setzero]").forEach((b) => b.onclick = () => {
+    const a = camAx[b.dataset.setzero];
+    if (!a.us) { toast(`${a.name}: ต้องจับสัญญาณอยู่ก่อน (ขยับให้เซอร์โวนิ่งที่พับสุด)`, "warn"); return; }
+    cfg.liftZero = usToRaw(a, a.us); cfg.liftMinDeg = 0; cfg.liftMaxDeg = degHi("lift"); a.target = 0; save(); applyCfg();
+    toast(`${a.name}: ตำแหน่งนี้ (${a.us} µs) = 0° · ขีดบนชั่วคราว ${cfg.liftMaxDeg}° — กด + ทีละครั้งหาสุดจริง`, "good");
+  });
   document.querySelectorAll("[data-setlim]").forEach((b) => b.onclick = () => {
     const [k, which] = b.dataset.setlim.split(":"); const a = camAx[k]; const d0 = a.us ? usToDeg(a, a.us) : camDeg(a); const d = d0 == null ? null : Math.round(d0);
     if (d == null) { toast(`${a.name}: ยังไม่รู้มุม — ขยับก่อน`, "warn"); return; }
