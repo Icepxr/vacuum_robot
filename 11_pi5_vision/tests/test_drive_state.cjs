@@ -128,7 +128,7 @@ test('actual sys event updates all air HUD metrics; disconnect removes stale val
 
 test('merged UI preserves C43/C44 calibration and keyboard power presets', () => {
   const h = browserHarness('', { calVer: 2, vMax: 300, wMax: 3000, turnGain: 2000, maxPct: 25 });
-  h.key('1'); assert.equal(h.config().calVer, 4); assert.equal(h.config().turnGain, 7950);
+  h.key('1'); assert.equal(h.config().calVer, 6); assert.equal(h.config().rampMs, 0); assert.equal(h.config().turnGain, 7950);
   assert.equal(h.config().spinMinPct, 70); assert.equal(h.config().maxPct, 50);
   assert.equal(h.config().wMax, 3000); // Retain a saved ceiling without destructively clamping turnGain.
   h.key('2'); assert.equal(h.config().maxPct, 75); h.key('3'); assert.equal(h.config().maxPct, 100);

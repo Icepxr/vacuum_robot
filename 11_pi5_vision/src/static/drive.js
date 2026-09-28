@@ -15,7 +15,7 @@
   const liftZeroUs = () => +cfg.liftZeroUs || (cfg.liftInv ? 2500 : 500);          // ยังไม่ตั้ง 0° = ปลายพัลส์ฝั่งที่เป็น 0° ของสเกลเดิม
   const degLo = (k) => k !== "lift" ? 0 : Math.ceil(Math.min((MAST_US[0] - liftZeroUs()) / US_PER_DEG * liftSign(), (MAST_US[1] - liftZeroUs()) / US_PER_DEG * liftSign()));
   const degHi = (k) => k !== "lift" ? 180 : Math.floor(Math.max((MAST_US[0] - liftZeroUs()) / US_PER_DEG * liftSign(), (MAST_US[1] - liftZeroUs()) / US_PER_DEG * liftSign()));
-  const DEFAULTS = { vMax: 716, wMax: 7950, maxPct: 50, turnGain: 7950, spinMinPct: 70, tiltMinDeg: 0, tiltMaxDeg: 180, tiltInv: false, liftMinDeg: 45, liftMaxDeg: 135, liftInv: true, liftZeroUs: 0, calVer: 5, camPad: true, rampMs: 250, deadzone: 0.12, turnScale: true, invY: false, invX: false,
+  const DEFAULTS = { vMax: 716, wMax: 7950, maxPct: 50, turnGain: 7950, spinMinPct: 70, tiltMinDeg: 0, tiltMaxDeg: 180, tiltInv: false, liftMinDeg: 45, liftMaxDeg: 135, liftInv: true, liftZeroUs: 0, calVer: 6, camPad: true, rampMs: 0, deadzone: 0.12, turnScale: true, invY: false, invX: false,
     joySide: "left", joySize: "m", autoSuction: false, driveUi: "pad", curveTurn: 50, joySnap: true, fps: 10, camQ: "high", gridOn: false, roiOn: true, mirror: false,
     suctionPct: 100, suctionIdleOff: 0, sound: true, vibrate: true, toastSec: 3, staleSec: 2,
     accent: "mint", density: "comfortable", bigButtons: false, wakeLock: true };
@@ -35,6 +35,8 @@
   if (cfg.calVer < 4) { cfg.turnGain = 7950; cfg.calVer = 4; }
   // C49: จุด 0° จาก C48 เก็บเป็นองศาดิบ (สเกลกลับทิศ) → แปลงเป็น µs ครั้งเดียว
   if (cfg.calVer < 5) { if (cfg.liftZero) cfg.liftZeroUs = Math.round(500 + (180 - cfg.liftZero) / 180 * 2000); delete cfg.liftZero; cfg.calVer = 5; }
+  // C51 (29 ก.ย.): เฟิร์มแวร์ไล่ duty เอง (slew 15 ‰/10 ms) — ramp ฝั่งเว็บซ้อนอีกชั้นทำให้ช่วงท้ายของการเร่งช้าลง (ไฟล์ 19 §19.9) → ปิด
+  if (cfg.calVer < 6) { cfg.rampMs = 0; cfg.calVer = 6; }
   const save = () => { try { localStorage.setItem("mrc.drive.cfg", JSON.stringify(cfg)); } catch (e) {} };
 
   // ── apply cfg → DOM ──
@@ -342,7 +344,7 @@
   function inputVec() { stepInput = false; if (joyActive) return [jx, jy]; const dp = dpadVec(); if (dp) { stepInput = true; return dp; }
     const [kx, ky] = keyVec(); if (kx || ky) { stepInput = true; return [kx, ky]; } return padVec(); }
 
-  // ── ส่งคำสั่ง 10 Hz · ramp ฝั่ง client ตาม cfg.rampMs ──
+  // ── ส่งคำสั่ง 10 Hz · ramp ฝั่ง client ตาม cfg.rampMs (C51: ค่าเริ่ม 0 — ใช้ slew ของเฟิร์มแวร์อย่างเดียว · ตั้งเพิ่มเองได้ในหน้าตั้งค่า) ──
   let driving = false, curV = 0, curW = 0, lastT = performance.now();
   function pump() {
     const now = performance.now(), dt = now - lastT; lastT = now;

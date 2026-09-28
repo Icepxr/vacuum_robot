@@ -21,8 +21,12 @@ struct ManualCfg {
   int      slew_permille_per_tick = 15;   // ต่อ tick 10 ms → 0→210 ใน ~140 ms (rampTo เดิม 300 ms แต่ blocking)
   uint32_t deadman_ms      = 300;    // G8
   int      deadband_permille = 40;   // ต่ำกว่านี้ล้อไม่หมุนอยู่ดี (M1 วัดว่า 25 % duty ยังหมุน — deadband จริงยังไม่วัด) → ตัดเป็น 0
-  int      permille_start  = 250;    // พื้น duty ต่ำสุดที่ "สั่งแล้วต้องขยับ" (C31 รอบ 2: 200 ยังเบา → 250 = 25 % ที่ M1 วัดว่าหมุนแน่ไร้โหลด) (C31 19 ก.ย.: หมุนซ้าย-ขวาไม่ไป — duty หมุนตัว ~126 ‰ ต่ำกว่าแรงเสียดทานสถิต)
-                                     // คำสั่งที่ไม่ใช่ 0 และต่ำกว่านี้ถูกยกขึ้นเป็นค่านี้ [ประมาณการ: M1 25 % หมุนเปล่า · มีโหลดยังไม่วัด]
+  // C51 (29 ก.ย.): พื้น 250 ‰ ตลอดเวลา (C31) ทำให้ทุกคำสั่ง 40–250 ‰ ได้ความเร็วเดียวกัน (ไฟล์ 19 §19.9) → แยกเป็น 2 ค่า
+  //   ออกตัว (kick): ล้อเพิ่งเริ่มจากหยุด/กลับทิศ → ใช้อย่างน้อย permille_start จนถึงแล้วค้างไว้ kick_ms เพื่อชนะแรงเสียดทานสถิต
+  //   ประคอง (hold): หลัง kick ลดลงตามคำสั่งได้ถึง permille_hold (แรงเสียดทานขณะเคลื่อนที่ต่ำกว่าขณะหยุด)
+  int      permille_start  = 250;    // kick — ค่าเดิม C31 (M1 วัด 25 % หมุนแน่ไร้โหลด) [ประมาณการ: มีโหลดยังไม่วัด]
+  int      permille_hold   = 100;    // ต่ำสุดขณะวิ่งอยู่ [ประมาณการ — ยังไม่วัด · ต้องวัดบนพื้นจริง ไฟล์ 19 §19.9] · ต่ำไปผลคือล้อหยุดเอง (ปลอดภัย)
+  uint32_t kick_ms         = 150;    // ค้าง kick หลังถึง permille_start [ประมาณการ]
 };
 
 struct WheelCmd { int l = 0, r = 0; };    // ‰ ที่ส่งจริง (หลัง slew)
@@ -71,7 +75,7 @@ class Manual {
   }
 
   void stop() { v_ = w_ = 0; active_ = false; }          // หยุดนุ่มนวล — slew ลงถึง 0 ใน tick
-  void halt() { v_ = w_ = 0; active_ = false; out_ = WheelCmd{}; }   // ตัดทันที (E-STOP)
+  void halt() { v_ = w_ = 0; active_ = false; out_ = WheelCmd{}; kicking_[0] = kicking_[1] = false; }   // ตัดทันที (E-STOP)
 
   // เรียกทุก tick (10 ms) · คืน duty ที่ต้องส่งให้ล้อ · ตั้ง tripped เมื่อ deadman ทำงาน
   WheelCmd tick(uint32_t now) {
@@ -80,8 +84,14 @@ class Manual {
     }
     // v_l = v − ω·track/2 · v_r = v + ω·track/2  (mm/s · mrad/s · mm → /1000)
     const long half = (long)w_ * cfg_.track_mm / 2000;     // mm/s
-    int tl = mmpsToPermille((long)v_ - half);
-    int tr = mmpsToPermille((long)v_ + half);
+    long pl = ((long)v_ - half) * cfg_.permille_per_mps / 1000;
+    long pr = ((long)v_ + half) * cfg_.permille_per_mps / 1000;
+    // C51 desaturate: ล้อไหนเกินเพดาน → ลดทั้งคู่ตามสัดส่วน (เดิมตัดข้างเดียว → ที่ 100 % แก้ทิศเหลือ 7 % · §19.9)
+    // duty มีแต่ลดลง ไม่มีทางเกินที่เคยได้
+    const long mx = (pl < 0 ? -pl : pl) > (pr < 0 ? -pr : pr) ? (pl < 0 ? -pl : pl) : (pr < 0 ? -pr : pr);
+    if (mx > cfg_.permille_max && mx > 0) { pl = pl * cfg_.permille_max / mx; pr = pr * cfg_.permille_max / mx; }
+    const int tl = shape(0, pl, out_.l, now);
+    const int tr = shape(1, pr, out_.r, now);
     out_.l = slew(out_.l, tl);
     out_.r = slew(out_.r, tr);
     return out_;
@@ -95,14 +105,20 @@ class Manual {
   WheelCmd out() const { return out_; }
 
  private:
-  int mmpsToPermille(long mmps) const {
-    long p = mmps * cfg_.permille_per_mps / 1000;
-    if (p >  cfg_.permille_max) p =  cfg_.permille_max;
-    if (p < -cfg_.permille_max) p = -cfg_.permille_max;
-    if (p > -cfg_.deadband_permille && p < cfg_.deadband_permille) p = 0;
-    else if (p > 0 && p < cfg_.permille_start) p = cfg_.permille_start;    // ยกให้พ้นแรงเสียดทานสถิต (C31)
-    else if (p < 0 && p > -cfg_.permille_start) p = -cfg_.permille_start;
-    return (int)p;
+  // deadband + พื้น (kick ตอนออกตัว / hold ขณะวิ่ง) ต่อล้อ · cur = duty ที่ล้อได้อยู่ตอนนี้ (ก่อน slew รอบนี้)
+  int shape(int i, long p, int cur, uint32_t now) {
+    if (p > -cfg_.deadband_permille && p < cfg_.deadband_permille) { kicking_[i] = false; kickAt_[i] = 0; return 0; }
+    const int sgn = p > 0 ? 1 : -1;
+    const long mag = p > 0 ? p : -p;
+    const bool fromRest = cur == 0 || (cur > 0) != (p > 0);            // หยุดอยู่ หรือกลับทิศ
+    if (fromRest && !kicking_[i]) { kicking_[i] = true; kickAt_[i] = 0; }
+    if (kicking_[i]) {
+      const int a = cur < 0 ? -cur : cur;
+      if (!fromRest && a >= cfg_.permille_start && kickAt_[i] == 0) kickAt_[i] = now ? now : 1;
+      if (kickAt_[i] && now - kickAt_[i] >= cfg_.kick_ms) kicking_[i] = false;
+    }
+    const long floor = kicking_[i] ? cfg_.permille_start : cfg_.permille_hold;
+    return (int)(sgn * (mag < floor ? floor : mag));
   }
   int slew(int cur, int target) const {
     const int d = target - cur;
@@ -116,6 +132,8 @@ class Manual {
   uint32_t lastCmd_ = 0;
   bool active_ = false, tripped_ = false;
   WheelCmd out_{};
+  bool kicking_[2] = {false, false};
+  uint32_t kickAt_[2] = {0, 0};             // เวลาที่ล้อถึงระดับ kick (0 = ยังไม่ถึง)
 };
 
 }  // namespace mrc

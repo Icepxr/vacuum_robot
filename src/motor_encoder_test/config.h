@@ -25,7 +25,9 @@
 // แต่ L298N เป็นดาร์ลิงตันไบโพลาร์ ความเร็วสวิตช์ช้ากว่า MOSFET มาก
 // → ตั้งค่าเริ่มต้นไว้ 1 kHz สำหรับการเทสด้วย L298N แล้วใช้คำสั่ง `f`
 //   เทียบ 1 kHz กับ 20 kHz เอง (ดูขั้น T6 ในเอกสารเทส)
-constexpr uint32_t PWM_FREQ_DEFAULT_HZ = 1000;
+// C51 (29 ก.ย.): ผู้ใช้ยืนยันว่าติด DRV8871 แล้ว → ใช้ 20 kHz ตามแบบ (DRV8871 รับ 0–200 kHz · พัลส์ขั้นต่ำ 800 ns [สเปก SLVSCY9A §6.3])
+//   ที่ 20 kHz คาบ 50 µs → duty ต่ำสุดที่ไดรเวอร์เห็นแน่นอน 1.6 % · ต่ำกว่าเสียงที่หูได้ยิน
+constexpr uint32_t PWM_FREQ_DEFAULT_HZ = 20000;
 constexpr uint32_t PWM_FREQ_FINAL_HZ   = 20000;  // ค่าที่จะใช้จริงกับ DRV8871
 constexpr uint8_t  PWM_RES_BITS        = 11;     // 0..2047
 constexpr int      PWM_MAX             = (1 << PWM_RES_BITS) - 1;
