@@ -16,7 +16,8 @@
 - **เจ้าของหอยังล็อกอินไม่ได้**: ต้องเปิด Google provider ใน Supabase Auth + ใส่อีเมลเจ้าของลง `owners` (เว็บ ARIA ขั้น 3)
 - บิล/อีเมล (`invoices`, `invoice_delivery_attempts`) — ขั้น 4–5
 - งานลบ crop อายุ 12 เดือน (F8) — ครั้งแรกที่ต้องใช้คือ ก.ย. 2027
-- มีรูปทดสอบค้างใน bucket `crops/TEST-01/` 3 ไฟล์ (≈ 20 kB) — ลบได้จาก Dashboard › Storage (ลบผ่าน SQL ไม่ได้)
+- มีรูปทดสอบค้างใน bucket `crops/TEST-01/` 4 ไฟล์ (≈ 30 kB) — ลบได้จาก Dashboard › Storage (ลบผ่าน SQL ไม่ได้)
+- **ก่อนเปิดล็อกอินเจ้าของหอ:** ปิด Email/Password sign-up ใน Auth ให้เหลือ Google อย่างเดียว — `is_owner()` เทียบอีเมลใน JWT กับ `owners` ถ้าเปิดสมัครด้วยอีเมลไว้ ความปลอดภัยจะขึ้นกับการยืนยันอีเมลของ Supabase อย่างเดียว
 
 ## Deploy ลง Pi (ทำตอน Pi ว่าง · branch `aria-pipeline`)
 1. แฟลชไม่ต้อง — ไม่แตะเฟิร์มแวร์/โปรโตคอล UART

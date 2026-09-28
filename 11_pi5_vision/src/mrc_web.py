@@ -525,7 +525,7 @@ def display_payload():
 PURGE_EVERY_S = 3600      # F10 ลบรูปที่ค้างตัดสินเกิน 7 วัน — เช็คชั่วโมงละครั้งพอ
 
 async def sys_ticker():
-    last_purge = 0.0
+    last_purge = float("-inf")   # รอบแรกทันทีหลังบูต — time.monotonic() นับจากบูต ถ้าเริ่มที่ 0 หุ่นที่เปิดแค่ครั้งละ < 1 ชม. จะไม่เคยลบเลย
     while True:
         await asyncio.sleep(1.0)
         if time.monotonic() - last_purge > PURGE_EVERY_S:

@@ -36,6 +36,7 @@ TOKEN_FILE = Path(os.environ.get("ARIA_DEVICE_TOKEN_FILE", "/etc/mrc/aria_device
 LOCAL_STATUS_URL = os.environ.get("MRC_STATUS_URL", "http://127.0.0.1:8000/api/status")
 TIMEOUT = 15
 BATCH = 50
+MAX_CROP_BYTES = 1_048_576   # = file_size_limit ของ bucket crops และ MAX_CROP_BYTES ใน Edge Function
 # ต้องตรงกับ whitelist ใน public.ingest_readings (aria/supabase/migrations/…_ingest.sql)
 ROW_FIELDS = ("local_id", "captured_at", "decided_at", "run_id", "room_id", "meter_type", "raw_text", "value",
               "confidence", "image_path", "source", "meter_id", "registry_version", "clock_synced", "ocr_engine", "air")
@@ -149,6 +150,12 @@ def main():
         p = S.DATA_DIR / r["crop_path"]
         if not p.is_file():
             continue                   # crop หาย (ลบมือ?) — แถวยังใช้ได้ ARIA โชว์ "ไม่มีรูป"
+        if p.stat().st_size > MAX_CROP_BYTES:
+            # คลาวด์ปฏิเสธทันทีโดยไม่อ่าน body → ฝั่งนี้ค้างจน timeout แล้วขวาง crop อื่นทุกรอบ · ข้ามถาวร
+            ent(r["local_id"])["crop"] = "too_large"
+            print(f"  crop {r['local_id']} ใหญ่ {p.stat().st_size} B เกิน {MAX_CROP_BYTES} — ไม่ส่ง")
+            S.save_sync_state(state)
+            continue
         code, resp = http("PUT", f"/crops/{r['local_id']}", tok, p.read_bytes(), "image/jpeg")
         if code == 200:
             ent(r["local_id"])["crop"] = now_iso(); crops += 1

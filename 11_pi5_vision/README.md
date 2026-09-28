@@ -122,18 +122,19 @@ C28 (16 ก.ย.): โหมดแมนวล "คนขับตัดสิ�
 ปุ่มยกเสาจาก Pi ยังไม่มี (`$M` ยังไม่ทำ) · แบตยังไม่แสดงเพราะเฟิร์มแวร์รวมยังไม่มี ADC (C27) · เซนเซอร์อากาศ ENS160/AHT21 ยังไม่ต่อ (ไฟล์ 21)
 **schema กลาง (C23):** ทุกแถวใน `readings.jsonl` มี `meter_id` · `status` (`ocr`→`confirmed`/`rejected`) · `confirmed_value` แยกจาก `value` ตั้งแต่แถวแรก — ARIA ใช้ร่วมได้โดยไม่ต้อง migrate
 
-## ส่งขึ้นฐานข้อมูล
+## ส่งขึ้นฐานข้อมูล (ARIA · เปลี่ยน 29 ก.ย. 2026)
+
+ถ่ายแล้วรูปไปรอใน `data/pending/` → คนขับกด "เก็บ" ในป๊อปอัพบน `/drive` (เลือกห้อง + ชนิด) → แถวลง `readings.jsonl` → `mrc-sync.timer` ส่งขึ้นทุก 5 นาทีเมื่อมีเน็ต
+"ไม่เอา" = ลบรูป · ไม่ได้กด = ค้างบน Pi 7 วันแล้วลบเอง (สเปก `design/aria-data-spec-v1.md` §2.0)
 
 ```bash
-export SUPABASE_URL="https://<ref>.supabase.co"
-export SUPABASE_KEY="<key>"
 python src/sync_supabase.py --dry-run     # ดูก่อนว่าจะส่งอะไร
-python src/sync_supabase.py
+python src/sync_supabase.py               # ต้องมี token ที่ /etc/mrc/aria_device_token (หรือ ARIA_DEVICE_TOKEN)
 ```
 
-⚠ **ต้องเปิดโปรเจกต์ Supabase ใหม่สำหรับหุ่นโดยเฉพาะ** — โปรเจกต์ `MCCMU's Project` ที่มีอยู่
-เป็นเว็บชมรมของงานอื่น (มีตาราง `members` `albums` `places` `docs` `audit_log`) **ห้ามเอาข้อมูลหุ่นไปปน**
-โครงตารางอยู่ใน `src/schema.sql`
+ส่งผ่าน Edge Function `ingest` ของโปรเจกต์ `aria-mrc` ด้วย token ของอุปกรณ์ — **ไม่ใช้ SUPABASE_KEY แล้ว** · สถานะการส่งอยู่ `data/sync_state.json` (ไม่เขียนทับ `readings.jsonl`)
+แถวเก่าก่อนมีป๊อปอัพ (ไม่มี `driver_decision`) อยู่บน Pi อย่างเดียว ไม่ส่งขึ้น · ขั้นตอนติดตั้ง/ตารางคลาวด์: `aria/README.md` · `src/schema.sql` เลิกใช้แล้ว
+⚠ ห้ามเอาข้อมูลหุ่นไปปนกับโปรเจกต์ `MCCMU's Project` (เว็บชมรมของงานอื่น)
 
 ## ⚠ ยังตัดสินไม่ได้จนกว่าจะเห็นมิเตอร์จริง
 

@@ -46,11 +46,13 @@ async function postReadings(req: Request, device: string): Promise<Response> {
     if (error) return json(500, { error: error.message });
     result = data;
   }
+  // heartbeat พังต้องไม่ทำให้แถวที่รับแล้วถูกนับว่าล้ม — ไม่งั้น Pi ส่งแถวชุดเดิมวนไม่จบถ้า heartbeat เสียถาวร
+  let heartbeat_error: string | undefined;
   if (body.heartbeat && typeof body.heartbeat === "object") {
     const { error } = await db.rpc("ingest_heartbeat", { p_device: device, p_hb: body.heartbeat });
-    if (error) return json(500, { error: error.message, ...result });   // แถวรับแล้ว แต่ heartbeat ล้ม
+    if (error) heartbeat_error = error.message;
   }
-  return json(200, result);
+  return json(200, heartbeat_error ? { ...result, heartbeat_error } : result);
 }
 
 async function putCrop(req: Request, device: string, localId: string): Promise<Response> {
@@ -63,6 +65,8 @@ async function putCrop(req: Request, device: string, localId: string): Promise<R
   if (row.device_id !== device) return json(403, { error: "local_id belongs to another device" });
   if (row.crop_expired_at) return json(410, { error: "crop expired (F8) — not re-uploading" });
 
+  const declared = Number(req.headers.get("content-length") ?? "0");
+  if (declared > MAX_CROP_BYTES) return json(413, { error: `crop must be 1..${MAX_CROP_BYTES} bytes` });   // ไม่อ่านทั้งก้อนเข้าหน่วยความจำก่อนรู้ขนาด
   const bytes = new Uint8Array(await req.arrayBuffer());
   if (bytes.length === 0 || bytes.length > MAX_CROP_BYTES) return json(413, { error: `crop must be 1..${MAX_CROP_BYTES} bytes` });
   if (bytes[0] !== 0xff || bytes[1] !== 0xd8) return json(415, { error: "not a JPEG" });

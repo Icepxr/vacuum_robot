@@ -91,6 +91,11 @@ def save_pending(rec, crop_jpeg=None):
         _write_atomic(crop_dir / f"{lid}.jpg", crop_jpeg)
         rec["crop_path"] = f"crops/{lid}.jpg"
     _write_atomic(pending_dir / f"{lid}.json", json.dumps(rec, ensure_ascii=False).encode("utf-8"))
+    # ภาพต้นฉบับถูกเขียนก่อนหน้านี้ (meter_reader.save_image) แต่ entry ของโฟลเดอร์ยังไม่ fsync —
+    # เดิม save_reading ทำให้ · ถ้าไม่ทำ ไฟดับตอนนี้อาจได้ pending ที่ชี้ไปหาภาพที่ไม่อยู่ในโฟลเดอร์
+    _, _, image_dir, *_ = _dirs()
+    if image_dir.exists():
+        _fsync_dir(image_dir)
     return rec
 
 

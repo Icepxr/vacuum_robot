@@ -114,3 +114,12 @@ def test_wrong_token(env, monkeypatch):
 def test_no_token(env, monkeypatch):
     monkeypatch.delenv("ARIA_DEVICE_TOKEN"); monkeypatch.setattr(Y, "TOKEN_FILE", env / "none")
     assert Y.main() == 2
+
+
+def test_oversize_crop_skipped_not_blocking(env):
+    keep(env, "aaaaaaaaaaaa"); keep(env, "bbbbbbbbbbbb")
+    (env / "crops" / "aaaaaaaaaaaa.jpg").write_bytes(b"\xff\xd8" + b"0" * (Y.MAX_CROP_BYTES + 1))
+    assert Y.main() == 0
+    st = S.load_sync_state()
+    assert st["aaaaaaaaaaaa"]["crop"] == "too_large" and st["bbbbbbbbbbbb"]["crop"]
+    assert ("PUT", "/ingest/crops/aaaaaaaaaaaa", Y.MAX_CROP_BYTES + 3) not in FakeIngest.calls
