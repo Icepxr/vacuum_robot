@@ -219,6 +219,7 @@
 
   let lastTele = null, lastSys = null, capCount = 0, staleT;
   function handle(ev) {
+    if (typeof CustomEvent === "function") window.dispatchEvent(new CustomEvent("mrc:ev", { detail: ev }));   // F10 ป๊อปอัพตัดสินรูป (review.js) ฟังเหตุการณ์เดียวกัน · เทสต์ใน node ไม่มี CustomEvent
     switch (ev.t) {
       case "hello": (ev.events || []).slice(-10).forEach(handle); break;
       case "sys": lastSys = ev; cameraReportedOk = !!ev.cam_ok; paintCameraAvailability(); chip("cams", "กล้อง " + (ev.cam_ok ? "ปกติ" : "<b>ไม่มีภาพ</b>") + (ev.cam_ctl && ev.cam_ctl.zoom > 1.01 ? ` · ${(+ev.cam_ctl.zoom).toFixed(1)}×` : ""), ev.cam_ok ? "" : "bad"); airChip(ev.air);
@@ -241,7 +242,7 @@
         logEv(`เพดาน ${ev.v_max} mm/s · หมุน ${ev.w_max} mrad/s`, ""); break;
       case "nack": toast("ปฏิเสธ: " + (NACK_TH[ev.reason] || ev.reason), "warn"); logEv("ปฏิเสธ " + ev.reason, "warn"); beep("warn"); break;
       case "capture": $("capture").disabled = false; if (ev.ok) { capCount++; $("capn").textContent = `${capCount} ใบ`; toast("ถ่ายแล้ว — กำลังอ่านตัวเลข…", "good"); beep("good"); } else { toast("ถ่ายไม่สำเร็จ: " + ev.reason, "bad"); beep("bad"); } logEv(ev.ok ? `ถ่าย ${ev.image}` : `ถ่ายไม่สำเร็จ ${ev.reason}`, ev.ok ? "good" : "bad"); break;
-      case "reading": toast(ev.value == null ? "อ่านตัวเลขไม่ออก — เล็งให้เข้ากรอบแล้วถ่ายใหม่" : `อ่านได้ ${ev.value}`, ev.value == null ? "warn" : "good"); logEv(`ค่า ${ev.value ?? "—"} (conf ${ev.confidence})`, ev.value == null ? "warn" : "good"); break;
+      case "reading": if (ev.pending) { logEv(`ค่า ${ev.value ?? "—"} (conf ${ev.confidence}) · รอตัดสิน`, ""); break; } toast(ev.value == null ? "อ่านตัวเลขไม่ออก — เล็งให้เข้ากรอบแล้วถ่ายใหม่" : `อ่านได้ ${ev.value}`, ev.value == null ? "warn" : "good"); logEv(`ค่า ${ev.value ?? "—"} (conf ${ev.confidence})`, ev.value == null ? "warn" : "good"); break;
       case "log": if (ev.level === "bad" || ev.level === "warn") { logEv(ev.msg, ev.level); if (ev.level === "bad") toast(ev.msg, "bad"); } else if (ev.level === "good") logEv(ev.msg, "good"); break;
       case "event": logEv(`ESP32: ${ev.code} ${ev.detail || ""}`, "warn"); break;
       case "cam_ctl": if (!pts.size && !zoomT && !zoomDrag) paintCam(ev); break;

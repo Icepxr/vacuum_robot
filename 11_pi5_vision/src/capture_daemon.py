@@ -30,6 +30,7 @@ from pathlib import Path
 import serial
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import aria_store
 import mrc_protocol as P  # noqa: E402
 import mrc_config as CFG  # noqa: E402
 
@@ -198,14 +199,17 @@ class UsbCameraBackend:
 
     def ocr(self, frame, ts, rid, img_name):
         MR = self.MR
-        raw, conf, value, err = "", 0.0, None, None
+        raw, conf, value, err, crop = "", 0.0, None, None, None
         try:
             binimg, cropped = MR.preprocess(frame, self.cfg)
+            crop = MR.crop_jpeg(cropped)                 # crop หน้าปัดสำหรับป๊อปอัพ + คลาวด์ (ภาพต้นฉบับอยู่ใน images/ แล้ว)
             raw, conf = MR.run_engine(self.engine, binimg, cropped, self.cfg)
             value = MR.parse_value(raw, self.cfg.get("expected_digits"), self.cfg.get("decimal_places"))
         except Exception as e:                       # noqa: BLE001 — OCR พังต้องไม่ล้ม daemon
             err = f"{type(e).__name__}: {e}"
-        rec = MR.save_reading(ts, rid, img_name, raw, value, conf, self.run_id, self.meter_type, "usb")
+        # F10: ยังไม่ลง readings.jsonl — รอคนขับกด "เก็บ"/"ไม่เอา" ในป๊อปอัพบน /drive (aria_store)
+        rec = MR.build_record(ts, rid, img_name, raw, value, conf, self.run_id, self.meter_type, "usb", self.engine)
+        rec = aria_store.save_pending(rec, crop)
         if err:
             rec["error"] = err
         return rec
@@ -231,8 +235,9 @@ class StillImageBackend:
     def latest(self):            return self._img
     def save(self, frame):       return self.MR.save_image(frame)
     def ocr(self, frame, ts, rid, img_name):
-        # ไม่ทำ OCR แต่ต้องเขียน record ให้ครบเหมือนกล้องจริง ไม่งั้นหน้าเว็บ/sync ได้แถวไม่มี captured_at
-        return self.MR.save_reading(ts, rid, img_name, "", None, 0.0, None, "stub", "image-stub")
+        # ไม่ทำ OCR แต่ต้องมีแถวรอตัดสินให้ครบเหมือนกล้องจริง ไม่งั้นหน้าเว็บ/sync ได้แถวไม่มี captured_at
+        rec = self.MR.build_record(ts, rid, img_name, "", None, 0.0, None, "stub", "image-stub")
+        return aria_store.save_pending(rec, None)
     def preview_jpeg(self, size=(640, 360), quality=80):
         import cv2
         ok, buf = cv2.imencode(".jpg", cv2.resize(self._img, size), [cv2.IMWRITE_JPEG_QUALITY, quality])

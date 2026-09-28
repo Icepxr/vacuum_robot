@@ -1,0 +1,19 @@
+# systemd unit — ส่งแถวที่คนขับกด "เก็บ" + crop + สถานะ Pi ขึ้น ARIA (sync_supabase.py · D2 · design/aria-data-spec-v1.md §3)
+# เรียกโดย mrc-sync.timer ทุก 5 นาที · ไม่มีเน็ต = จบเงียบ (exit 1) ข้อมูลในเครื่องครบ รอบหน้าส่งต่อ
+# token: sudo install -d -m 700 -o uchida /etc/mrc && (วาง token ลง /etc/mrc/aria_device_token) && sudo chmod 600 /etc/mrc/aria_device_token
+# ดู log: journalctl -u mrc-sync -n 50
+[Unit]
+Description=MRC-001 sync readings to ARIA
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=uchida
+WorkingDirectory=/home/uchida/mrc
+Environment=MRC_DATA_DIR=/home/uchida/mrc/data
+Environment=ARIA_DEVICE_TOKEN_FILE=/etc/mrc/aria_device_token
+ExecStart=/home/uchida/mrc/.venv/bin/python /home/uchida/mrc/src/sync_supabase.py
+# 1 = เครือข่าย/คลาวด์ล้ม (ปกติที่สนาม) ไม่ใช่ service พัง
+SuccessExitStatus=1
+TimeoutStartSec=120
