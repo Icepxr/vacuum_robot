@@ -20,7 +20,7 @@ FAKE_JPG = b"\xff\xd8\xff\xe0FAKEJPEG\xff\xd9"
 
 
 class FakeCamBackend(FakeBackend):
-    def preview_jpeg(self):
+    def preview_jpeg(self, size=(640, 360), quality=80):   # C46: stream ส่งขนาด/คุณภาพมาด้วย
         return FAKE_JPG if self.have_frame else None
 
 
@@ -443,3 +443,36 @@ def test_find_camera_prefers_stable_by_id(monkeypatch):
     assert W.D.find_camera(2) == 2
     monkeypatch.setattr(glob, "glob", lambda pat: [])
     assert W.D.find_camera(-1) == 0
+
+
+def test_stream_quality_levels(web):
+    """C46: /stream.mjpg?q= ส่งขนาด/คุณภาพตาม PREVIEW_QUALITY ให้ backend (เดิมตายตัว 640×360)"""
+    c, master, backend, hub = web
+    seen = []
+    backend.preview_jpeg = lambda size=(640, 360), quality=80: (seen.append((size, quality)), FAKE_JPG)[1]
+    for q in ("low", "mid", "high", "bogus"):
+        assert c.get(f"/stream.mjpg?frames=1&q={q}").status_code == 200
+    assert seen == [((640, 360), 80), ((960, 540), 85), ((1280, 720), 85), ((1280, 720), 85)]
+
+
+def test_camera_resolution_switch_persists(web, monkeypatch, tmp_path):
+    """C46: {"t":"cam","res":"4k"} → ปิดกล้องเก่า เปิดใหม่ที่ 3840×2160 · จำใน data/camera.json · ค่าผิด = ไม่เปลี่ยน"""
+    import types
+    c, master, backend, hub = web
+    opened = []
+    class FakeCam(ZoomCamBackend):
+        def __init__(self, cam, size=None, **k):
+            super().__init__(tmp_path); opened.append(size); self.closed = False
+        def close(self): self.closed = True
+    monkeypatch.setattr(W.D, "UsbCameraBackend", FakeCam)
+    hub.cam_args = types.SimpleNamespace(camera=-1, engine="sevenseg", run_id="t"); hub.cam_fallback = False
+    hub.backend = FakeCam(None, size=(1920, 1080)); first = hub.backend
+    with c.websocket_connect("/ws") as ws:
+        ws.receive_json(); ws.receive_json()
+        ws.send_json({"t": "cam", "res": "4k"})
+        ev = _drain_until(ws, "cam_ctl")
+        assert ev["res"] == "4k" and first.closed and opened[-1] == (3840, 2160)
+        ws.send_json({"t": "cam", "res": "8k"})
+        assert _drain_until(ws, "cam_ctl")["res"] == "4k"
+    assert json.loads((tmp_path / "camera.json").read_text())["res"] == "4k"
+    assert W.load_cam_res() == "4k"

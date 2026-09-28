@@ -162,6 +162,8 @@
   <div class="pane" id="pane-view" data-pane="view" role="tabpanel" aria-labelledby="tab-view">
     <div class="settings-card">
       <h3>ภาพจากหุ่น</h3>
+      <label class="row"><span>ความคมของภาพสด <small>สูง = 1280×720 (~5 Mbps) · กลาง = 960×540 · ต่ำ = 640×360 — ลดลงถ้าภาพกระตุกบน Wi-Fi</small></span><select data-cfg="camQ"><option value="high">สูง</option><option value="mid">กลาง</option><option value="low">ต่ำ</option></select></label>
+      <label class="row"><span>ความละเอียดกล้อง <small>ภาพที่เซฟ/อ่านตัวเลขใช้ค่านี้ · 4K ชัดสุดแต่ Pi ใช้ CPU 1 คอร์เต็ม · เปลี่ยนแล้วภาพหาย ~2 วิ</small></span><select id="cam-res"><option value="1080p">1080p (Full HD)</option><option value="1440p">1440p (2K)</option><option value="4k">4K</option></select></label>
       <label class="row range-row"><span>ความลื่นของภาพ <small>ลดลงถ้า Wi-Fi ไม่เสถียร</small></span><input data-cfg="fps" type="range" min="2" max="15" step="1"><output></output></label>
       <label class="row"><span>เส้นตารางช่วยเล็ง</span><input data-cfg="gridOn" type="checkbox"></label>
       <label class="row"><span>กรอบอ่านตัวเลข</span><input data-cfg="roiOn" type="checkbox"></label>
@@ -279,6 +281,6 @@
   <div class="emergency-bottomline">หยุดตรวจสอบก่อนใช้งานต่อ · NO AUTOMATIC RESUME</div>
 </section>
 <script src="/static/drive-state.js?v=20260927"></script>
-<script src="/static/drive.js?v=20260927"></script>
+<script src="/static/drive.js?v=c46"></script>
 </body>
 </html>

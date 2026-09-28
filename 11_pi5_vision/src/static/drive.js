@@ -7,7 +7,7 @@
   let V_MAX = 150;                                     // = cfg.vMax หลัง applyCfg
   const V_HW_MAX = 716, W_HW_MAX = 7950;
   const DEFAULTS = { vMax: 716, wMax: 7950, maxPct: 50, turnGain: 7950, spinMinPct: 70, tiltMinDeg: 0, tiltMaxDeg: 180, tiltInv: false, liftMinDeg: 45, liftMaxDeg: 135, liftInv: true, calVer: 4, camPad: true, rampMs: 250, deadzone: 0.12, turnScale: true, invY: false, invX: false,
-    joySide: "left", joySize: "m", autoSuction: false, driveUi: "pad", curveTurn: 50, joySnap: true, fps: 10, gridOn: false, roiOn: true, mirror: false,
+    joySide: "left", joySize: "m", autoSuction: false, driveUi: "pad", curveTurn: 50, joySnap: true, fps: 10, camQ: "high", gridOn: false, roiOn: true, mirror: false,
     suctionPct: 100, suctionIdleOff: 0, sound: true, vibrate: true, toastSec: 3, staleSec: 2,
     accent: "mint", density: "comfortable", bigButtons: false, wakeLock: true };
   let cfg = { ...DEFAULTS };
@@ -58,7 +58,7 @@
       b.classList.toggle("on", selected); b.setAttribute("aria-pressed", String(selected));
     });
     setSpeed(cfg.maxPct, false);
-    if (streamFps !== cfg.fps) startStream();
+    if (streamFps !== cfg.fps || streamQ !== cfg.camQ) startStream();
     wake();
   }
   const fmtOut = (k, v) => ({ tiltMinDeg: `${v}°`, tiltMaxDeg: `${v}°`, liftMinDeg: `${v}°`, liftMaxDeg: `${v}°`, vMax: `${v} mm/s${v >= V_HW_MAX ? " (เต็ม)" : ""}`, wMax: `${v} mrad/s`, maxPct: `${v}% · ${Math.round(V_MAX * v / 100)} mm/s`, turnGain: `${v}`, curveTurn: `${v}%`, spinMinPct: `${v}%`, rampMs: `${v} ms`, deadzone: `${v}`, fps: `${v} fps`,
@@ -159,7 +159,8 @@
     $("live-state").classList.toggle("is-offline", !ok);
     $("live-state").querySelector("span").textContent = ok ? "ภาพสด" : "ไม่มีภาพ";
   }
-  function startStream() { streamFps = cfg.fps; streamReady = false; paintCameraAvailability(); cam.src = `/stream.mjpg?fps=${cfg.fps}&t=${Date.now()}`; }
+  let streamQ = "";   // C46 ความคมภาพสด low/mid/high (เดิมตายตัว 640×360)
+  function startStream() { streamFps = cfg.fps; streamQ = cfg.camQ; streamReady = false; paintCameraAvailability(); cam.src = `/stream.mjpg?fps=${cfg.fps}&q=${cfg.camQ}&t=${Date.now()}`; }
   cam.onload = () => { streamReady = true; paintCameraAvailability(); };
   cam.onerror = () => { streamReady = false; paintCameraAvailability(); setTimeout(startStream, 2000); };
 
@@ -439,7 +440,7 @@
     if (now - camSendT > 80) { camSendT = now; send({ t: "cam", ...camPending }); camPending = null; }
     else setTimeout(() => { if (camPending) { camSendT = performance.now(); send({ t: "cam", ...camPending }); camPending = null; } }, 90); }
   function paintCam(c) {
-    camCtl = c; const has = !!c; $("camctl-rows").classList.toggle("off", !has); $("zoom-col").classList.toggle("off", !has);
+    camCtl = c; if (c && c.res) $("cam-res").value = c.res; const has = !!c; $("camctl-rows").classList.toggle("off", !has); $("zoom-col").classList.toggle("off", !has);
     if (!has) { $("zoom-v").textContent = "—"; $("zoom-tag").hidden = true; $("camctl-note").textContent = "กล้องนี้คุมซูมไม่ได้ (ไม่มีกล้อง / ภาพนิ่ง)"; return; }
     const z = +c.zoom; $("cc-zoom").max = c.zoom_max; $("cc-zoom").value = z; $("cc-zoom-o").textContent = `${z.toFixed(1)}×` + (c.sw_zoom ? " (ซอฟต์แวร์)" : z > 2 ? " · เกิน 2× กล้องขยายภาพ" : "");
     $("zoom-v").textContent = `${z.toFixed(1)}×`; if (!zoomDrag) { $("zoom-sl").max = c.zoom_max; $("zoom-sl").value = z; }
@@ -450,6 +451,7 @@
   function zoomTo(z) { if (!camCtl) return; z = Math.max(1, Math.min(camCtl.zoom_max, z)); camCtl.zoom = z; paintCam(camCtl); camSend({ zoom: +z.toFixed(2) }); }
   function zoomBy(d) { zoomTo((camCtl ? +camCtl.zoom : 1) + d); }
   $("cc-zoom").oninput = (e) => zoomTo(+e.target.value);
+  $("cam-res").onchange = (e) => { send({ t: "cam", res: e.target.value }); toast(`กล้องกำลังเปลี่ยนเป็น ${e.target.value} — ภาพหาย ~2 วิ`, "warn"); setTimeout(startStream, 2500); };
   $("cc-af").onchange = (e) => camSend({ af: e.target.checked });
   $("cc-focus").oninput = (e) => { $("cc-focus-o").textContent = (+e.target.value).toFixed(2); camSend({ focus: +e.target.value }); };
   $("cc-reset").onclick = () => { camSend({ zoom: 1, pan: 0, tilt: 0 }); if (camCtl) { camCtl.zoom = 1; camCtl.pan = 0; camCtl.tilt = 0; paintCam(camCtl); } };

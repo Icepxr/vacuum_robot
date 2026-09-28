@@ -54,6 +54,22 @@ V_HW_MAX_MM_S = 716                 # เพดานฮาร์ดแวร์
 W_HW_MAX_MRAD_S = 7950              # 716 / (180/2) mm ≈ 7.96 rad/s [คำนวณ] ต้องตรงกับ manual_core.h
 
 
+CAM_PATH = DATA_DIR / "camera.json"
+
+def load_cam_res():
+    try:
+        r = json.loads((DATA_DIR / "camera.json").read_text()).get("res")
+        return r if r in CFG.CAMERA_RES else "1080p"
+    except Exception:                        # noqa: BLE001
+        return "1080p"
+
+
+def save_cam_res(res):
+    try:
+        DATA_DIR.mkdir(parents=True, exist_ok=True); (DATA_DIR / "camera.json").write_text(json.dumps({"res": res}))
+    except Exception: pass                   # noqa: BLE001
+
+
 class Hub:
     """ตัวกลางระหว่าง thread ของ daemon กับ event loop ของ FastAPI · เก็บ state ล่าสุด + broadcast"""
 
@@ -75,6 +91,7 @@ class Hub:
         # C28: เพดานความเร็วเป็นของผู้ใช้ (ตั้งจากหน้าเว็บ → $L) · Pi แค่ clamp ตามค่าเดียวกันและจำไว้ให้ client ใหม่
         self.cam_fallback = False                # True = เปิดกล้องไม่ได้ ใช้ภาพนิ่งแทน → cam_ok False ให้หน้าเว็บบอกตรงๆ
         self.cam_args = None                     # args ของกล้อง (index/engine/run_id) ให้ camera_hotplug ลองเปิดใหม่
+        self.cam_res = load_cam_res()            # C46 ความละเอียดกล้อง 1080p/1440p/4k — ของหุ่น จำใน data/camera.json
         self.air = None                          # AirSensor (ENS160/AHT21 บน I2C ของ Pi) — None ถ้าปิดด้วย --no-air
         self.limits = {"v_max": V_MAX_MM_S, "w_max": W_MAX_MRAD_S, "v_hw_max": V_HW_MAX_MM_S, "w_hw_max": W_HW_MAX_MRAD_S}
         # C35 จอบนหุ่นเป็นแบบ "โชว์เมื่อมีเหตุ": Pi ถือเหตุการณ์ล่าสุดไว้จนหมดเวลา แล้วใส่ไปกับ $D ทุกเฟรม (จอไม่มี timer เอง — เฟรมหายก็หายแค่ 1 s)
@@ -83,13 +100,41 @@ class Hub:
     # ── C36 ซูม/โฟกัสกล้อง — ส่งต่อให้ backend ถ้ามันทำได้ (กล้องจริง) · ภาพนิ่ง/ไม่มีกล้อง = None ──
     def cam_controls(self):
         fn = getattr(self.backend, "controls", None)
-        return fn() if fn else None
+        return dict(fn(), res=self.cam_res, res_options=list(CFG.CAMERA_RES)) if fn else None
+
+    def set_cam_res(self, res):
+        """C46 เปลี่ยนความละเอียด = ปิดกล้องแล้วเปิดใหม่ (~1–2 s ไม่มีภาพ) · เปิดไม่ได้ → กลับค่าเดิม"""
+        if res not in CFG.CAMERA_RES or self.cam_args is None or self.cam_fallback:
+            return False
+        if res == self.cam_res:
+            return True
+        old_res, old = self.cam_res, self.backend
+        ctl = self.cam_controls() or {}
+        try: old.close()
+        except Exception: pass                   # noqa: BLE001
+        for r in (res, old_res):
+            try:
+                cam = D.UsbCameraBackend(self.cam_args.camera, size=CFG.CAMERA_RES[r], engine=self.cam_args.engine, run_id=self.cam_args.run_id)
+            except RuntimeError as e:
+                D.log(f"⚠ เปิดกล้อง {r} ไม่ได้: {e}"); continue
+            self.backend = cam
+            if self.daemon: self.daemon.backend = cam
+            self.cam_res = r; save_cam_res(r)
+            try: cam.set_control(**{k: ctl[k] for k in ("zoom", "pan", "tilt", "af", "focus") if k in ctl})   # คงซูม/โฟกัสเดิม
+            except Exception: pass               # noqa: BLE001
+            D.log(f"กล้องเปลี่ยนเป็น {r}"); return r == res
+        self.backend = still_fallback(); self.cam_fallback = True
+        if self.daemon: self.daemon.backend = self.backend
+        return False
 
     def cam_set(self, **kw):
+        if "res" in kw:
+            self.set_cam_res(kw.pop("res"))
         fn = getattr(self.backend, "set_control", None)
         if not fn: return None
         allowed = {k: v for k, v in kw.items() if k in ("zoom", "pan", "tilt", "af", "focus") and isinstance(v, (int, float, bool))}
-        return fn(**allowed) if allowed else fn()
+        if allowed: fn(**allowed)
+        return self.cam_controls()
 
     # ── C35 จอบนหุ่น ──
     def display_event(self, code, arg=""):
@@ -344,8 +389,10 @@ async def api_roi_set(body: dict):
 
 
 @app.get("/stream.mjpg")
-async def stream(frames: int = 0, fps: int = 0):
-    """MJPEG multipart · frames>0 = จำกัดจำนวนเฟรมแล้วจบ (ใช้ในเทสต์) · fps = 2..15 (ค่าตั้งต้น PREVIEW_FPS)"""
+async def stream(frames: int = 0, fps: int = 0, q: str = "high"):
+    """MJPEG multipart · frames>0 = จำกัดจำนวนเฟรมแล้วจบ (ใช้ในเทสต์) · fps = 2..15 (ค่าตั้งต้น PREVIEW_FPS)
+    q = low/mid/high (C46: เดิมตายตัว 640×360 q80 = สาเหตุที่ภาพสด "ไม่ชัด" ทั้งที่กล้องเป็น 4K)"""
+    size, quality = CFG.PREVIEW_QUALITY.get(q, CFG.PREVIEW_QUALITY["high"])
     if hub.backend is None:
         return JSONResponse({"error": "no camera"}, status_code=503)
     rate = max(2, min(15, fps)) if fps else PREVIEW_FPS
@@ -356,7 +403,7 @@ async def stream(frames: int = 0, fps: int = 0):
         while frames <= 0 or sent < frames:
             sent += 1
             t0 = time.monotonic()
-            jpg = await asyncio.to_thread(hub.backend.preview_jpeg)   # resize+encode 6 ms — ออกจาก event loop
+            jpg = await asyncio.to_thread(hub.backend.preview_jpeg, size, quality)   # resize+encode 4–15 ms (C46 วัดจริง) — ออกจาก event loop
             if jpg:
                 yield (b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: "
                        + str(len(jpg)).encode() + b"\r\n\r\n" + jpg + b"\r\n")
@@ -474,7 +521,7 @@ async def camera_hotplug():
             if hub.daemon: hub.daemon.backend = hub.backend
             hub.cam_fallback = True
         try:
-            cam = await asyncio.to_thread(D.UsbCameraBackend, hub.cam_args.camera,
+            cam = await asyncio.to_thread(D.UsbCameraBackend, hub.cam_args.camera, size=CFG.CAMERA_RES[hub.cam_res],
                                           engine=hub.cam_args.engine, run_id=hub.cam_args.run_id)
         except RuntimeError:
             continue                          # ยังไม่เสียบ — เงียบ ไม่ spam log
@@ -531,7 +578,7 @@ def open_camera_or_fallback(args):
     cam_ok ใน /api/status จะเป็น False → หน้าเว็บโชว์ "ไม่มีภาพ" · camera_hotplug ลองใหม่ทุก 5 s"""
     hub.cam_args = args                       # C45: เก็บเสมอ — กล้องที่เปิดได้ตอนนี้อาจหลุดทีหลัง
     try:
-        return D.UsbCameraBackend(args.camera, engine=args.engine, run_id=args.run_id)
+        return D.UsbCameraBackend(args.camera, size=CFG.CAMERA_RES[hub.cam_res], engine=args.engine, run_id=args.run_id)
     except RuntimeError as e:
         D.log(f"⚠ {e} — รันต่อโดยไม่มีกล้อง")
     hub.cam_fallback = True
