@@ -306,7 +306,7 @@ void servoSetup() {
 static uint32_t tickLastMs = 0;
 
 bool servoSetTarget(int us) {
-  us = constrain(us, US_MIN, US_MAX);
+  us = constrain(us, MAST_US_MIN, MAST_US_MAX);   // C47 ทางขับจาก Pi ($M) · ชุดทดสอบคอนโซลยังใช้ 500–2500
   if (!attached || positionUnknown) {
     // ไม่รู้ตำแหน่งฮอร์น (เพิ่งบูต/เพิ่งปล่อย) → ผูกที่ค่าที่ขอทันที ไม่หยุดรอ Enter แบบ servoAttachAt
     // (คอนโซลไม่มีคนนั่งอยู่ตอนขับจากมือถือ · ถ้ารอ Serial ใน loop() = WDT รีบูต) · เซอร์โวจะกระโดดครั้งเดียว

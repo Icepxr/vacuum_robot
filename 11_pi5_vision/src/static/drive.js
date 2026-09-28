@@ -6,6 +6,8 @@
   // C28: เพดานความเร็วเป็นของผู้ใช้ (cfg.vMax/wMax → {t:"limits"} → Pi → $L) · ESP32 clamp แค่ที่ฮาร์ดแวร์ 716 mm/s
   let V_MAX = 150;                                     // = cfg.vMax หลัง applyCfg
   const V_HW_MAX = 716, W_HW_MAX = 7950;
+  // C47: เสาไปได้ถึง 189° (= 400 µs เพราะกลับทิศ) · ESP32 รับ $M ต่ำสุด 400 µs (pins.h MAST_US_MIN) · มุมกล้องยัง 0–180
+  const DEG_TOP = { tilt: 180, lift: 189 };
   const DEFAULTS = { vMax: 716, wMax: 7950, maxPct: 50, turnGain: 7950, spinMinPct: 70, tiltMinDeg: 0, tiltMaxDeg: 180, tiltInv: false, liftMinDeg: 45, liftMaxDeg: 135, liftInv: true, calVer: 4, camPad: true, rampMs: 250, deadzone: 0.12, turnScale: true, invY: false, invX: false,
     joySide: "left", joySize: "m", autoSuction: false, driveUi: "pad", curveTurn: 50, joySnap: true, fps: 10, camQ: "high", gridOn: false, roiOn: true, mirror: false,
     suctionPct: 100, suctionIdleOff: 0, sound: true, vibrate: true, toastSec: 3, staleSec: 2,
@@ -41,7 +43,7 @@
     cfg.vMax = Math.max(50, Math.min(V_HW_MAX, +cfg.vMax || V_HW_MAX)); cfg.wMax = Math.max(500, Math.min(W_HW_MAX, +cfg.wMax || W_HW_MAX));
     // C44: ไม่ตัด turnGain ถาวรตามเพดานที่ยังเป็นค่าเก่าในเครื่อง (ก่อน sys ของหุ่นมาถึง) — ตัดตอนใช้แทน (turnW)
     V_MAX = cfg.vMax;
-    for (const k of ["tilt", "lift"]) { const lo = k + "MinDeg", hi = k + "MaxDeg"; cfg[lo] = Math.max(0, Math.min(180, +cfg[lo] || 0)); cfg[hi] = Math.max(0, Math.min(180, +cfg[hi] || 0)); if (cfg[lo] >= cfg[hi]) cfg[hi] = Math.min(180, cfg[lo] + 1); }
+    for (const k of ["tilt", "lift"]) { const top = DEG_TOP[k], lo = k + "MinDeg", hi = k + "MaxDeg"; cfg[lo] = Math.max(0, Math.min(top, +cfg[lo] || 0)); cfg[hi] = Math.max(0, Math.min(top, +cfg[hi] || 0)); if (cfg[lo] >= cfg[hi]) cfg[hi] = Math.min(top, cfg[lo] + 1); }
     root.dataset.campad = cfg.camPad ? 1 : 0; camApplyLimits();
     root.dataset.accent = cfg.accent; root.dataset.density = cfg.density; root.dataset.big = cfg.bigButtons ? 1 : 0;
     root.dataset.joyside = cfg.joySide; root.dataset.driveui = cfg.driveUi; root.dataset.mirror = cfg.mirror ? 1 : 0;

@@ -133,7 +133,7 @@ void handleLine(char* line, size_t len) {
       if (missionRunning()) { nack(rseq, "IN_MISSION"); return; }
       const int us = (int)f[1];
       if (us == 0) { servoStop("Pi สั่ง $M,0"); ack(rseq); return; }
-      if (us < 500 || us > 2500) { nack(rseq, "OUT_OF_RANGE"); return; }
+      if (us < MAST_US_MIN || us > MAST_US_MAX) { nack(rseq, "OUT_OF_RANGE"); return; }   // C47: ต่ำสุด 400 (เดิม 500)
       if (brushOnNow() && millis() - brushOnSinceMsNow() < 1000) { nack(rseq, "BRUSH_SPINUP"); return; }   // R1 ราง 5 V
       if (!servoSetTarget(us)) { nack(rseq, "SERVO_FAIL"); return; }
       ack(rseq);

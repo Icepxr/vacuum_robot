@@ -33,6 +33,11 @@ constexpr int PIN_BRUSH_PWM  = 16;  // เกตแปรงข้าง รา�
 // ── เซอร์โว MG996R ×2 (LEDC T2 50 Hz 14-bit · pull-down 10 kΩ ที่ขาสัญญาณ)
 constexpr int PIN_SERVO_MAST = 17;  // SERVO_A · เสา scissor (ตัวเดียว ไฟล์ 12)                [ใช้จริง] src/servo_test/main.cpp
 constexpr int PIN_SERVO_X    = 18;  // SERVO_B · มุมกล้อง (ก้ม-เงย · C30 19 ก.ย.)                [ใช้จริง] src/robot/servo_x.cpp
+// ช่วงพัลส์เสา — C47 (28 ก.ย. ผู้ใช้: "180° แล้วเสายังสูงได้อีก" สั่งขยายหลังรับทราบความเสี่ยง): ปลายยก = พัลส์สั้น (C42)
+//   500 → 400 µs (+100 µs ≈ 9° บนสเกล 0–180° = 500–2500) · เกินช่วงที่เซอร์โวรับได้ = ชนจุดหยุดภายใน → stall 2.5 A [สเปก MG996R] เฟืองพัง
+//   ยังไม่รู้ว่าตัวนี้รับได้ถึงไหน (C8) — เดินช้า 10 µs/24 ms + เว็บทีละ 1° ให้คนเฝ้าดูได้ · ห้ามต่ำกว่านี้โดยไม่วัด
+constexpr int MAST_US_MIN = 400;
+constexpr int MAST_US_MAX = 2500;
 
 // ── จอกลม GC9A01 1.28" SPI2 40 MHz (RST → EN · BL → 3.3 V · C32)                    [ใช้จริง] src/robot/tft.cpp
 constexpr int PIN_TFT_SCK  = 38;
