@@ -1,0 +1,28 @@
+# Netlify: ตั้ง Base directory = aria/web ในหน้า Site configuration (ไฟล์นี้ถูกอ่านจาก base directory)
+# ไม่มีขั้น build · เสิร์ฟไฟล์นิ่งตรงๆ
+[build]
+  publish = "."
+  command = ""
+  # build เฉพาะเมื่อไฟล์ในโฟลเดอร์นี้เปลี่ยน · repo นี้ push งานเฟิร์มแวร์/Pi บ่อย
+  # Free plan: production deploy = 15 เครดิต จาก 300/เดือน (ไฟล์ 20 §20.9)
+  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- ."
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://brvlfwrmkoyjnrhvfesq.supabase.co; connect-src 'self' https://brvlfwrmkoyjnrhvfesq.supabase.co wss://brvlfwrmkoyjnrhvfesq.supabase.co; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+    X-Robots-Tag = "noindex"
+
+# ไฟล์ js/css ไม่มีเลขเวอร์ชันในชื่อ (import ภายในไม่มี ?v=) → ให้เบราว์เซอร์ถามใหม่ทุกครั้ง กันโค้ดเก่าค้าง
+[[headers]]
+  for = "/js/*"
+  [headers.values]
+    Cache-Control = "no-cache"
+[[headers]]
+  for = "/css/*"
+  [headers.values]
+    Cache-Control = "no-cache"

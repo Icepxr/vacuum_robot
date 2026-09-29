@@ -12,6 +12,18 @@
         "design/aria-prototype"
       ],
       "port": 8765
+    },
+    {
+      "name": "aria-web",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8766",
+        "--directory",
+        "aria/web"
+      ],
+      "port": 8766
     }
   ]
 }

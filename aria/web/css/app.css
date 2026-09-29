@@ -1,0 +1,63 @@
+/* ส่วนเพิ่มของเว็บจริง (ต่อจาก styles.css + theme.css ของต้นแบบ ARIA Orbit) */
+[hidden] { display: none !important; }
+body.busy { cursor: progress; }
+body.busy button[type="submit"], body.busy .btn.danger { opacity: .55; pointer-events: none; }
+
+.gate { min-height: 100vh; display: grid; place-items: center; padding: 16px; background: #211036; }
+.gate-card { width: min(100%, 420px); background: #fff; border-radius: 20px; padding: 28px 24px; text-align: center; box-shadow: 0 20px 80px #0006; }
+.gate-logo { margin: 0 auto 18px; }
+.gate-card h1 { font-size: 22px; margin: 0 0 8px; }
+.gate-actions { margin-top: 20px; display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
+
+.cycle-nav { display: inline-flex; align-items: center; gap: 4px; }
+.cycle-btn { border: 1px solid var(--line); background: #fff; border-radius: 99px; width: 28px; height: 28px; color: var(--violet); font-size: 16px; line-height: 1; }
+.cycle-btn:hover { border-color: #a98ae3; }
+button.avatar { border: 3px solid white; padding: 0; cursor: pointer; }
+
+.device-dot.warn { background: #e2a33a; box-shadow: 0 0 0 4px #e2a33a30; }
+.device-block + .device-block { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.device-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.kv-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 12px; background: #f9f7fd; border-radius: 11px; }
+.kv-grid small { display: block; color: var(--muted); font-size: 11px; }
+.kv-grid b { display: block; font-size: 12px; overflow-wrap: anywhere; }
+.kv-grid.air { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.fine { font-size: 11px; color: var(--muted); margin: 8px 0 0; }
+
+.crop-img { display: block; max-width: 100%; max-height: 320px; margin: 0 auto; border-radius: 10px; background: #0001; image-rendering: auto; }
+.crop-missing { padding: 36px 16px; text-align: center; color: var(--muted); font-size: 13px; font-weight: 650; }
+.comparison-box small + small { display: block; margin-top: 2px; font-size: 10px; }
+.neg { color: var(--red); }
+
+.inline-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin: 14px 0 4px; }
+.inline-form label { display: grid; gap: 4px; font-size: 11px; color: var(--muted); flex: 1 1 220px; }
+.inline-form input, .inline-form select, .stack-form input, .stack-form select, .room-tools input { width: 100%; min-height: 38px; }
+.stack-form { display: grid; gap: 10px; margin-top: 12px; }
+.stack-form .field { margin: 0; }
+.form-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.form-row > .field { flex: 1 1 140px; }
+.room-tools { display: grid; gap: 10px; border-bottom: 1px solid var(--line); }
+.room-tools .inline-form { margin: 0; }
+.room-tools .inline-form input { flex: 1 1 110px; width: auto; }
+
+.meter-card { align-items: flex-start; gap: 10px; }
+.meter-card > div { min-width: 0; }
+.meter-card small { display: block; }
+.meter-card.retired { opacity: .6; }
+.reading-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.chip { border: 1px solid var(--line); background: #fff; border-radius: 99px; padding: 3px 8px; font-size: 10px; color: #5e526e; }
+.chip.confirmed { border-color: #bfe6d3; color: var(--green); }
+.chip.ocr { border-color: #f1d9a9; color: var(--amber); }
+.chip.rejected { border-color: #f0c9d0; color: var(--red); text-decoration: line-through; }
+
+details.more { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+details.more summary { cursor: pointer; font-weight: 750; color: var(--violet); font-size: 12px; }
+.invoice-sub { font-size: 11px; color: var(--muted); padding: 2px 0 6px 10px; }
+.filter small { opacity: .65; }
+#toast.bad { background: #7a1f33; }
+
+@media (max-width: 800px) {
+  .topbar .cycle-nav .cycle-tag { display: inline-flex; padding: 5px 8px; font-size: 11px; }
+  .topbar .cycle-tag .ui-icon { display: none; }
+  .kv-grid.air { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 540px) { .demo-badge { display: none; } }

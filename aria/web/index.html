@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#211036">
+  <meta name="robots" content="noindex">
+  <title>ARIA — หลังบ้านหอพัก</title>
+  <link rel="icon" href="img/aria-logo.png">
+  <link rel="stylesheet" href="css/styles.css?v=w1">
+  <link rel="stylesheet" href="css/theme.css?v=w1">
+  <link rel="stylesheet" href="css/app.css?v=w1">
+</head>
+<body>
+  <a class="skip-link" href="#page-content">ข้ามไปเนื้อหา</a>
+
+  <div id="gate" class="gate" hidden>
+    <div class="gate-card">
+      <div class="logo-window gate-logo"><img src="img/aria-logo.png" alt="ARIA"></div>
+      <h1 id="gate-title">เข้าสู่ระบบ ARIA</h1>
+      <p id="gate-text" class="muted">หลังบ้านสำหรับเจ้าของหอพัก · ใช้บัญชี Google ที่ได้รับสิทธิ์เท่านั้น</p>
+      <div id="gate-actions" class="gate-actions"></div>
+    </div>
+  </div>
+
+  <div class="app-shell" id="app" hidden>
+    <aside class="sidebar" aria-label="เมนูหลัก">
+      <div class="brand"><div class="logo-window"><img src="img/aria-logo.png" alt="ARIA"></div><span class="brand-caption">INTELLIGENT METERING</span></div>
+      <div class="workspace-card"><span class="workspace-icon" data-icon="rooms" aria-hidden="true"></span><div><strong id="ws-name">หอพัก</strong><small id="ws-meta">—</small></div><span class="workspace-demo" id="ws-demo" hidden>DEMO</span></div>
+      <div class="side-label">พื้นที่จัดการ</div>
+      <nav class="side-nav" id="side-nav">
+        <button type="button" data-page="home"><span data-icon="home" aria-hidden="true"></span><span class="nav-label">หน้าหลัก</span></button>
+        <button type="button" data-page="review"><span data-icon="review" aria-hidden="true"></span><span class="nav-label">ยืนยันค่า<span class="nav-desktop">มิเตอร์</span></span><em id="nav-review-count"></em></button>
+        <button type="button" data-page="bills"><span data-icon="bills" aria-hidden="true"></span><span class="nav-label">บิล</span></button>
+        <button type="button" data-page="rooms"><span data-icon="rooms" aria-hidden="true"></span><span class="nav-label">ห้อง<span class="nav-desktop">และมิเตอร์</span></span></button>
+        <button type="button" data-page="settings"><span data-icon="settings" aria-hidden="true"></span><span class="nav-label">ตั้งค่า</span></button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="side-device"><span data-icon="robot" aria-hidden="true"></span><div><strong id="dev-name">MRC-001</strong><small id="dev-seen">ยังไม่เคยส่งข้อมูล</small></div><span class="device-dot" id="dev-dot"></span></div>
+        <div class="sidebar-note">ARIA / จากภาพสู่ข้อมูลที่มั่นใจ</div>
+      </div>
+    </aside>
+    <div class="main-area">
+      <header class="topbar">
+        <div class="top-left"><span class="mobile-logo logo-window"><img src="img/aria-logo.png" alt="ARIA"></span><span class="top-brand">ARIA</span><span class="top-divider">/</span><span id="top-page-name">หน้าหลัก</span></div>
+        <div class="top-right">
+          <span class="cycle-nav"><button type="button" class="cycle-btn" data-cycle-step="-1" aria-label="รอบก่อน">‹</button><span class="cycle-tag"><span data-icon="calendar" aria-hidden="true"></span> <span id="cycle-name">—</span></span><button type="button" class="cycle-btn" data-cycle-step="1" aria-label="รอบถัดไป">›</button></span>
+          <span class="demo-badge" id="demo-badge" hidden>มีข้อมูลตัวอย่าง</span>
+          <button type="button" class="avatar" id="avatar" data-page="settings" aria-label="บัญชี">?</button>
+        </div>
+      </header>
+      <main id="page-content" tabindex="-1"></main>
+    </div>
+  </div>
+  <div id="modal-root"></div>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script src="vendor/supabase-2.117.2.js"></script>
+  <script type="module" src="js/app.js?v=w1"></script>
+</body>
+</html>

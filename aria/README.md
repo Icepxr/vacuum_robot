@@ -8,12 +8,14 @@
 | `supabase/migrations/…0100_core_schema.sql` | apply แล้ว — 11 ตาราง · RLS (anon ทำอะไรไม่ได้ · เจ้าของหอผ่าน `owners`) · trigger ค่ายืนยันห้ามถอยหลัง |
 | `supabase/migrations/…0200_ingest.sql` | apply แล้ว — `ingest_readings/heartbeat/crop_attach` (service role เท่านั้น) · bucket `crops` private |
 | `supabase/migrations/…0300_demo_seed.sql` | apply แล้ว — ห้อง 101–110 · 20 มิเตอร์ · ผู้เช่าสมมติ (`is_demo`) · ลบด้วย `select public.delete_demo_data();` |
+| `supabase/migrations/20260929000100_demo_readings.sql` | apply แล้ว — ค่าที่หุ่นอ่านตัวอย่าง 19 แถวจากอุปกรณ์ `DEMO-01` (revoke แล้ว) · `delete_demo_data()` ลบรวมให้ |
+| `web/` | **เว็บหลังบ้าน** (vanilla JS) · ยังไม่ deploy — ขั้นตอน Netlify + Google ใน [`web/README.md`](web/README.md) |
 | `supabase/functions/ingest/index.ts` | deploy แล้ว (verify_jwt = false · ยืนยันตัวด้วย `x-device-token`) |
 
 อุปกรณ์ที่ลงทะเบียน: `MRC-001` (หุ่นจริง) · `TEST-01` (ทดสอบจาก Mac) — token จริงอยู่ที่ `~/.config/mrc/aria_device_token_*` บน Mac ของผู้ใช้ (สิทธิ์ 600) · คลาวด์เก็บแค่ SHA-256
 
 ## ยังไม่ได้ทำ
-- **เจ้าของหอยังล็อกอินไม่ได้**: ต้องเปิด Google provider ใน Supabase Auth + ใส่อีเมลเจ้าของลง `owners` (เว็บ ARIA ขั้น 3)
+- **เจ้าของหอยังล็อกอินไม่ได้**: เว็บเขียนแล้ว (`web/`) แต่ต้องเปิด Google provider ใน Supabase Auth + ใส่อีเมลเจ้าของลง `owners` ก่อน — ดู `web/README.md`
 - บิล/อีเมล (`invoices`, `invoice_delivery_attempts`) — ขั้น 4–5
 - งานลบ crop อายุ 12 เดือน (F8) — ครั้งแรกที่ต้องใช้คือ ก.ย. 2027
 - มีรูปทดสอบค้างใน bucket `crops/TEST-01/` 4 ไฟล์ (≈ 30 kB) — ลบได้จาก Dashboard › Storage (ลบผ่าน SQL ไม่ได้)
