@@ -33,6 +33,7 @@ const iconPaths = {
   down: '<path d="M3 7l6 6 4-4 8 8"/><path d="M15 17h6v-6"/>',
   scan: '<path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><path d="M8 12h8"/>',
   baht: '<circle cx="12" cy="12" r="9"/><text x="12" y="16.2" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor" stroke="none">฿</text>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
   logout: '<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l-5-5 5-5M5 12h11"/>',
 };
 const icon = name => `<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${iconPaths[name] || iconPaths.review}</svg>`;
@@ -292,7 +293,7 @@ function roomSummary(r, c, i) {
     const l = p?.latest;
     const kind = !p ? 'none' : !l ? 'unread' : l.status === 'confirmed' ? 'ok' : (l.confirmed_value ?? l.value) == null ? 'bad' : 'wait';
     const dot = vacant || kind === 'none' ? 'off' : kind === 'unread' ? 'miss' : kind === 'ok' ? 'have' : 'wait';
-    return { t, kind, dot, v: l ? l.confirmed_value ?? l.value : null };
+    return { t, kind, dot, v: l ? l.confirmed_value ?? l.value : null, id: l?.id };
   });
   return { r, bill, vacant, ms };
 }
@@ -312,7 +313,9 @@ function roomBoard(c) {
       <span class="mr-no">${esc(x.r.room_id)}</span><span class="mr-icons">${x.ms.map(m => `<span class="mr-ic ${m.t} ${m.dot}">${icon(m.t)}</span>`).join('')}</span></button>`;
   const line = m => { const [txt, tone] = METER_STATE[m.kind];
     return `<div class="md-line"><span class="mr-ic ${m.t} ${sel.vacant ? 'off' : m.dot}">${icon(m.t)}</span><span class="md-type">${L.TYPE_TH[m.t]}</span><b>${m.kind === 'ok' || m.kind === 'wait' ? num(m.v) : '—'}</b>${status(txt, tone)}</div>`; };
-  const pending = sel.ms.some(m => m.kind === 'wait' || m.kind === 'bad');
+  const pendingM = sel.ms.find(m => m.kind === 'wait' || m.kind === 'bad');
+  const pending = !!pendingM;
+  const noMeters = sel.ms.every(m => m.kind === 'none');
   const missing = sel.ms.filter(m => !sel.vacant && m.dot === 'miss').length;
   return `<div class="card card-pad room-board"><div class="card-head"><div><h2>ห้องในรอบนี้</h2><p>กดห้องเพื่อดูค่าล่าสุด</p></div>
       <div class="map-legend"><span><i class="have"></i>ยืนยันแล้ว</span><span><i class="wait"></i>รอยืนยัน</span><span><i class="miss"></i>ยังไม่มีค่า</span><span><i class="off"></i>ห้องว่าง</span></div></div>
@@ -325,8 +328,8 @@ function roomBoard(c) {
     }).join('')}</div>
     <aside class="map-detail" aria-live="polite"><div class="md-head"><span class="md-no">ห้อง ${esc(sel.r.room_id)}</span>${billBadge(sel.bill)}</div>
       ${sel.ms.map(line).join('')}
-      <p class="md-note">${sel.vacant ? 'ห้องว่าง · ไม่คิดบิลรอบนี้' : missing ? `ยังขาด ${missing} มิเตอร์ในรอบนี้ · ให้หุ่นถ่ายเพิ่ม` : pending ? 'มีค่ารอยืนยัน · ตรวจที่หน้ายืนยันค่า' : 'ค่าครบและยืนยันแล้ว'}</p>
-      <div class="md-actions">${pending ? `<button class="btn small primary" data-page="review">ไปยืนยันค่า</button>` : ''}<button class="btn small" data-page="rooms" data-room="${esc(sel.r.room_id)}">เปิดห้องนี้ ›</button></div>
+      <p class="md-note">${sel.vacant ? 'ห้องว่าง · ไม่คิดบิลรอบนี้' : noMeters ? 'ห้องนี้ยังไม่มีมิเตอร์ในทะเบียน' : missing ? `ยังขาด ${missing} มิเตอร์ในรอบนี้ · ให้หุ่นถ่ายเพิ่ม` : pending ? 'มีค่ารอยืนยัน · ตรวจที่หน้ายืนยันค่า' : 'ค่าครบและยืนยันแล้ว'}</p>
+      <div class="md-actions">${pending ? `<button class="btn small primary" data-page="review" data-reading="${pendingM.id}">ไปยืนยันค่า</button>` : ''}<button class="btn small" data-page="rooms" data-room="${esc(sel.r.room_id)}">เปิดห้องนี้ ›</button></div>
     </aside></div></div>`;
 }
 
@@ -447,42 +450,72 @@ async function submitAssign(form) {
 }
 
 // ───────── บิล (พรีวิว) ─────────
-const BILL_FILTERS = [['all', 'ทั้งหมด'], ['ready', 'คำนวณได้'], ['blocked', 'ข้อมูลไม่ครบ'], ['noemail', 'ไม่มีอีเมล'], ['vacant', 'ห้องว่าง']];
+const BILL_FILTERS = [['all', 'ทั้งหมด'], ['ready', 'พร้อม'], ['blocked', 'ติดปัญหา'], ['noemail', 'ไม่มีอีเมล'], ['vacant', 'ห้องว่าง']];
 const billMatch = (b, f) => f === 'all' || (f === 'noemail' ? b.noEmail : b.state === f);
+// เหตุผลแบบสั้นบนการ์ด (ตัดรหัสมิเตอร์/วันที่ออก · ตัวเต็มอยู่ในหน้ารายละเอียด)
+const shortReason = r => r.replace(/\s*\([^)]*\)\s*$/, '').replace(/ที่มีผล ณ .*$/, '').trim();
+// อัตรายังไม่ตั้ง = ปัญหาระดับหน้า (ชิปแดงบนแถบสรุป) → ไม่ซ้ำบนทุกการ์ด · การ์ดโชว์เหตุผลของห้องนั้นก่อน
+function whyLine(reasons) {
+  const own = reasons.filter(r => !r.startsWith('ยังไม่ตั้งอัตรา'));
+  const text = own.length ? shortReason(own[0]) : 'รอตั้งอัตรา';
+  const more = own.length > 1 ? ` <em>+${own.length - 1}</em>` : '';
+  return `<span class="bc-why">${icon('review')}${esc(text)}${more}</span>`;
+}
+const BILL_STATE = { ready: ['พร้อม', 'good'], blocked: ['ติดปัญหา', 'warn'], vacant: ['ห้องว่าง', 'off'] };
 
+// หน้าบิล (ออกแบบใหม่ 30 ก.ย. · ผู้ใช้: "ใช้ยาก ตัวอักษรเยอะ"): แถบสรุป → ตัวกรอง → การ์ดห้องละใบ · รายละเอียดเต็มอยู่ในหน้าต่างบิล
 function renderBills(c) {
   const row = c.d.cycles.find(x => x.cycle === state.cycle);
   const list = c.bills.filter(b => billMatch(b, state.billFilter));
+  const n = k => c.bills.filter(b => b.state === k).length;
   const sum = c.bills.filter(b => b.state === 'ready').reduce((s, b) => s + b.total, 0);
-  const rate = t => { const x = L.rateOn(c.d.rates, t, c.range.to); return x ? `${baht(Number(x.baht_per_unit))}/หน่วย (มีผล ${L.dateTh(x.effective_from)})` : 'ยังไม่ตั้ง'; };
-  const cell = (b, t) => { const l = b.lines[t]; return l.ok ? `${num(l.units)} หน่วย<br><strong>${l.amount != null ? baht(l.amount) : '—'}</strong>` : '<span class="muted">—</span>'; };
+  const rateChip = t => { const x = L.rateOn(c.d.rates, t, c.range.to);
+    return x ? `<span class="rate-chip ${t}">${icon(t)}<b>${baht(Number(x.baht_per_unit))}</b><small>/หน่วย</small></span>`
+      : `<button class="rate-chip missing" data-page="settings">${icon(t)}ยังไม่ตั้งอัตรา</button>`; };
+  const seg = k => `<i class="${BILL_STATE[k][1]}" style="flex:${n(k)}"></i>`;
+  const rent = `<label class="rent-switch" title="ค่าเช่ากำหนดต่อผู้เช่า · ตั้งแยกรายรอบ"><input id="include-rent" type="checkbox" ${row?.include_rent ? 'checked' : ''} ${row?.state === 'closed' ? 'disabled' : ''}><span class="sw" aria-hidden="true"></span>รวมค่าเช่า</label>`;
+  const line = (b, t) => { const l = b.lines[t];
+    return `<span class="bl ${t} ${l.ok ? '' : 'none'}"><span class="bl-ic">${icon(t)}</span><span class="bl-u">${l.ok ? `${num(l.units)} หน่วย` : '—'}</span><b>${l.ok && l.amount != null ? baht(l.amount) : ''}</b></span>`; };
+  const card = b => {
+    const [label, tone] = BILL_STATE[b.state];
+    const foot = b.state === 'ready' ? `<span class="bc-total"><small>รวม</small>${baht(b.total)}</span>`
+      : b.state === 'vacant' ? `<span class="bc-note">ไม่ออกบิลรอบนี้</span>`
+      : whyLine(b.reasons);
+    return `<button class="bill-card ${tone}" data-bill="${esc(b.room.room_id)}">
+      <span class="bc-head"><span class="bc-room">${esc(b.room.room_id)}</span><span class="bc-state"><i></i>${label}</span></span>
+      <span class="bc-tenant">${b.tenancy ? esc(b.tenancy.tenant_name) : 'ไม่มีผู้เช่า'}${b.noEmail ? `<span class="bc-noemail" title="ยังไม่มีอีเมล · ส่งบิลไม่ได้">${icon('mail')}</span>` : ''}</span>
+      ${b.state === 'vacant' ? '' : `<span class="bc-lines">${line(b, 'water')}${line(b, 'electric')}${b.includeRent ? `<span class="bl rent"><span class="bl-ic">${icon('rooms')}</span><span class="bl-u">ค่าเช่า</span><b>${baht(b.rent)}</b></span>` : ''}</span>`}
+      <span class="bc-foot">${foot}</span></button>`;
+  };
   return `<section class="page">
-  ${pageHead('BILLING', 'บิลค่าน้ำและค่าไฟ', `รอบ${L.cycleLabel(state.cycle)} · ตัดรอบ ${L.dateTh(c.range.to)} · คำนวณจากค่าที่ยืนยันแล้วเท่านั้น`)}
-  <div class="info-banner"><span class="spark">✦</span><div><strong>พรีวิว</strong> ตัวเลขคำนวณสดทุกครั้งที่เปิดหน้า · การอนุมัติและตรึงยอดบิล (ขั้น 4) และการส่งอีเมล (ขั้น 5) ยังไม่เปิด จึงยังไม่มีบิลฉบับจริง</div></div>
-  <label class="switch-row"><input id="include-rent" type="checkbox" ${row?.include_rent ? 'checked' : ''} ${row?.state === 'closed' ? 'disabled' : ''}><span><strong>รวมค่าเช่าในบิลรอบนี้</strong><small>ค่าเช่ากำหนดต่อผู้เช่า · ค่าเริ่มต้นปิด (F7) · ตั้งแยกรายรอบ</small></span></label>
-  <div class="filter-bar">${BILL_FILTERS.map(([k, t]) => `<button class="filter ${state.billFilter === k ? 'active' : ''}" data-filter="${k}">${t} <small>${c.bills.filter(b => billMatch(b, k)).length}</small></button>`).join('')}</div>
-  <div class="card"><div class="table-wrap"><table class="data-table"><thead><tr><th>ห้อง / ผู้เช่า</th><th>น้ำ</th><th>ไฟ</th><th>ค่าเช่า</th><th class="num">รวม</th><th>สถานะ</th><th></th></tr></thead><tbody>${list.map(b => `<tr>
-    <td><span class="room-label">ห้อง ${esc(b.room.room_id)}</span><br><small class="muted">${b.tenancy ? esc(b.tenancy.tenant_name) : 'ห้องว่าง'}${b.tenancy && !b.tenancy.email ? ' · ไม่มีอีเมล' : ''}</small></td>
-    <td>${cell(b, 'water')}</td><td>${cell(b, 'electric')}</td>
-    <td>${b.includeRent && b.tenancy ? baht(b.rent) : '—'}</td>
-    <td class="num bill-total">${baht(b.total)}</td>
-    <td>${billBadge(b)}${b.reasons.length && b.state !== 'vacant' ? `<br><small class="muted">${esc(b.reasons[0])}${b.reasons.length > 1 ? ` (+${b.reasons.length - 1})` : ''}</small>` : ''}</td>
-    <td><button class="btn small" data-bill="${esc(b.room.room_id)}">ดูรายละเอียด</button></td></tr>`).join('') || '<tr><td colspan="7" class="empty">ไม่มีห้องในตัวกรองนี้</td></tr>'}</tbody></table></div>
-    <div class="bill-footer"><p>อัตราที่มีผล ณ วันตัดรอบ · น้ำ ${rate('water')} · ไฟ ${rate('electric')}</p><p><strong>รวมห้องที่คำนวณได้ ${baht(sum)}</strong></p></div></div>
+  ${pageHead('BILLING', 'บิล', `รอบ${L.cycleLabel(state.cycle)} · ตัดรอบ ${L.dateTh(c.range.to)}`, `<span class="preview-pill" title="คำนวณสดจากค่าที่ยืนยันแล้ว · การอนุมัติบิล (ขั้น 4) และส่งอีเมล (ขั้น 5) ยังไม่เปิด">พรีวิว</span>${rent}`)}
+  <div class="bill-summary">
+    <div class="bs-sum"><small>ยอดรวมที่คิดได้</small><b>${baht(sum)}</b><span>${n('ready')} จาก ${c.bills.length - n('vacant')} ห้องที่มีผู้เช่า</span></div>
+    <div class="bs-mix"><div class="bs-bar">${seg('ready')}${seg('blocked')}${seg('vacant')}</div>
+      <div class="bs-legend"><span class="good"><i></i>พร้อม ${n('ready')}</span><span class="warn"><i></i>ติดปัญหา ${n('blocked')}</span><span class="off"><i></i>ว่าง ${n('vacant')}</span></div></div>
+    <div class="bs-rates">${rateChip('water')}${rateChip('electric')}</div>
+  </div>
+  <div class="bill-filters" role="group" aria-label="ตัวกรอง">${BILL_FILTERS.map(([k, t]) => `<button class="${state.billFilter === k ? 'active' : ''}" data-filter="${k}" aria-pressed="${state.billFilter === k}">${t}<em>${c.bills.filter(b => billMatch(b, k)).length}</em></button>`).join('')}</div>
+  ${list.length ? `<div class="bill-grid">${list.map(card).join('')}</div>` : '<div class="card card-pad"><div class="empty">ไม่มีห้องในตัวกรองนี้</div></div>'}
   </section>`;
 }
 
 function showBill(roomId) {
   const c = ctx();
   const b = c.bills.find(x => x.room.room_id === roomId);
-  const seg = t => b.lines[t].segments.map(s => `<div class="invoice-sub">${esc(s.meter_id)} · ${num(s.base)} → ${num(s.curr)} = ${num(s.units)} หน่วย${s.baseSource === 'start' ? ' (ฐาน = ค่าเริ่มตอนติดตั้ง)' : ''}</div>`).join('');
-  const line = t => { const l = b.lines[t]; return `<div class="invoice-line"><span>ค่า${L.TYPE_TH[t]} ${l.ok ? `${num(l.units)} หน่วย × ${l.rate != null ? baht(l.rate) : '?'}` : '—'}</span><strong>${baht(l.amount)}</strong></div>${seg(t)}`; };
-  openModal(`<div class="modal-head"><div><span class="eyebrow">INVOICE PREVIEW</span><h2 id="modal-title">ห้อง ${esc(roomId)} · รอบ${L.cycleLabel(state.cycle)}</h2><p class="muted" style="font-size:12px;margin:0">${b.tenancy ? `${esc(b.tenancy.tenant_name)} · ${b.tenancy.email ? esc(b.tenancy.email) : 'ยังไม่มีอีเมล'}` : 'ห้องว่าง · ไม่ออกบิลผู้เช่า'}</p></div><button type="button" aria-label="ปิด" data-action="close-modal">×</button></div>
-    <div class="invoice-paper"><h3>${esc(state.data.settings.dorm_name || 'ARIA')} · บิล${L.cycleLabel(state.cycle)}</h3><small>ค่าที่ถ่ายหลัง ${L.dateTh(b.range.from)} ถึง ${L.dateTh(b.range.to)} · พรีวิว ยังไม่ใช่เอกสารเรียกเก็บเงิน</small>
-      ${line('water')}${line('electric')}${b.includeRent && b.tenancy ? `<div class="invoice-line"><span>ค่าเช่า (รายการเสริม)</span><strong>${baht(b.rent)}</strong></div>` : ''}
-      <div class="invoice-line total"><span>รวม</span><span>${baht(b.total)}</span></div></div>
-    ${b.reasons.length ? `<div class="alert warn">${b.reasons.map(esc).join('<br>')}</div>` : ''}
-    <div class="modal-actions"><button class="btn" data-action="close-modal">ปิด</button></div>`);
+  const [label, tone] = BILL_STATE[b.state];
+  const seg = t => b.lines[t].segments.map(s => `<small class="inv-meter">${esc(s.meter_id)} · ${num(s.base)} → ${num(s.curr)}${s.baseSource === 'start' ? ' · ฐาน = ค่าตอนติดตั้ง' : ''}</small>`).join('');
+  const line = t => { const l = b.lines[t];
+    return `<div class="inv-line ${t}"><span class="bl-ic">${icon(t)}</span><div><b>ค่า${L.TYPE_TH[t]}</b><small>${l.ok ? `${num(l.units)} หน่วย × ${l.rate != null ? baht(l.rate) : '?'}` : 'ยังคำนวณไม่ได้'}</small>${seg(t)}</div><strong>${baht(l.amount)}</strong></div>`; };
+  openModal(`<div class="modal-head"><div><h2 id="modal-title">ห้อง ${esc(roomId)}</h2><p class="muted" style="font-size:12px;margin:0">รอบ${L.cycleLabel(state.cycle)}${b.tenancy ? ` · ${esc(b.tenancy.tenant_name)}` : ''}</p></div><button type="button" aria-label="ปิด" data-action="close-modal">×</button></div>
+    <div class="inv">
+      <div class="inv-top"><span class="bc-state ${tone}"><i></i>${label}</span><span class="inv-mail">${icon('mail')}${b.tenancy ? (b.tenancy.email ? esc(b.tenancy.email) : 'ยังไม่มีอีเมล') : 'ไม่มีผู้เช่า'}</span></div>
+      ${line('water')}${line('electric')}${b.includeRent && b.tenancy ? `<div class="inv-line rent"><span class="bl-ic">${icon('rooms')}</span><div><b>ค่าเช่า</b></div><strong>${baht(b.rent)}</strong></div>` : ''}
+      <div class="inv-total"><span>รวม</span><b>${baht(b.total)}</b></div>
+    </div>
+    ${b.reasons.length ? `<ul class="inv-why">${b.reasons.map(r => `<li>${icon('review')}${esc(r)}</li>`).join('')}</ul>` : ''}
+    <p class="inv-note">พรีวิว · ยังไม่ใช่เอกสารเรียกเก็บเงิน</p>
+    <div class="modal-actions">${b.reasons.some(r => r.startsWith('ยังไม่ยืนยัน')) ? `<button class="btn primary" data-page="review">ไปยืนยันค่า</button>` : ''}${b.reasons.some(r => r.startsWith('ยังไม่ตั้งอัตรา')) ? `<button class="btn primary" data-page="settings">ตั้งอัตรา</button>` : ''}<button class="btn" data-action="close-modal">ปิด</button></div>`);
 }
 
 async function toggleRent(on) {
@@ -627,45 +660,60 @@ async function exportRegistry() {
 }
 
 // ───────── ตั้งค่า ─────────
+// หน้าตั้งค่า (ออกแบบใหม่ 30 ก.ย.): หมวดละการ์ด หัวมีไอคอน · แถว "ป้าย ซ้าย / ช่องกรอก ขวา" · คำอธิบายยาวย้ายไป title/ยืนยัน
 function renderSettings(c) {
   const d = c.d;
   const s = d.settings;
   const today = L.todayBkk();
-  const rateRows = t => d.rates.filter(x => x.type === t).sort((a, b) => b.effective_from.localeCompare(a.effective_from))
-    .map(x => `<div class="setting-line"><span>${L.TYPE_TH[t]} · มีผล ${L.dateTh(x.effective_from)}${L.rateOn(d.rates, t, today) === x ? ' ' + status('ใช้อยู่', 'good') : ''}</span><strong>${baht(Number(x.baht_per_unit))} / หน่วย</strong></div>`).join('') || `<div class="setting-line"><span>${L.TYPE_TH[t]}</span><strong class="muted">ยังไม่ตั้ง</strong></div>`;
+  const sec = (ic, title, body, foot = '') => `<section class="set-card"><header class="set-head"><span class="set-ic">${icon(ic)}</span><h2>${title}</h2></header>${body}${foot ? `<footer class="set-foot">${foot}</footer>` : ''}</section>`;
+  const row = (label, ctl, hint = '') => `<label class="set-row"><span class="set-label">${label}${hint ? `<small>${hint}</small>` : ''}</span><span class="set-ctl">${ctl}</span></label>`;
+  const rateTile = t => {
+    const all = d.rates.filter(x => x.type === t).sort((a, b) => b.effective_from.localeCompare(a.effective_from));
+    const cur = L.rateOn(d.rates, t, today);
+    const future = all.filter(x => x.effective_from > today);
+    const past = all.filter(x => x !== cur && x.effective_from <= today);
+    return `<div class="rate-tile ${t} ${cur ? '' : 'missing'}"><span class="rt-top"><span class="bl-ic">${icon(t)}</span>ค่า${L.TYPE_TH[t]}</span>
+      <b>${cur ? baht(Number(cur.baht_per_unit)) : 'ยังไม่ตั้ง'}${cur ? '<small> / หน่วย</small>' : ''}</b>
+      <small>${cur ? `ตั้งแต่ ${L.dateTh(cur.effective_from)}` : 'บิลคิดไม่ได้จนกว่าจะตั้ง'}</small>
+      ${future.map(x => `<small class="rt-next">ถัดไป ${baht(Number(x.baht_per_unit))} · ${L.dateTh(x.effective_from)}</small>`).join('')}
+      ${past.length ? `<details class="rt-hist"><summary>ประวัติ ${past.length}</summary>${past.map(x => `<span>${baht(Number(x.baht_per_unit))} · ${L.dateTh(x.effective_from)}</span>`).join('')}</details>` : ''}</div>`;
+  };
   const cycles = [...d.cycles].sort((a, b) => b.cycle.localeCompare(a.cycle));
   const demoCount = ['rooms', 'meters', 'tenancies', 'readings'].reduce((n, k) => n + d[k].filter(x => x.is_demo).length, 0);
-  return `<section class="page">${pageHead('PREFERENCES', 'ตั้งค่า', 'ค่าที่เปลี่ยนตรงนี้มีผลกับการคำนวณบิลรอบที่ยังไม่ตรึง')}
-  <div class="settings-grid">
-    <div class="card settings-box"><h2>ข้อมูลหอพัก</h2>
-      <form id="settings-form" class="stack-form">
-        <label class="field">ชื่อหอ<input name="dorm_name" value="${esc(s.dorm_name)}" maxlength="120" placeholder="เช่น หอพักสุขใจ"></label>
-        <label class="field">วันตัดรอบเริ่มต้น<select name="default_cutoff_day"><option value="">สิ้นเดือน (ค่าเริ่ม)</option>${Array.from({ length: 28 }, (_, i) => i + 1).map(n => `<option value="${n}" ${s.default_cutoff_day === n ? 'selected' : ''}>วันที่ ${n}</option>`).join('')}</select></label>
-        <label class="field">Gmail ผู้ส่งบิล (ยังไม่เชื่อม · ขั้น 5)<input name="sender_email" type="email" value="${esc(s.sender_email)}" placeholder="billing.dorm@gmail.com"></label>
-        <button class="btn primary small" type="submit">บันทึก</button>
-        <p class="fine">โซนเวลา ${esc(s.timezone || 'Asia/Bangkok')} · รอบที่ตั้งวันตัดรอบเฉพาะไว้แล้วด้านล่างไม่เปลี่ยนตามค่านี้</p></form></div>
+  const email = state.user?.email || '—';
 
-    <div class="card settings-box"><h2>อัตราค่าน้ำและไฟ</h2><p>เพิ่มแถวใหม่แทนการแก้ของเดิม (append-only) · บิลใช้อัตราที่มีผล ณ วันตัดรอบ</p>
-      ${rateRows('water')}${rateRows('electric')}
-      <form id="rate-form" class="stack-form"><div class="form-row"><label class="field">ชนิด<select name="type"><option value="water">น้ำ</option><option value="electric">ไฟ</option></select></label><label class="field">บาท/หน่วย<input name="baht_per_unit" type="number" min="0.01" step="0.01" required></label><label class="field">มีผลตั้งแต่<input name="effective_from" type="date" value="${today}" required></label></div><button class="btn primary small" type="submit">เพิ่มอัตรา</button></form></div>
+  const dorm = sec('rooms', 'หอพัก', `<form id="settings-form" class="set-form">
+      ${row('ชื่อหอ', `<input name="dorm_name" value="${esc(s.dorm_name)}" maxlength="120" placeholder="หอพักสุขใจ">`)}
+      ${row('ตัดรอบทุกวันที่', `<select name="default_cutoff_day"><option value="">สิ้นเดือน</option>${Array.from({ length: 28 }, (_, i) => i + 1).map(n => `<option value="${n}" ${s.default_cutoff_day === n ? 'selected' : ''}>${n}</option>`).join('')}</select>`, 'รอบที่ตั้งเฉพาะไว้ไม่เปลี่ยนตาม')}
+      ${row('Gmail ผู้ส่งบิล', `<input name="sender_email" type="email" value="${esc(s.sender_email)}" placeholder="billing.dorm@gmail.com">`, 'ยังไม่เชื่อม · ขั้น 5')}
+      <div class="set-actions"><button class="btn primary small" type="submit">บันทึก</button></div></form>`);
 
-    <div class="card settings-box"><h2>รอบบิล</h2><p>ตรึงวันตัดรอบรายรอบ (เช่น ถ่ายช้ากว่ากำหนด) · รอบที่ไม่มีแถวใช้วันตัดรอบเริ่มต้น</p>
-      ${cycles.map(x => `<div class="setting-line"><span>${L.cycleLabel(x.cycle)} · ตัดรอบ ${L.dateTh(x.cutoff_date)}${x.include_rent ? ' · รวมค่าเช่า' : ''}</span>${status(x.state === 'closed' ? 'ปิดแล้ว' : 'เปิด', x.state === 'closed' ? '' : 'purple')}</div>`).join('') || '<div class="setting-line"><span class="muted">ยังไม่มีรอบที่ตั้งเฉพาะ</span></div>'}
-      <form id="cycle-form" class="stack-form"><div class="form-row"><label class="field">รอบ<input name="cycle" type="month" value="${esc(state.cycle)}" required></label><label class="field">วันตัดรอบ<input name="cutoff_date" type="date" value="${esc(L.cutoffFor(state.cycle, d.cycles, s))}" required></label></div><button class="btn small" type="submit">บันทึกวันตัดรอบ</button></form></div>
+  const rates = sec('baht', 'อัตราค่าน้ำค่าไฟ', `<div class="rate-tiles">${rateTile('water')}${rateTile('electric')}</div>
+    <details class="set-more"><summary>${icon('arrow')}เพิ่มอัตราใหม่</summary>
+      <form id="rate-form" class="set-inline">
+        <span class="seg" role="radiogroup" aria-label="ชนิด"><label><input type="radio" name="type" value="water" checked><span>${icon('water')}น้ำ</span></label><label><input type="radio" name="type" value="electric"><span>${icon('electric')}ไฟ</span></label></span>
+        <label class="mini-field"><small>บาท/หน่วย</small><input name="baht_per_unit" type="number" min="0.01" step="0.01" placeholder="18.00" required></label>
+        <label class="mini-field"><small>มีผลตั้งแต่</small><input name="effective_from" type="date" value="${today}" required></label>
+        <button class="btn primary small" type="submit">เพิ่ม</button>
+      </form><p class="set-hint">เพิ่มแล้วแก้/ลบไม่ได้ · เปลี่ยนราคา = เพิ่มแถวใหม่ที่มีผลวันใหม่</p></details>`);
 
-    <div class="card settings-box"><h2>บัญชี</h2><p>เข้าด้วย Google · ต้องอยู่ในรายชื่อเจ้าของหอ (ตาราง owners) ถึงเห็นข้อมูล</p>
-      <div class="setting-line"><span>ล็อกอินเป็น</span><strong>${esc(state.user?.email || '—')}</strong></div>
-      ${api.mock ? `<div class="setting-line"><span>โหมด</span>${status('จำลองบน localhost', 'warn')}</div>` : ''}
-      <div class="form-row"><button class="btn small" data-action="sign-out">ออกจากระบบ</button><button class="btn small ghost" data-action="sign-out-all">ออกจากระบบทุกอุปกรณ์</button></div>
-      <p class="fine">ออกจากระบบ = เฉพาะเครื่องนี้ · ทุกอุปกรณ์ = ใช้เมื่อลืมออกจากเครื่องอื่น หรือสงสัยว่ามีคนใช้บัญชี</p></div>
+  const cyc = sec('calendar', 'รอบบิลที่ตั้งเฉพาะ', `${cycles.length ? `<div class="cycle-list">${cycles.map(x => `<div class="cycle-item"><b>${L.cycleLabel(x.cycle)}</b><span>ตัดรอบ ${L.dateTh(x.cutoff_date)}${x.include_rent ? ' · รวมค่าเช่า' : ''}</span>${status(x.state === 'closed' ? 'ปิดแล้ว' : 'เปิด', x.state === 'closed' ? '' : 'purple')}</div>`).join('')}</div>` : '<p class="set-empty">ยังไม่มี · ทุกรอบใช้วันตัดรอบปกติ</p>'}
+    <form id="cycle-form" class="set-inline">
+      <label class="mini-field"><small>รอบ</small><input name="cycle" type="month" value="${esc(state.cycle)}" required></label>
+      <label class="mini-field"><small>วันตัดรอบ</small><input name="cutoff_date" type="date" value="${esc(L.cutoffFor(state.cycle, d.cycles, s))}" required></label>
+      <button class="btn small" type="submit">บันทึก</button></form>`);
 
-    <div class="card settings-box"><h2>ข้อมูลตัวอย่าง</h2>
-      ${demoCount ? `<p>มี ${demoCount} แถวที่ติดป้าย <code>is_demo</code> (ห้อง 101–110 · หุ่น DEMO-01) · ลบได้ครั้งเดียวทั้งหมดก่อนใช้กับหอจริง โดยรัน <code>select public.delete_demo_data();</code> ใน SQL Editor ของ Supabase (ตั้งใจไม่ใส่ปุ่มในเว็บ กันกดพลาด)</p>` : '<p>ไม่มีข้อมูลตัวอย่างแล้ว</p>'}</div>
+  const acct = sec('user', 'บัญชี', `<div class="acct"><span class="acct-av">${esc((email[0] || '?').toUpperCase())}</span><div><b>${esc(email)}</b><small>Google · เจ้าของหอ${api.mock ? ' · โหมดจำลอง' : ''}</small></div></div>`,
+    `<button class="btn small" data-action="sign-out">ออกจากระบบ</button><button class="btn small ghost" data-action="sign-out-all" title="ใช้เมื่อลืมออกจากเครื่องอื่น">ทุกอุปกรณ์</button>`);
 
-    <div class="card settings-box"><h2>เกณฑ์ที่ยังไม่ตัดสิน</h2>
-      <div class="setting-line"><span>OCR “ไม่มั่นใจ” เมื่อต่ำกว่า</span><strong>${pct(L.LOW_CONFIDENCE)}</strong></div>
-      <p class="fine">ค่าจากต้นแบบ ใช้แค่เรียงคิวและติดป้าย · ต้องเก็บจากการถ่ายมิเตอร์จริงก่อนตั้งค่าจริง (สเปก §7a J3)</p></div>
-  </div></section>`;
+  const adv = sec('settings', 'ขั้นสูง', `<div class="set-rows">
+      <div class="set-row static"><span class="set-label">OCR “ไม่มั่นใจ” ต่ำกว่า<small>ค่าจากต้นแบบ · รอข้อมูลถ่ายจริง</small></span><span class="set-ctl"><b>${pct(L.LOW_CONFIDENCE)}</b></span></div>
+      <div class="set-row static"><span class="set-label">ข้อมูลตัวอย่าง<small>${demoCount ? 'ลบด้วย SQL ใน Supabase · ตั้งใจไม่มีปุ่ม' : 'ลบแล้ว'}</small></span><span class="set-ctl">${demoCount ? status(`${demoCount} แถว`, 'warn') : status('ไม่มี', 'good')}</span></div>
+      ${demoCount ? `<code class="set-code">select public.delete_demo_data();</code>` : ''}
+      <div class="set-row static"><span class="set-label">โซนเวลา</span><span class="set-ctl"><b>${esc(s.timezone || 'Asia/Bangkok')}</b></span></div></div>`);
+
+  return `<section class="page">${pageHead('PREFERENCES', 'ตั้งค่า', 'มีผลกับบิลรอบที่ยังไม่ปิด')}
+  <div class="set-layout"><div class="set-col">${dorm}${rates}${cyc}</div><div class="set-col">${acct}${adv}</div></div></section>`;
 }
 
 async function saveSettings(form) {
@@ -748,6 +796,7 @@ document.addEventListener('click', e => {
   if (step) { state.cycle = L.shiftCycle(state.cycle, Number(step.dataset.cycleStep)); render(); return; }
   const nav = t.closest('[data-page]');
   if (nav) {
+    if (nav.closest('.modal')) closeModal();
     if (nav.dataset.reading) state.selectedReading = Number(nav.dataset.reading);
     if (nav.dataset.room) state.selectedRoom = nav.dataset.room;
     setPage(nav.dataset.page);
