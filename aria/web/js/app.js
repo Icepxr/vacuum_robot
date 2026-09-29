@@ -21,6 +21,7 @@ const iconPaths = {
   arrow: '<path d="M4 12h16m-6-6 6 6-6 6"/>',
   water: '<path d="M12 3S5 11 5 15a7 7 0 0 0 14 0c0-4-7-12-7-12Z"/>',
   electric: '<path d="m13 2-9 12h7l-1 8 10-13h-7l1-7Z"/>',
+  logout: '<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l-5-5 5-5M5 12h11"/>',
 };
 const icon = name => `<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${iconPaths[name] || iconPaths.review}</svg>`;
 const status = (text, tone = '') => `<span class="status ${tone}">${esc(text)}</span>`;
@@ -134,6 +135,8 @@ function renderChrome(c) {
   const email = state.user?.email || '';
   $('#avatar').textContent = (email[0] || '?').toUpperCase();
   $('#avatar').title = email;
+  $('#account-email').textContent = email || '—';
+  $('#side-email').textContent = email || '—';
   const dev = realDevices()[0];
   $('#dev-name').textContent = dev ? dev.device_id : 'ยังไม่มีหุ่น';
   $('#dev-seen').textContent = dev?.last_seen_at ? `ข้อมูลล่าสุดเมื่อ ${L.dateTimeTh(dev.last_seen_at)}` : 'ยังไม่เคยส่งข้อมูล';
@@ -547,7 +550,8 @@ function renderSettings(c) {
     <div class="card settings-box"><h2>บัญชี</h2><p>เข้าด้วย Google · ต้องอยู่ในรายชื่อเจ้าของหอ (ตาราง owners) ถึงเห็นข้อมูล</p>
       <div class="setting-line"><span>ล็อกอินเป็น</span><strong>${esc(state.user?.email || '—')}</strong></div>
       ${api.mock ? `<div class="setting-line"><span>โหมด</span>${status('จำลองบน localhost', 'warn')}</div>` : ''}
-      <button class="btn small" data-action="sign-out">ออกจากระบบ</button></div>
+      <div class="form-row"><button class="btn small" data-action="sign-out">ออกจากระบบ</button><button class="btn small ghost" data-action="sign-out-all">ออกจากระบบทุกอุปกรณ์</button></div>
+      <p class="fine">ออกจากระบบ = เฉพาะเครื่องนี้ · ทุกอุปกรณ์ = ใช้เมื่อลืมออกจากเครื่องอื่น หรือสงสัยว่ามีคนใช้บัญชี</p></div>
 
     <div class="card settings-box"><h2>ข้อมูลตัวอย่าง</h2>
       ${demoCount ? `<p>มี ${demoCount} แถวที่ติดป้าย <code>is_demo</code> (ห้อง 101–110 · หุ่น DEMO-01) · ลบได้ครั้งเดียวทั้งหมดก่อนใช้กับหอจริง โดยรัน <code>select public.delete_demo_data();</code> ใน SQL Editor ของ Supabase (ตั้งใจไม่ใส่ปุ่มในเว็บ กันกดพลาด)</p>` : '<p>ไม่มีข้อมูลตัวอย่างแล้ว</p>'}</div>
@@ -597,8 +601,35 @@ function setPage(page) {
   window.scrollTo({ top: 0, behavior: 'instant' });
 }
 
+// ───────── บัญชี: เมนู + ออกจากระบบ ─────────
+function toggleAccountMenu(open) {
+  const menu = $('#account-menu'), btn = $('#avatar');
+  const on = open ?? menu.hidden;
+  menu.hidden = !on;
+  btn.setAttribute('aria-expanded', String(on));
+  if (on) menu.querySelector('button')?.focus();
+}
+
+let signingOut = false;
+async function signOut(scope) {
+  if (signingOut) return;
+  if (scope === 'global' && !confirm('ออกจากระบบทุกอุปกรณ์ที่ล็อกอินบัญชีนี้ไว้?\n(มือถือ/คอมเครื่องอื่นต้องล็อกอินใหม่)')) return;
+  signingOut = true;
+  document.body.classList.add('busy');
+  try {
+    await api.signOut(scope);
+  } catch (e) {
+    // เน็ตหลุดตอนสั่ง global: ฝั่งเครื่องนี้ต้องออกให้ได้เสมอ → ล้าง session ในเครื่องแล้วบอกตามจริง
+    if (scope === 'global') { try { await api.signOut('local'); } catch (_) {} sessionStorage.setItem('aria.gate', 'global-failed'); }
+  }
+  if (!sessionStorage.getItem('aria.gate')) sessionStorage.setItem('aria.gate', scope === 'global' ? 'signed-out-all' : 'signed-out');
+  location.replace(location.pathname + (api.mock ? '?mock' : ''));
+}
+
 document.addEventListener('click', e => {
   const t = e.target;
+  // ปิดเมนูบัญชีเมื่อคลิกที่อื่น (หรือหลังเลือกเมนู)
+  if (!$('#account-menu').hidden && !t.closest('.account-head') && !t.closest('#avatar')) toggleAccountMenu(false);
   const step = t.closest('[data-cycle-step]');
   if (step) { state.cycle = L.shiftCycle(state.cycle, Number(step.dataset.cycleStep)); render(); return; }
   const nav = t.closest('[data-page]');
@@ -631,8 +662,10 @@ document.addEventListener('click', e => {
   else if (act === 'retire') retireMeter(a.dataset.meter);
   else if (act === 'move-out') moveOut(Number(a.dataset.id));
   else if (act === 'reload') location.reload();
-  else if (act === 'sign-out') api.signOut().then(() => location.reload());
-  else if (act === 'sign-in') api.signIn().catch(err => toast(`เข้าสู่ระบบไม่ได้: ${err.message}`, true));
+  else if (act === 'account-menu') toggleAccountMenu();
+  else if (act === 'sign-out') signOut('local');
+  else if (act === 'sign-out-all') signOut('global');
+  else if (act === 'sign-in') startSignIn(a);
 });
 
 const SUBMITS = {
@@ -667,17 +700,50 @@ document.addEventListener('input', e => {
 });
 
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closeModal();
+  if (e.key === 'Escape') { closeModal(); if (!$('#account-menu').hidden) { toggleAccountMenu(false); $('#avatar').focus(); } }
   if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('tr[data-room]')) { e.preventDefault(); e.target.click(); }
 });
 
 // ───────── เข้าระบบ ─────────
-function showGate(title, text, actions) {
+function showGate(title, text, actions, note = '') {
   $('#app').hidden = true;
   $('#gate').hidden = false;
   $('#gate-title').textContent = title;
   $('#gate-text').textContent = text;
   $('#gate-actions').innerHTML = actions;
+  const n = $('#gate-note');
+  n.textContent = note.text || '';
+  n.className = `gate-note ${note.tone || ''}`;
+  n.hidden = !note.text;
+}
+
+const SIGN_IN_BTN = '<button class="btn primary gate-google" data-action="sign-in"><span class="g-mark" aria-hidden="true">G</span> เข้าสู่ระบบด้วย Google</button>';
+const GATE_NOTES = {
+  'signed-out': { text: 'ออกจากระบบแล้ว', tone: 'good' },
+  'signed-out-all': { text: 'ออกจากระบบทุกอุปกรณ์แล้ว', tone: 'good' },
+  'global-failed': { text: 'ออกจากเครื่องนี้แล้ว แต่สั่งออกทุกอุปกรณ์ไม่สำเร็จ (เน็ต?) — ล็อกอินแล้วลองใหม่', tone: 'warn' },
+  expired: { text: 'เซสชันหมดอายุหรือถูกออกจากที่อื่น — เข้าสู่ระบบใหม่', tone: 'warn' },
+};
+
+async function startSignIn(btn) {
+  btn.disabled = true;
+  btn.innerHTML = 'กำลังไปหน้า Google…';
+  try { await api.signIn(); } catch (e) {
+    btn.disabled = false;
+    btn.outerHTML = SIGN_IN_BTN;
+    const n = $('#gate-note'); n.textContent = `เข้าสู่ระบบไม่ได้: ${friendlyError(e.message)}`; n.className = 'gate-note bad'; n.hidden = false;
+  }
+}
+
+// Google/Supabase ส่ง error กลับมาทาง URL (?error=… หรือ #error=…) เช่น กดยกเลิก · ต้องอ่านก่อน supabase-js จัดการ URL
+function takeAuthError() {
+  const q = new URLSearchParams(location.search), h = new URLSearchParams(location.hash.slice(1));
+  const code = q.get('error') || h.get('error');
+  if (!code) return null;
+  const desc = q.get('error_description') || h.get('error_description') || code;
+  history.replaceState(null, '', location.pathname + (q.has('mock') ? '?mock' : ''));
+  if (code === 'access_denied') return { text: 'ยกเลิกการเข้าสู่ระบบ', tone: 'warn' };
+  return { text: `Google/Supabase ปฏิเสธการเข้าสู่ระบบ: ${desc}`, tone: 'bad' };
 }
 
 async function boot() {
@@ -689,17 +755,32 @@ async function boot() {
     if (!window.supabase) return showGate('โหลดไม่สำเร็จ', 'ไฟล์ supabase-js ไม่ถูกโหลด ลองรีเฟรชหน้า', '');
     api = (await import('./api.js')).createApi();
   }
+  const urlError = takeAuthError();
+  const flag = sessionStorage.getItem('aria.gate');
+  sessionStorage.removeItem('aria.gate');
+  const note = urlError || GATE_NOTES[flag] || '';
   let session;
-  try { session = await api.session(); } catch (e) { return showGate('เชื่อมต่อไม่ได้', e.message, '<button class="btn" data-action="reload">ลองใหม่</button>'); }
+  try { session = await api.session(); } catch (e) {
+    if (/code verifier|pkce|invalid.*grant|expired/i.test(e.message)) {   // ลิงก์กลับจาก Google ใช้ซ้ำ/หมดอายุ
+      history.replaceState(null, '', location.pathname);
+      return showGate('เข้าสู่ระบบ ARIA', 'หลังบ้านสำหรับเจ้าของหอพัก · ใช้บัญชี Google ที่ได้รับสิทธิ์เท่านั้น', SIGN_IN_BTN, { text: 'ลิงก์เข้าสู่ระบบหมดอายุ — กดเข้าสู่ระบบอีกครั้ง', tone: 'warn' });
+    }
+    return showGate('เชื่อมต่อไม่ได้', friendlyError(e.message), '<button class="btn" data-action="reload">ลองใหม่</button>');
+  }
   if (!session) {
-    api.onAuthChange(s => { if (s) location.reload(); });
-    return showGate('เข้าสู่ระบบ ARIA', 'หลังบ้านสำหรับเจ้าของหอพัก · ใช้บัญชี Google ที่ได้รับสิทธิ์เท่านั้น', '<button class="btn primary" data-action="sign-in">เข้าสู่ระบบด้วย Google</button>');
+    api.onAuthChange((_ev, s) => { if (s) location.reload(); });   // ล็อกอินเสร็จในแท็บอื่น
+    return showGate('เข้าสู่ระบบ ARIA', 'หลังบ้านสำหรับเจ้าของหอพัก · ใช้บัญชี Google ที่ได้รับสิทธิ์เท่านั้น', SIGN_IN_BTN, note);
   }
   state.user = session.user;
   // ล็อกอินได้ไม่พอ ต้องอยู่ใน owners (RLS บังคับอีกชั้น — ถึงข้ามหน้านี้ไปก็ไม่เห็นข้อมูล)
   if (!(await api.isOwner().catch(() => false))) {
-    return showGate('บัญชีนี้ยังไม่ได้รับสิทธิ์', `${session.user.email || 'บัญชีนี้'} ไม่อยู่ในรายชื่อเจ้าของหอ · ให้ผู้ดูแลเพิ่มอีเมลในตาราง owners แล้วเข้าใหม่`, '<button class="btn" data-action="sign-out">ออกจากระบบ</button>');
+    return showGate('บัญชีนี้ยังไม่ได้รับสิทธิ์', `${session.user.email || 'บัญชีนี้'} ไม่อยู่ในรายชื่อเจ้าของหอ · ให้ผู้ดูแลเพิ่มอีเมลในตาราง owners แล้วเข้าใหม่`,
+      '<button class="btn primary" data-action="sign-out">ใช้บัญชีอื่น</button>');
   }
+  // ออกจากระบบในแท็บอื่น / token ถูกเพิกถอน (ออกทุกอุปกรณ์จากเครื่องอื่น) → กลับหน้าเข้าสู่ระบบ
+  api.onAuthChange(ev => {
+    if (ev === 'SIGNED_OUT' && !signingOut) { sessionStorage.setItem('aria.gate', 'expired'); location.replace(location.pathname + (api.mock ? '?mock' : '')); }
+  });
   $('#gate').hidden = true;
   $('#app').hidden = false;
   if (location.search.includes('code=')) history.replaceState(null, '', location.pathname + (api.mock ? '?mock' : ''));

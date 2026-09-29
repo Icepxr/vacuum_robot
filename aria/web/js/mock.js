@@ -44,10 +44,11 @@ export function createMockApi() {
   const USER = 'mock-user';
   return {
     mock: true,
-    async session() { return { user: { id: USER, email: 'owner@example.com' } }; },
+    // จำลองสถานะล็อกอินด้วย sessionStorage ให้ลองหน้าเข้า/ออกระบบบน localhost ได้
+    async session() { return sessionStorage.getItem('mock.out') ? null : { user: { id: USER, email: 'owner@example.com' } }; },
     onAuthChange() {},
-    async signIn() {},
-    async signOut() { location.href = location.pathname; },
+    async signIn() { sessionStorage.removeItem('mock.out'); setTimeout(() => location.reload(), 300); },
+    async signOut() { sessionStorage.setItem('mock.out', '1'); },
     async isOwner() { return true; },
     async loadAll() { return clone(d); },
     async addEvent(ev) { apply({ ...ev, actor: USER }); },

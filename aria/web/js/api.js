@@ -23,12 +23,14 @@ export function createApi() {
   return {
     mock: false,
     async session() { return must(await sb.auth.getSession()).session; },
-    onAuthChange(cb) { sb.auth.onAuthStateChange((_e, s) => cb(s)); },
+    onAuthChange(cb) { sb.auth.onAuthStateChange((event, s) => cb(event, s)); },
     async signIn() {
       const redirectTo = location.origin + location.pathname;
-      must(await sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo } }));
+      // prompt=select_account: ให้เลือกบัญชีทุกครั้ง (สลับบัญชีได้ ไม่ติดบัญชี Google ที่ค้างในเบราว์เซอร์)
+      must(await sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo, queryParams: { prompt: 'select_account' } } }));
     },
-    async signOut() { await sb.auth.signOut(); },
+    // supabase-js ตั้งค่าเริ่ม scope = 'global' (ออกทุกอุปกรณ์) → ปุ่มปกติใช้ 'local' = เฉพาะเครื่องนี้
+    async signOut(scope = 'local') { must(await sb.auth.signOut({ scope })); },
     async isOwner() { return must(await sb.rpc('is_owner')) === true; },
 
     async loadAll() {
