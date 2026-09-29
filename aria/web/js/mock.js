@@ -21,6 +21,15 @@ export function createMockApi() {
   const done = ['W-101-01', 'E-101-01', 'W-102-01', 'E-102-01', 'W-103-01', 'E-105-01', 'W-106-01', 'E-106-01', 'W-107-01', 'E-107-01', 'W-108-01', 'W-110-01', 'E-110-01'];
   for (const r of d.readings) if (done.includes(r.meter_id)) apply({ reading_id: r.id, event: 'confirmed', confirmed_value: r.value, actor: null });
 
+  // ?mock=empty → สภาพหลัง delete_demo_data() (30 ก.ย.): ไม่มีห้อง/มิเตอร์/ผู้เช่า · เหลือค่าจริงจาก ARIA-001 3 แถว (OCR อ่านไม่ออก · ยังไม่ผูก)
+  if (new URLSearchParams(location.search).get('mock') === 'empty') {
+    d.rooms = []; d.meters = []; d.tenancies = []; d.events = []; d.readings = [];
+    [['101', 'water', 'ocr'], ['102', 'electric', 'rejected'], ['103', 'electric', 'ocr']].forEach(([room, type, st], i) =>
+      d.readings.push({ ...mk(30 + i, room, type, null, 0, `${type === 'water' ? 'W' : 'E'}-${room}-01`), device_id: 'ARIA-001', raw_text: null, status: st, is_demo: false }));
+    d.rates.push({ id: 1, type: 'water', baht_per_unit: 18, effective_from: '2026-09-01' }, { id: 2, type: 'electric', baht_per_unit: 7, effective_from: '2026-09-01' });
+    d.settings.dorm_name = 'Aria-Dorm';
+  }
+
   // จำลอง trigger reading_events_before/after_insert
   function apply(ev) {
     const r = d.readings.find(x => x.id === ev.reading_id);

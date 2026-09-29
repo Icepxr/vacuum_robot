@@ -172,6 +172,7 @@ function attentionItems(c) {
   if (lc.length) push('amber', 'scan', `OCR ไม่มั่นใจ ${lc.length} ค่า`, `ความมั่นใจต่ำกว่า ${pct(L.LOW_CONFIDENCE)}`, firstAttr(lc[0]), 'ดูรูป');
   const ck = by('clock');
   if (ck.length) push('amber', 'clock', `เวลาจาก Pi ยังไม่ยืนยัน ${ck.length} ค่า`, 'ตรวจว่าเข้ารอบบิลถูกเดือน', firstAttr(ck[0]), 'ตรวจ');
+  if (!c.rooms.length) push('red', 'rooms', 'ยังไม่มีห้องในทะเบียน', 'เพิ่มห้อง ผู้เช่า และมิเตอร์ก่อน หุ่นถึงผูกค่าได้', 'data-page="rooms"', 'เพิ่มห้อง');
   const missing = c.rooms.filter(r => c.capture.get(r.room_id).meters.length && !c.capture.get(r.room_id).captured);
   if (missing.length) push('amber', 'camera', `ยังไม่มีค่าในรอบนี้ ${missing.length} ห้อง`, `ห้อง ${missing.slice(0, 8).map(r => esc(r.room_id)).join(', ')}${missing.length > 8 ? ' …' : ''}`, `data-page="rooms" data-room="${esc(missing[0].room_id)}"`, 'ดูห้อง');
   const noMeter = c.rooms.filter(r => !c.capture.get(r.room_id).meters.length);
@@ -234,9 +235,9 @@ function cycleSteps(c, { total, captured, pendingInCycle, ready, blocked }) {
   const confirmedRooms = withMeters.filter(r => c.capture.get(r.room_id).confirmed).length;
   const billable = c.bills.filter(b => b.state !== 'vacant').length;
   const steps = [
-    { ic: 'camera', name: 'อ่านมิเตอร์', n: captured, d: total, unit: 'ห้อง', hint: total - captured ? `ยังขาด ${total - captured} ห้อง` : 'ครบทุกห้อง', page: 'rooms' },
+    { ic: 'camera', name: 'อ่านมิเตอร์', n: captured, d: total, unit: 'ห้อง', hint: !total ? 'ยังไม่มีห้องที่ติดมิเตอร์' : total - captured ? `ยังขาด ${total - captured} ห้อง` : 'ครบทุกห้อง', page: 'rooms' },
     { ic: 'review', name: 'ยืนยันค่า', n: confirmedRooms, d: total, unit: 'ห้อง', hint: c.queue.length ? `รอยืนยัน ${c.queue.length} ค่า${pendingInCycle !== c.queue.length ? ` (รอบนี้ ${pendingInCycle})` : ''}` : 'ไม่มีค่าค้าง', page: 'review', hot: c.queue.length > 0 },
-    { ic: 'bills', name: 'คิดบิล', n: ready, d: billable, unit: 'ห้อง', hint: blocked ? `ข้อมูลไม่ครบ ${blocked} ห้อง` : 'พร้อมทุกห้อง', page: 'bills' },
+    { ic: 'bills', name: 'คิดบิล', n: ready, d: billable, unit: 'ห้อง', hint: !billable ? 'ยังไม่มีห้องที่มีผู้เช่า' : blocked ? `ข้อมูลไม่ครบ ${blocked} ห้อง` : 'พร้อมทุกห้อง', page: 'bills' },
     { ic: 'mail', name: 'ส่งอีเมล', off: true, hint: 'เปิดใช้ในขั้น 5' },
   ];
   const html = steps.map((x, i) => {
@@ -252,6 +253,28 @@ function cycleSteps(c, { total, captured, pendingInCycle, ready, blocked }) {
       <span class="cs-hint">${x.hint}</span></${tag}>`;
   }).join('<span class="cs-link" aria-hidden="true"></span>');
   return `<div class="cycle-steps" aria-label="ความคืบหน้ารอบบิล">${html}</div>`;
+}
+// เริ่มต้นใช้งาน (เปิดใช้จริง 30 ก.ย. · ลบข้อมูลเดโมแล้ว): โชว์จนกว่าจะครบ 5 ขั้น · แต่ละขั้นเช็คจากข้อมูลจริง
+const REGISTRY_RESET = '2026-09-29T17:00:00Z'; // = 30 ก.ย. 00:00 เวลาไทย · ลบข้อมูลเดโม · meters.json ที่ส่งออกก่อนหน้านี้มีแต่มิเตอร์เดโม
+const markMetersChanged = () => { try { localStorage.setItem('aria.metersChangedAt', new Date().toISOString()); } catch {} render(); };
+function onboarding(c) {
+  const d = c.d, today = L.todayBkk();
+  const live = d.meters.filter(m => L.meterActiveOn(m, today));
+  // ตาราง meters ไม่มีเวลาสร้าง → นับว่าส่งออกแล้วเมื่อส่งออกหลังการลบเดโม (REGISTRY_RESET) และหลังแก้มิเตอร์ครั้งล่าสุดในเบราว์เซอร์นี้
+  let changed = REGISTRY_RESET;
+  try { changed = [changed, localStorage.getItem('aria.metersChangedAt') || ''].sort().pop(); } catch {}
+  const exported = !!d.lastExport && live.length > 0 && d.lastExport.exported_at > changed;
+  const steps = [
+    ['ตั้งชื่อหอ', !!d.settings.dorm_name, 'settings'],
+    ['ตั้งอัตราค่าน้ำค่าไฟ', L.TYPES.every(t => L.rateOn(d.rates, t, c.range.to)), 'settings'],
+    ['เพิ่มห้อง', d.rooms.length > 0, 'rooms'],
+    ['เพิ่มผู้เช่าและมิเตอร์', d.tenancies.length > 0 && live.length > 0, 'rooms'],
+    ['ส่งออกให้หุ่น', !!exported, 'rooms'],
+  ];
+  if (steps.every(x => x[1])) return '';
+  const next = steps.findIndex(x => !x[1]);
+  return `<section class="onb"><div class="onb-head"><b>เริ่มต้นใช้งาน</b><span>${steps.filter(x => x[1]).length} / ${steps.length}</span></div>
+    <div class="onb-steps">${steps.map(([t, ok, page], i) => `<button class="onb-step ${ok ? 'ok' : i === next ? 'next' : ''}" data-page="${page}"><span class="onb-dot">${ok ? icon('check') : i + 1}</span>${t}</button>`).join('')}</div></section>`;
 }
 function renderHome(c) {
   const withMeters = c.rooms.filter(r => c.capture.get(r.room_id).meters.length);
@@ -270,6 +293,7 @@ function renderHome(c) {
     <div class="hero-progress"><svg viewBox="0 0 180 180" aria-hidden="true"><circle class="progress-track" cx="90" cy="90" r="74"/><circle class="progress-value" cx="90" cy="90" r="74" pathLength="100" stroke-dasharray="${ratio} 100"/></svg><div class="progress-copy"><span>อ่านครบแล้ว</span><strong>${captured}<small> / ${total}</small></strong><span>ห้อง</span></div><span class="progress-caption">METER CAPTURE / THIS CYCLE</span></div>
   </div>
   ${hasDemo() ? `<div class="demo-note">${icon('review')}<span>ฐานข้อมูลนี้มีข้อมูลตัวอย่าง (ห้อง 101–110 · หุ่น DEMO-01) ปนอยู่ · ลบได้ก่อนใช้กับหอจริง ดูหน้าตั้งค่า</span></div>` : ''}
+  ${onboarding(c)}
   ${cycleSteps(c, { total, captured, pendingInCycle, ready, blocked })}
   <div class="grid two-col">
     <div class="card card-pad"><div class="card-head"><div><h2>ต้องดูก่อน</h2><p>สิ่งที่อาจทำให้บิลคลาดเคลื่อน</p></div><button class="text-link" data-page="review">ไปหน้ายืนยัน →</button></div>
@@ -526,6 +550,7 @@ async function toggleRent(on) {
 }
 
 // ───────── ห้องและมิเตอร์ ─────────
+// หน้าห้องและมิเตอร์ (ออกแบบใหม่ 30 ก.ย.): รายการห้องแบบแถวกระชับ (ซ้าย) · รายละเอียดห้องเป็นการ์ดหมวด ผู้เช่า / มิเตอร์ (ขวา)
 function renderRooms(c) {
   const d = c.d;
   const today = L.todayBkk();
@@ -538,17 +563,28 @@ function renderRooms(c) {
     return hay.includes(qy);
   });
   if (!state.selectedRoom || !d.rooms.some(r => r.room_id === state.selectedRoom)) state.selectedRoom = rooms[0]?.room_id ?? null;
+  const activeMeters = d.meters.filter(m => L.meterActiveOn(m, today));
   const exp = d.lastExport ? `ส่งออกล่าสุด v${d.lastExport.version} · ${L.dateTimeTh(d.lastExport.exported_at)}` : 'ยังไม่เคยส่งออก';
+  const item = r => {
+    const t = tenantNow(r.room_id);
+    const has = type => activeMeters.some(m => m.room_id === r.room_id && m.type === type);
+    return `<button class="rm-item ${r.room_id === state.selectedRoom ? 'active' : ''}" data-room="${esc(r.room_id)}" aria-current="${r.room_id === state.selectedRoom}">
+      <span class="rm-no">${esc(r.room_id)}</span>
+      <span class="rm-who"><b>${t ? esc(t.tenant_name) : 'ห้องว่าง'}</b>${t && !t.email ? `<small class="rm-warn">ไม่มีอีเมล</small>` : ''}</span>
+      <span class="rm-ms">${L.TYPES.map(type => `<span class="mr-ic ${type} ${has(type) ? 'have' : 'off'}" title="${L.TYPE_TH[type]}${has(type) ? '' : ' · ไม่มีมิเตอร์'}">${icon(type)}</span>`).join('')}</span></button>`;
+  };
   return `<section class="page">
-  ${pageHead('REGISTRY', 'ห้องและมิเตอร์', `${d.rooms.length} ห้อง · มิเตอร์ที่ติดตั้งอยู่ ${d.meters.filter(m => L.meterActiveOn(m, today)).length} ตัว · ${exp}`, `<button class="btn" data-action="export">ส่งออก meters.json ให้ Pi</button>`)}
-  <div class="room-layout"><div class="card">
-    <div class="card-pad room-tools"><input id="room-search" type="search" placeholder="ค้นห้อง ชื่อผู้เช่า อีเมล หรือรหัสมิเตอร์" value="${esc(state.roomQuery)}"><form id="room-add" class="inline-form"><input name="room_id" placeholder="เลขห้องใหม่" maxlength="10" pattern="[A-Za-z0-9]{1,10}" required><input name="floor" placeholder="ชั้น" maxlength="4"><button class="btn small" type="submit">เพิ่มห้อง</button></form></div>
-    <div class="table-wrap"><table class="data-table" style="min-width:520px"><thead><tr><th>ห้อง</th><th>ผู้เช่าปัจจุบัน</th><th>มิเตอร์ที่ติดตั้ง</th></tr></thead><tbody>${rooms.map(r => {
-      const t = tenantNow(r.room_id);
-      const ms = d.meters.filter(m => m.room_id === r.room_id && L.meterActiveOn(m, today));
-      return `<tr class="room-row ${r.room_id === state.selectedRoom ? 'selected' : ''}" data-room="${esc(r.room_id)}" tabindex="0"><td class="room-label">${esc(r.room_id)}${r.is_demo ? ' <small class="muted">demo</small>' : ''}</td><td>${t ? esc(t.tenant_name) : '— ว่าง'}<br><small class="muted">${t ? (t.email ? esc(t.email) : 'ไม่มีอีเมล') : ''}</small></td><td><small>${ms.map(m => esc(m.meter_id)).join('<br>') || 'ไม่มี'}</small></td></tr>`;
-    }).join('') || '<tr><td colspan="3" class="empty">ไม่พบห้อง</td></tr>'}</tbody></table></div></div>
-    ${state.selectedRoom ? roomDetail(state.selectedRoom, c) : '<div class="card room-detail"><div class="empty">เพิ่มห้องแรกทางซ้าย</div></div>'}
+  ${pageHead('REGISTRY', 'ห้องและมิเตอร์', `${d.rooms.length} ห้อง · มิเตอร์ ${activeMeters.length} ตัว`, `<button class="btn" data-action="export" title="${esc(exp)} · นำไฟล์ไปวางที่ ~/mrc/data/ บน Pi">${icon('upload')}ส่งออกให้หุ่น</button>`)}
+  <div class="rm-layout">
+    <aside class="rm-list">
+      <div class="rm-search">${icon('scan')}<input id="room-search" type="search" placeholder="ค้นห้อง ผู้เช่า รหัสมิเตอร์" value="${esc(state.roomQuery)}" aria-label="ค้นหา"></div>
+      <div class="rm-items">${rooms.map(item).join('') || `<div class="set-empty">${d.rooms.length ? 'ไม่พบห้อง' : 'ยังไม่มีห้อง · เพิ่มห้องแรกด้านล่าง'}</div>`}</div>
+      <details class="set-more rm-add" ${d.rooms.length ? '' : 'open'}><summary>${icon('arrow')}เพิ่มห้อง</summary><form id="room-add" class="set-inline">
+        <label class="mini-field"><small>เลขห้อง</small><input name="room_id" placeholder="111" maxlength="10" pattern="[A-Za-z0-9]{1,10}" required></label>
+        <label class="mini-field"><small>ชั้น</small><input name="floor" placeholder="1" maxlength="4"></label>
+        <button class="btn primary small" type="submit">เพิ่ม</button></form></details>
+    </aside>
+    <div class="rm-detail">${state.selectedRoom ? roomDetail(state.selectedRoom, c) : '<section class="set-card"><p class="set-empty">เลือกหรือเพิ่มห้องทางซ้าย · ห้อง → ผู้เช่า → มิเตอร์ → ส่งออกให้หุ่น</p></section>'}</div>
   </div></section>`;
 }
 
@@ -558,47 +594,59 @@ function roomDetail(roomId, c) {
   const room = d.rooms.find(r => r.room_id === roomId);
   const ts = d.tenancies.filter(t => t.room_id === roomId).sort((a, b) => b.start_date.localeCompare(a.start_date));
   const cur = L.tenancyOn(d.tenancies, roomId, today);
+  const past = ts.filter(t => t !== cur);
   const ms = d.meters.filter(m => m.room_id === roomId).sort((a, b) => a.type.localeCompare(b.type) || b.installed_at.localeCompare(a.installed_at));
+  const live = ms.filter(m => L.meterActiveOn(m, today));
+  const retired = ms.filter(m => !L.meterActiveOn(m, today));
   const readingsOf = id => d.readings.filter(r => L.readingMeterId(r, mIdx) === id).sort((a, b) => b.captured_at.localeCompare(a.captured_at));
   const unbound = d.readings.filter(r => r.room_id === roomId && !L.readingMeterId(r, mIdx));
-  const meterCard = m => {
+  const row = (label, ctl, hint = '') => `<label class="set-row"><span class="set-label">${label}${hint ? `<small>${hint}</small>` : ''}</span><span class="set-ctl">${ctl}</span></label>`;
+  const CHIP = { confirmed: 'ยืนยันแล้ว', ocr: 'รอยืนยัน', rejected: 'ปฏิเสธ' };
+  const meterTile = m => {
     const active = L.meterActiveOn(m, today);
     const rs = readingsOf(m.meter_id);
     const lastConf = rs.find(r => r.status === 'confirmed');
-    return `<div class="meter-card ${active ? '' : 'retired'}"><div><b>${icon(m.type)} ${L.TYPE_TH[m.type]} · ${esc(m.meter_id)}</b>
-      <small>ติดตั้ง ${L.dateTh(m.installed_at)} · ค่าเริ่ม ${num(Number(m.start_value))}${m.retired_at ? ` · ปลด ${L.dateTh(m.retired_at)} ค่าสุดท้าย ${num(m.end_value == null ? null : Number(m.end_value))}` : ''} · ${m.digits} หลัก ทศนิยม ${m.decimals}</small>
-      <small>ยืนยันล่าสุด ${lastConf ? `${num(Number(lastConf.confirmed_value))} (${L.dateTh(L.bkkDate(lastConf.captured_at))})` : '—'}</small>
-      ${rs.length ? `<div class="reading-chips">${rs.slice(0, 6).map(r => `<button class="chip ${r.status}" data-page="review" data-reading="${r.id}" title="${esc(r.status)}">${L.dateTh(L.bkkDate(r.captured_at))} · ${num(r.confirmed_value ?? r.value)}</button>`).join('')}</div>` : ''}
-    </div>${active ? `<button class="btn small ghost" data-action="retire" data-meter="${esc(m.meter_id)}">ปลด/เปลี่ยน</button>` : status('ปลดแล้ว', '')}</div>`;
+    const pend = rs.find(r => r.status === 'ocr');
+    return `<div class="mt ${m.type} ${active ? '' : 'retired'}">
+      <div class="mt-head"><span class="bl-ic">${icon(m.type)}</span><span class="mt-id"><b>${esc(m.meter_id)}</b><small>${L.TYPE_TH[m.type]} · ${m.digits} หลัก${m.decimals ? ` ทศนิยม ${m.decimals}` : ''}</small></span>
+        ${active ? `<button class="mt-retire" data-action="retire" data-meter="${esc(m.meter_id)}" title="ปลด/เปลี่ยนมิเตอร์">ปลด</button>` : status('ปลดแล้ว', '')}</div>
+      <div class="mt-val ${!lastConf && pend ? 'pending' : ''}"><b>${lastConf ? num(Number(lastConf.confirmed_value)) : pend ? num(pend.value) : '—'}</b><small>${lastConf ? `ยืนยัน ${L.dateTh(L.bkkDate(lastConf.captured_at))}` : pend ? `OCR ${L.dateTh(L.bkkDate(pend.captured_at))} · รอยืนยัน` : 'ยังไม่มีค่า'}</small></div>
+      ${rs.length ? `<div class="mt-hist">${rs.slice(0, 4).map(r => `<button class="mt-chip ${r.status}" data-page="review" data-reading="${r.id}" title="${CHIP[r.status] || r.status}"><i></i>${num(r.confirmed_value ?? r.value)}<small>${L.dateTh(L.bkkDate(r.captured_at)).replace(/ \d{4}$/, '')}</small></button>`).join('')}</div>` : ''}
+      <small class="mt-meta">ติดตั้ง ${L.dateTh(m.installed_at)} · เริ่ม ${num(Number(m.start_value))}${m.retired_at ? ` · ปลด ${L.dateTh(m.retired_at)} · สุดท้าย ${num(m.end_value == null ? null : Number(m.end_value))}` : ''}</small></div>`;
   };
   const nextW = L.nextMeterId(d.meters, roomId, 'water');
-  return `<div class="card room-detail">
-    <div class="card-head"><div><h2>ห้อง ${esc(roomId)}</h2><p>ชั้น ${esc(room.floor || '—')}${room.is_demo ? ' · ข้อมูลตัวอย่าง' : ''}</p></div>${status(cur ? 'มีผู้เช่า' : 'ห้องว่าง', cur ? 'good' : 'purple')}</div>
 
-    <h3>ผู้เช่าปัจจุบัน</h3>
-    ${cur ? `<form id="tenancy-edit" class="stack-form" data-id="${cur.id}">
-      <label class="field">ชื่อผู้เช่า<input name="tenant_name" value="${esc(cur.tenant_name)}" required maxlength="120"></label>
-      <label class="field">อีเมลรับบิล<input name="email" type="email" value="${esc(cur.email)}" placeholder="ไม่มี = ดูบิลได้ ส่งไม่ได้"></label>
-      <label class="field">ค่าเช่า (บาท/เดือน · ใช้เมื่อเปิดรวมค่าเช่า)<input name="rent_baht" type="number" min="0" step="0.01" value="${esc(cur.rent_baht)}"></label>
-      <div class="form-row"><button class="btn primary small" type="submit">บันทึก</button><button class="btn small danger" type="button" data-action="move-out" data-id="${cur.id}">ย้ายออก</button></div>
-      <p class="fine">เข้าอยู่ ${L.dateTh(cur.start_date)}${cur.end_date ? ` · ถึง ${L.dateTh(cur.end_date)}` : ''}</p></form>`
-    : `<form id="tenancy-add" class="stack-form">
-      <label class="field">ชื่อผู้เช่า<input name="tenant_name" required maxlength="120"></label>
-      <label class="field">อีเมลรับบิล<input name="email" type="email" placeholder="เว้นว่างได้"></label>
-      <div class="form-row"><label class="field">วันเข้าอยู่<input name="start_date" type="date" value="${today}" required></label><label class="field">ค่าเช่า (บาท)<input name="rent_baht" type="number" min="0" step="0.01"></label></div>
-      <button class="btn primary small" type="submit">เพิ่มผู้เช่า</button></form>`}
-    ${ts.filter(t => t !== cur).length ? `<details class="more"><summary>ประวัติผู้เช่า (${ts.filter(t => t !== cur).length})</summary>${ts.filter(t => t !== cur).map(t => `<div class="setting-line"><span>${esc(t.tenant_name)}</span><small>${L.dateTh(t.start_date)} – ${t.end_date ? L.dateTh(t.end_date) : 'ยังอยู่ (เริ่มในอนาคต)'}</small></div>`).join('')}</details>` : ''}
+  const head = `<header class="rd-head"><span class="rd-no">${esc(roomId)}</span><div><b>ห้อง ${esc(roomId)}</b><small>ชั้น ${esc(room.floor || '—')}${room.is_demo ? ' · ข้อมูลตัวอย่าง' : ''}</small></div>${status(cur ? 'มีผู้เช่า' : 'ห้องว่าง', cur ? 'good' : 'purple')}</header>`;
 
-    <div class="divider"></div><h3>มิเตอร์</h3>
-    ${ms.map(meterCard).join('') || '<div class="empty">ยังไม่มีมิเตอร์</div>'}
-    ${unbound.length ? `<div class="alert warn">มี ${unbound.length} ค่าที่คนขับเลือกห้องนี้แต่ยังไม่ผูกมิเตอร์ · <button class="text-link" data-page="review" data-reading="${unbound[0].id}">ไปผูก →</button></div>` : ''}
-    <details class="more"><summary>เพิ่มมิเตอร์</summary><form id="meter-add" class="stack-form">
-      <div class="form-row"><label class="field">ชนิด<select name="type"><option value="water">น้ำ</option><option value="electric">ไฟ</option></select></label><label class="field">รหัส (อัตโนมัติ)<input name="meter_id" value="${esc(nextW)}" readonly></label></div>
-      <div class="form-row"><label class="field">จำนวนหลัก<input name="digits" type="number" min="1" max="9" value="5" required></label><label class="field">ทศนิยม<input name="decimals" type="number" min="0" max="4" value="0" required></label></div>
-      <div class="form-row"><label class="field">วันติดตั้ง<input name="installed_at" type="date" value="${today}" required></label><label class="field">ค่าเริ่ม (ตัวเลขบนหน้าปัดวันติดตั้ง)<input name="start_value" type="number" min="0" step="any" value="0" required></label></div>
-      <button class="btn primary small" type="submit">เพิ่มมิเตอร์</button>
-      <p class="fine">เปลี่ยนตัวมิเตอร์ = ปลดตัวเก่า (ใส่ค่าสุดท้าย) แล้วเพิ่มตัวใหม่วันเดียวกัน · รหัสใหม่ต่อเลขเสมอ ไม่ใช้ซ้ำ · อย่าลืมส่งออก meters.json ให้ Pi</p></form></details>
-  </div>`;
+  const tenant = `<section class="set-card"><header class="set-head"><span class="set-ic">${icon('user')}</span><h2>ผู้เช่า</h2>${cur ? `<small class="set-sub">เข้าอยู่ ${L.dateTh(cur.start_date)}${cur.end_date ? ` – ${L.dateTh(cur.end_date)}` : ''}</small>` : ''}</header>
+    ${cur ? `<form id="tenancy-edit" class="set-form" data-id="${cur.id}">
+      ${row('ชื่อ', `<input name="tenant_name" value="${esc(cur.tenant_name)}" required maxlength="120">`)}
+      ${row('อีเมลรับบิล', `<input name="email" type="email" value="${esc(cur.email)}" placeholder="เว้นว่าง = ส่งบิลไม่ได้">`)}
+      ${row('ค่าเช่า / เดือน', `<input name="rent_baht" type="number" min="0" step="0.01" value="${esc(cur.rent_baht)}" placeholder="฿">`, 'ใช้เมื่อเปิดรวมค่าเช่า')}
+      <div class="set-actions"><button class="btn small danger" type="button" data-action="move-out" data-id="${cur.id}">ย้ายออก</button><button class="btn primary small" type="submit">บันทึก</button></div></form>`
+    : `<form id="tenancy-add" class="set-form">
+      ${row('ชื่อ', '<input name="tenant_name" required maxlength="120" placeholder="ชื่อผู้เช่า">')}
+      ${row('อีเมลรับบิล', '<input name="email" type="email" placeholder="เว้นว่างได้">')}
+      ${row('วันเข้าอยู่', `<input name="start_date" type="date" value="${today}" required>`)}
+      ${row('ค่าเช่า / เดือน', '<input name="rent_baht" type="number" min="0" step="0.01" placeholder="฿">')}
+      <div class="set-actions"><button class="btn primary small" type="submit">เพิ่มผู้เช่า</button></div></form>`}
+    ${past.length ? `<details class="rt-hist rd-past"><summary>ผู้เช่าก่อนหน้า ${past.length}</summary>${past.map(t => `<span>${esc(t.tenant_name)} · ${L.dateTh(t.start_date)} – ${t.end_date ? L.dateTh(t.end_date) : 'เริ่มในอนาคต'}</span>`).join('')}</details>` : ''}</section>`;
+
+  const meters = `<section class="set-card"><header class="set-head"><span class="set-ic">${icon('camera')}</span><h2>มิเตอร์</h2></header>
+    ${unbound.length ? `<button class="bot-warn rd-unbound" data-page="review" data-reading="${unbound[0].id}">${icon('link')}มี ${unbound.length} ค่าที่ยังไม่ผูกมิเตอร์ · ไปผูก</button>` : ''}
+    ${live.length ? `<div class="mt-grid">${live.map(meterTile).join('')}</div>` : '<p class="set-empty">ยังไม่มีมิเตอร์ที่ใช้อยู่</p>'}
+    ${retired.length ? `<details class="rt-hist rd-past"><summary>มิเตอร์ที่ปลดแล้ว ${retired.length}</summary><div class="mt-grid">${retired.map(meterTile).join('')}</div></details>` : ''}
+    <details class="set-more"><summary>${icon('arrow')}เพิ่มมิเตอร์</summary><form id="meter-add" class="set-inline">
+      <span class="seg" role="radiogroup" aria-label="ชนิด"><label><input type="radio" name="type" value="water" checked><span>${icon('water')}น้ำ</span></label><label><input type="radio" name="type" value="electric"><span>${icon('electric')}ไฟ</span></label></span>
+      <label class="mini-field"><small>รหัส</small><input name="meter_id" value="${esc(nextW)}" readonly></label>
+      <label class="mini-field"><small>จำนวนหลัก</small><input name="digits" type="number" min="1" max="9" value="5" required></label>
+      <label class="mini-field"><small>ทศนิยม</small><input name="decimals" type="number" min="0" max="4" value="0" required></label>
+      <label class="mini-field"><small>วันติดตั้ง</small><input name="installed_at" type="date" value="${today}" required></label>
+      <label class="mini-field"><small>ค่าบนหน้าปัดวันติดตั้ง</small><input name="start_value" type="number" min="0" step="any" value="0" required></label>
+      <button class="btn primary small" type="submit">เพิ่ม</button></form>
+      <p class="set-hint">เปลี่ยนมิเตอร์ = ปลดตัวเก่าแล้วเพิ่มตัวใหม่วันเดียวกัน · เพิ่มเสร็จกด “ส่งออกให้หุ่น”</p></details></section>`;
+
+  return `${head}${tenant}${meters}`;
 }
 
 async function addRoom(form) {
@@ -631,7 +679,7 @@ async function addMeter(form) {
   const type = f.get('type');
   const row = { meter_id: L.nextMeterId(state.data.meters, state.selectedRoom, type), room_id: state.selectedRoom, type,
     digits: Number(f.get('digits')), decimals: Number(f.get('decimals')), installed_at: f.get('installed_at'), start_value: Number(f.get('start_value')) };
-  await write(() => api.addMeter(row), `เพิ่ม ${row.meter_id} แล้ว · อย่าลืมส่งออก meters.json`);
+  if (await write(() => api.addMeter(row), `เพิ่ม ${row.meter_id} แล้ว · อย่าลืมส่งออกให้หุ่น`)) markMetersChanged();
 }
 
 async function retireMeter(id) {
@@ -643,7 +691,7 @@ async function retireMeter(id) {
   if (endRaw === null) return;
   const end = endRaw.trim() === '' ? null : Number(endRaw);
   if (end != null && (!Number.isFinite(end) || end < 0)) return toast('ค่าสุดท้ายต้องเป็นตัวเลขไม่ติดลบ', true);
-  await write(() => api.updateMeter(id, { retired_at: date, end_value: end }), `ปลด ${id} แล้ว · เพิ่มตัวใหม่ได้ที่ “เพิ่มมิเตอร์”`);
+  if (await write(() => api.updateMeter(id, { retired_at: date, end_value: end }), `ปลด ${id} แล้ว · เพิ่มตัวใหม่ได้ที่ “เพิ่มมิเตอร์”`)) markMetersChanged();
 }
 
 // meters.json → ดาวน์โหลดแล้ว scp ไป ~/mrc/data/meters.json บน Pi (aria/README.md)
@@ -811,7 +859,11 @@ document.addEventListener('click', e => {
     return;
   }
   const room = t.closest('[data-room]');
-  if (room) { state.selectedRoom = room.dataset.room; render(); return; }
+  if (room) {
+    state.selectedRoom = room.dataset.room; render();
+    if (room.classList.contains('rm-item') && matchMedia('(max-width: 1000px)').matches) $('.rm-detail')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
   const filter = t.closest('[data-filter]');
   if (filter) { state.billFilter = filter.dataset.filter; render(); return; }
   const bill = t.closest('[data-bill]');
@@ -918,7 +970,7 @@ async function boot() {
   document.querySelectorAll('[data-icon]').forEach(n => { n.innerHTML = icon(n.dataset.icon); });
   const local = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
   if (local && new URLSearchParams(location.search).has('mock')) {
-    api = (await import('./mock.js?v=w13')).createMockApi();
+    api = (await import('./mock.js?v=w31')).createMockApi();
   } else {
     if (!window.supabase) return showGate('Failed to load', '', '<button class="gate-google plain" data-action="reload"><span>Reload</span></button>');
     api = (await import('./api.js?v=w13')).createApi();

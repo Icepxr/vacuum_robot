@@ -7,8 +7,8 @@
 |---|---|
 | `supabase/migrations/…0100_core_schema.sql` | apply แล้ว — 11 ตาราง · RLS (anon ทำอะไรไม่ได้ · เจ้าของหอผ่าน `owners`) · trigger ค่ายืนยันห้ามถอยหลัง |
 | `supabase/migrations/…0200_ingest.sql` | apply แล้ว — `ingest_readings/heartbeat/crop_attach` (service role เท่านั้น) · bucket `crops` private |
-| `supabase/migrations/…0300_demo_seed.sql` | apply แล้ว — ห้อง 101–110 · 20 มิเตอร์ · ผู้เช่าสมมติ (`is_demo`) · ลบด้วย `select public.delete_demo_data();` |
-| `supabase/migrations/20260929000100_demo_readings.sql` | apply แล้ว — ค่าที่หุ่นอ่านตัวอย่าง 19 แถวจากอุปกรณ์ `DEMO-01` (revoke แล้ว) · `delete_demo_data()` ลบรวมให้ |
+| `supabase/migrations/…0300_demo_seed.sql` | apply แล้ว — ห้อง 101–110 · 20 มิเตอร์ · ผู้เช่าสมมติ (`is_demo`) · **ลบแล้ว 30 ก.ย. 2569** (`delete_demo_data()`) · ผู้ใช้ใส่ทะเบียนจริงเอง |
+| `supabase/migrations/20260929000100_demo_readings.sql` | apply แล้ว — ค่าที่หุ่นอ่านตัวอย่าง 19 แถวจากอุปกรณ์ `DEMO-01` · **ลบแล้ว 30 ก.ย. 2569** · ค่าจริงของ ARIA-001 3 แถวเก็บไว้ (ผูกกลับเองเมื่อสร้างมิเตอร์รหัสเดิม) |
 | `web/` | **เว็บหลังบ้าน** (vanilla JS) · **ออนไลน์ที่ https://aria-th.netlify.app** (Netlify Free · base `aria/web`) · ล็อกอิน Google ใช้ได้ 29 ก.ย. — ขั้นตอนตั้งค่าใน [`web/README.md`](web/README.md) |
 | `supabase/functions/ingest/index.ts` | deploy แล้ว (verify_jwt = false · ยืนยันตัวด้วย `x-device-token`) |
 
