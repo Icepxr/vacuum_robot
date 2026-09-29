@@ -1,0 +1,240 @@
+/* ARIA · Dark Liquid Glass — หลังบ้าน (29 ก.ย. 2026 · รอบ 3: "บล็อกเยอะไป · กระจกไม่ใส · ออกแบบให้โปร")
+   ชั้นบนสุด ทับ styles.css + theme.css + app.css — ลบไฟล์นี้ออกจาก index.html = กลับหน้าตาต้นแบบ
+   หลักการ
+   · กระจกใสจริง: ขาว 6 % + เงามืด 28 % + เบลอ 30 px + ขอบแสงบาง 1 px → ตัวอักษรสว่างบนกระจกมืด
+     คอนทราสต์ (คำนวณ 29 ก.ย. บนรอยพับที่สว่างที่สุดของวอลเปเปอร์โทนมืด): ตัวหลัก ≥ 7:1 · ตัวรอง ≥ 5.2:1 · สีสถานะ ≥ 4.5:1
+   · ลดกล่อง: กล่องซ้อนกล่องเปลี่ยนเป็นแถวคั่นเส้นบาง · การ์ดตัวเลข 4 ใบรวมเป็นแถบเดียว · แถบบนไม่มีกล่อง
+   · ไม่รองรับ backdrop-filter → พื้นม่วงเข้มทึบ 90 % (ท้ายไฟล์) */
+:root {
+  --ink: #f1ecff;
+  --muted: #d4c9f0;
+  --faint: #a99cc9;
+  --line: rgba(255, 255, 255, .09);
+  --line-strong: rgba(255, 255, 255, .16);
+  --violet: #c4b5fd;
+  --accent: linear-gradient(135deg, #8b5cf6, #d946ef);
+  --glass: linear-gradient(160deg, rgba(255, 255, 255, .10), rgba(255, 255, 255, .04) 45%, rgba(255, 255, 255, .03) 70%, rgba(255, 255, 255, .07)), rgba(18, 8, 40, .28);
+  --rim: linear-gradient(145deg, rgba(255, 255, 255, .42), rgba(255, 255, 255, .06) 30%, rgba(255, 255, 255, .03) 60%, rgba(216, 180, 254, .28));
+  --blur: blur(30px) saturate(160%);
+  --lift: inset 0 1px 0 rgba(255, 255, 255, .12), 0 20px 50px rgba(4, 0, 16, .35);
+  --hover: rgba(255, 255, 255, .06);
+  --good: #6ee7b7; --warn: #fcd34d; --bad: #fecdd3; --info: #ddd6fe;
+}
+
+/* ── พื้นหลัง: วอลเปเปอร์ผ้าซาตินโทนมืด (#app-bg · js/liquid.js) · ไม่มี WebGL = ไล่สีมืดนิ่ง ── */
+body {
+  color: var(--ink);
+  background:
+    radial-gradient(55% 45% at 10% 8%, #3b1d7a 0%, transparent 62%),
+    radial-gradient(45% 40% at 90% 15%, #4c1d5e 0%, transparent 60%),
+    radial-gradient(50% 45% at 75% 80%, #2a2a7a 0%, transparent 62%),
+    linear-gradient(160deg, #150a30 0%, #1d0e42 50%, #120828 100%);
+  background-attachment: fixed;
+}
+.app-bg { position: fixed; inset: 0; z-index: -1; width: 100vw; height: 100vh; display: block; pointer-events: none; }
+.app-bg.liquid-fallback { background: transparent; }
+.main-area { background: transparent; }
+.app-shell ::selection { background: rgba(196, 181, 253, .35); }
+
+/* ── ตัวกระจก ── */
+.sidebar, .card, .stat-grid, .modal, .account-menu, .orbit-hero, .side-nav {
+  border: 1px solid transparent;
+  background: var(--glass) padding-box, var(--rim) border-box;
+  -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
+  box-shadow: var(--lift);
+}
+.card { border-radius: 24px; }
+
+/* ── ตัวอักษรทั่วแอป ── */
+.app-shell, .modal { color: var(--ink); }
+.app-shell h1, .app-shell h2, .app-shell h3, .modal h2, .modal h3 { color: #fff; letter-spacing: -.01em; }
+.app-shell h1 { font-weight: 650; }
+.app-shell h2 { font-weight: 600; }
+.eyebrow { color: #c4b5fd; letter-spacing: .16em; font-weight: 600; }
+.page-subtitle, .card-head p, .muted, .hint, .fine, .settings-box > p, .bill-footer p, .queue-top p, .history, .invoice-sub, .empty,
+.comparison-box small, .detail-kv small, .kv-grid small, .device-panel small, .meter-card small, .switch-row small, .queue-item small,
+.attention-copy span, .attention-copy > span, .step small, .invoice-paper small, .account-head small, .workspace-card small, .side-device small, .side-account small, .overview-date, .demo-note { color: var(--muted); }
+.room-label, .history strong, .attention-copy strong, .queue-item strong, .detail-kv strong, .comparison-box strong, .meter-card b, .setting-line strong, .kv-grid b, .device-panel b { color: #fff; }
+.field, .confirm-form label, .inline-form label { color: var(--muted); font-weight: 550; }
+.text-link { color: #d8b4fe; }
+.text-link:hover { color: #fff; }
+.neg { color: #fda4af; }
+a { color: #d8b4fe; }
+code { color: #e9d5ff; background: rgba(255, 255, 255, .08); padding: 1px 6px; border-radius: 6px; }
+
+/* ── sidebar: แผ่นกระจกเดียว แถวไม่มีกล่อง ── */
+.sidebar { margin: 16px 0 16px 16px; top: 16px; height: calc(100vh - 32px); border-radius: 28px; padding: 22px 14px 16px; background-image: none; background: var(--glass) padding-box, var(--rim) border-box; }
+.brand { padding: 0 8px 20px; }
+.brand-glass { background: none; border: 0; box-shadow: none; padding: 4px 6px 2px; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.brand-glass::before { display: none; }
+.brand-glass img { filter: drop-shadow(0 0 14px rgba(196, 150, 255, .55)) drop-shadow(0 0 1px rgba(255, 255, 255, .9)); }
+.brand .brand-caption { color: var(--faint); padding-left: 8px; letter-spacing: .24em; }
+.workspace-card, .side-device, .side-account { background: none; border: 0; border-top: 1px solid var(--line); border-radius: 0; box-shadow: none; padding: 14px 8px; color: var(--ink); }
+.workspace-card { margin-bottom: 14px; border-top: 0; border-bottom: 1px solid var(--line); }
+.workspace-card strong, .side-device strong, .side-account strong { color: #fff; }
+.workspace-icon, .side-device > [data-icon] { color: #c4b5fd; }
+.workspace-demo { color: #f0abfc; border: 1px solid rgba(240, 171, 252, .35); border-radius: 99px; padding: 2px 7px; }
+.side-label { color: var(--faint); letter-spacing: .14em; text-transform: uppercase; font-size: 10px; padding: 0 10px; }
+.side-nav button { color: var(--muted); font-weight: 500; border-radius: 14px; }
+.side-nav button:hover { background: var(--hover); color: #fff; }
+.side-nav button.active { color: #fff; background: linear-gradient(135deg, rgba(139, 92, 246, .35), rgba(217, 70, 239, .22)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .18), 0 6px 20px rgba(139, 92, 246, .25); }
+.side-nav em { background: var(--accent); color: #fff; font-weight: 600; }
+.sidebar-bottom { padding-top: 16px; }
+.side-logout { background: none; border: 1px solid var(--line-strong); color: var(--muted); }
+.side-logout:hover { background: var(--hover); color: #fff; }
+.sidebar-note { color: var(--faint); }
+.device-dot { background: #8f84ad; box-shadow: 0 0 0 4px rgba(143, 132, 173, .2); }
+.device-dot.warn { background: #fbbf24; box-shadow: 0 0 0 4px rgba(251, 191, 36, .22); }
+
+/* ── แถบบน: ไม่มีกล่อง เหลือแค่ปุ่มลอย ── */
+.topbar { background: none; border: 0; box-shadow: none; height: 76px; padding: 0 40px; position: sticky; top: 0; z-index: 15; }
+.top-left { color: var(--muted); }
+.top-brand { background: linear-gradient(100deg, #c4b5fd, #f0abfc); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.top-divider { color: rgba(255, 255, 255, .25); }
+#top-page-name { color: #fff; }
+.cycle-nav { padding: 4px; border-radius: 99px; background: rgba(255, 255, 255, .06); border: 1px solid var(--line-strong); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); }
+.cycle-tag { color: var(--ink); padding: 0 6px; }
+.cycle-btn { background: none; border: 0; color: #d8b4fe; box-shadow: none; }
+.cycle-btn:hover { background: var(--hover); }
+.demo-badge { background: rgba(240, 171, 252, .12); border: 1px solid rgba(240, 171, 252, .3); color: #f5d0fe; }
+button.avatar { background: var(--accent); color: #fff; border: 2px solid rgba(255, 255, 255, .5); box-shadow: 0 4px 14px rgba(139, 92, 246, .35); }
+.account-menu { border-radius: 20px; background: linear-gradient(160deg, rgba(40, 20, 80, .82), rgba(24, 10, 52, .88)) padding-box, var(--rim) border-box; }
+.account-head { border-color: var(--line); }
+.account-head strong { color: #fff; }
+.account-menu button { color: var(--ink); }
+.account-menu button:hover, .account-menu button:focus-visible { background: var(--hover); }
+.account-menu button.danger { color: #fda4af; }
+.account-menu button.subtle { color: var(--faint); }
+
+/* ── เนื้อหาหน้า ── */
+.page { padding-top: 8px; }
+.page-head h1 { color: #fff; }
+.demo-note .ui-icon, .overview-date .ui-icon { color: #c4b5fd; }
+
+/* hero: กระจกย้อมม่วง */
+.orbit-hero { border-radius: 30px; background: radial-gradient(ellipse at 85% 15%, rgba(217, 70, 239, .30), transparent 55%) padding-box, linear-gradient(120deg, rgba(109, 40, 217, .42), rgba(76, 29, 149, .30) 60%, rgba(134, 25, 143, .30)) padding-box, var(--rim) border-box; }
+.hero-actions .btn.primary { background: #fff; border-color: #fff; color: #3b1778; box-shadow: 0 8px 24px rgba(0, 0, 0, .25); }
+.hero-secondary { background: rgba(255, 255, 255, .08); border-color: rgba(255, 255, 255, .25); color: #fff; }
+
+/* การ์ดตัวเลข 4 ใบ → แถบกระจกเดียว คั่นเส้นบาง */
+.stat-grid { gap: 0; border-radius: 24px; overflow: hidden; }
+.stat-card { background: none; border: 0; box-shadow: none; border-radius: 0; -webkit-backdrop-filter: none; backdrop-filter: none; border-left: 1px solid var(--line); min-height: 0; padding: 22px 24px; }
+.stat-card:first-child { border-left: 0; }
+.stat-card .label { color: var(--muted); font-weight: 500; }
+.stat-card .number { color: #fff; font-weight: 600; }
+.stat-card .number small { color: var(--faint); }
+.stat-card .warn { color: var(--warn); }
+.stat-card .accent { color: #d8b4fe; }
+.stat-card .good { color: var(--good); }
+.stat-icon { background: rgba(255, 255, 255, .07) !important; border: 1px solid var(--line-strong); color: #d8b4fe !important; }
+
+/* แผงสองคอลัมน์ / ห้อง / ตั้งค่า: การ์ดเดียวต่อส่วน ภายในไม่มีกล่อง */
+.card-head { margin-bottom: 10px; }
+.attention-item, .queue-item { background: transparent; border-top: 1px solid var(--line); border-radius: 0; }
+.attention-item:hover, .queue-item:hover { background: var(--hover); }
+.attention-icon { background: rgba(255, 255, 255, .07); border: 1px solid var(--line-strong); }
+.attention-icon.red { background: rgba(244, 63, 94, .16); color: #fecdd3; border-color: rgba(253, 164, 175, .3); }
+.attention-icon.amber { background: rgba(251, 191, 36, .14); color: #fde68a; border-color: rgba(252, 211, 77, .3); }
+.attention-chevron { color: var(--faint); }
+.queue-card { overflow: hidden; }
+.queue-top { background: none; border-bottom: 1px solid var(--line); }
+.queue-item.active { background: linear-gradient(90deg, rgba(139, 92, 246, .22), rgba(139, 92, 246, .06)); border-left: 2px solid #c4b5fd; }
+.queue-item .queue-type, .meter-mini .type { background: rgba(255, 255, 255, .07); border: 1px solid var(--line-strong); color: #d8b4fe; }
+.meter-mini.electric .type { color: #fde68a; }
+.meter-mini .arrow { color: var(--faint); }
+
+.data-table th { background: none; color: var(--faint); text-transform: uppercase; letter-spacing: .08em; font-size: 10px; border-bottom: 1px solid var(--line-strong); }
+.data-table td { border-top: 1px solid var(--line); color: var(--ink); }
+.data-table tbody tr:hover td, .data-table tr:hover td { background: var(--hover); }
+.room-row.selected td { background: rgba(139, 92, 246, .16) !important; }
+.bill-total { color: #fff; }
+.bill-footer, .divider { border-color: var(--line); }
+.divider { background: var(--line); }
+
+/* กล่องย่อย → แถวคั่นเส้น (ไม่มีพื้น ไม่มีกรอบ) */
+.comparison-box, .device-panel, .kv-grid, .meter-card, .setting-line, .detail-kv, .callout {
+  background: none; border: 0; box-shadow: none; border-radius: 0;
+}
+.reading-comparison { gap: 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.comparison-box { border-left: 1px solid var(--line); padding: 14px 16px; }
+.comparison-box:first-child { border-left: 0; padding-left: 0; }
+.kv-grid, .device-panel { padding: 4px 0; gap: 14px 20px; }
+.meter-card, .setting-line { border-top: 1px solid var(--line); padding: 14px 0; margin: 0; }
+.settings-box h2:before { background: var(--accent); }
+.callout { border-left: 2px solid #c4b5fd; padding: 6px 0 6px 14px; color: var(--muted); }
+.image-stage { background: radial-gradient(ellipse at 50% 30%, rgba(80, 50, 150, .35), rgba(8, 2, 24, .55)); border: 1px solid var(--line-strong); }
+.crop-missing, .image-caption { color: var(--muted); }
+.invoice-paper { background: rgba(255, 255, 255, .05); border: 1px solid var(--line); }
+.invoice-line { border-color: var(--line); }
+.invoice-line.total { color: #fff; }
+.switch-row { background: rgba(255, 255, 255, .05); border: 1px solid var(--line-strong); }
+details.more { border-color: var(--line); }
+details.more summary { color: #d8b4fe; }
+
+/* ── ปุ่ม ── */
+.btn { background: rgba(255, 255, 255, .08); border: 1px solid var(--line-strong); color: #fff; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); font-weight: 600; }
+.btn:hover:not(:disabled) { background: rgba(255, 255, 255, .14); border-color: rgba(255, 255, 255, .3); }
+.btn.primary { background: var(--accent); border-color: rgba(255, 255, 255, .25); color: #fff; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .3), 0 8px 24px rgba(139, 92, 246, .35); }
+.btn.primary:hover:not(:disabled) { filter: brightness(1.08); background: var(--accent); }
+.btn.danger { color: #fda4af; border-color: rgba(253, 164, 175, .3); }
+.btn.ghost { background: none; border-color: transparent; box-shadow: none; color: #d8b4fe; }
+.filter { background: rgba(255, 255, 255, .06); border: 1px solid var(--line-strong); color: var(--muted); font-weight: 500; }
+.filter:hover { color: #fff; }
+.filter.active { background: var(--accent); color: #fff; border-color: rgba(255, 255, 255, .25); box-shadow: 0 4px 16px rgba(139, 92, 246, .35); }
+.chip { background: rgba(255, 255, 255, .06); border-color: var(--line-strong); color: var(--muted); }
+.chip.confirmed { color: var(--good); border-color: rgba(110, 231, 183, .35); }
+.chip.ocr { color: var(--warn); border-color: rgba(252, 211, 77, .35); }
+.chip.rejected { color: var(--bad); border-color: rgba(253, 164, 175, .35); }
+
+/* ── ช่องกรอก ── */
+input, select { background: rgba(255, 255, 255, .06); border: 1px solid var(--line-strong); color: #fff; box-shadow: none; }
+input::placeholder { color: var(--faint); }
+input:focus, select:focus { background: rgba(255, 255, 255, .1); border-color: #c4b5fd; box-shadow: 0 0 0 3px rgba(196, 181, 253, .22); }
+select option { background: #1d0f3d; color: #fff; }
+input[type="date"], input[type="month"] { color-scheme: dark; }
+
+/* ── ป้ายสถานะ / แจ้งเตือน ── */
+.status { background: rgba(255, 255, 255, .08); border: 1px solid var(--line-strong); color: var(--muted); font-weight: 600; }
+.status.good { background: rgba(16, 185, 129, .14); border-color: rgba(110, 231, 183, .35); color: var(--good); }
+.status.warn { background: rgba(245, 158, 11, .14); border-color: rgba(252, 211, 77, .35); color: var(--warn); }
+.status.bad { background: rgba(244, 63, 94, .16); border-color: rgba(253, 164, 175, .35); color: var(--bad); }
+.status.purple { background: rgba(139, 92, 246, .18); border-color: rgba(196, 181, 253, .35); color: var(--info); }
+.info-banner, .alert { background: rgba(255, 255, 255, .06); border: 1px solid var(--line-strong); color: var(--ink); }
+.alert.bad { background: rgba(244, 63, 94, .12); border-color: rgba(253, 164, 175, .3); color: var(--bad); }
+.alert.warn { background: rgba(245, 158, 11, .10); border-color: rgba(252, 211, 77, .3); color: #fde68a; }
+.alert.good { background: rgba(16, 185, 129, .10); border-color: rgba(110, 231, 183, .3); color: var(--good); }
+.info-banner .spark { color: #d8b4fe; }
+
+/* ── modal / toast ── */
+.modal-backdrop { background: rgba(6, 2, 18, .45); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+.modal { border-radius: 28px; background: linear-gradient(160deg, rgba(44, 22, 90, .80), rgba(24, 10, 52, .86)) padding-box, var(--rim) border-box; }
+.modal-head button { background: rgba(255, 255, 255, .08); border: 1px solid var(--line-strong); color: #fff; }
+#toast { background: linear-gradient(160deg, rgba(44, 22, 90, .85), rgba(24, 10, 52, .9)); border: 1px solid var(--line-strong); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); }
+#toast.bad { background: linear-gradient(160deg, rgba(136, 19, 55, .88), rgba(90, 10, 35, .92)); }
+
+/* ── จอกลาง/มือถือ ── */
+@media (max-width: 1200px) {
+  .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .stat-card:nth-child(3) { border-left: 0; }
+  .stat-card:nth-child(n+3) { border-top: 1px solid var(--line); }
+}
+@media (max-width: 800px) {
+  .sidebar { margin: 0; height: auto; border: 0; border-radius: 0; background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; padding: 0; }
+  .side-nav { left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); border-radius: 24px; padding: 6px; }
+  .side-nav button { color: var(--muted); }
+  .side-nav button.active { color: #fff; }
+  .topbar { padding: 0 16px; height: 64px; background: linear-gradient(180deg, rgba(14, 6, 32, .55), transparent); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+  .mobile-logo { width: auto; height: 30px; overflow: visible; }
+  .mobile-logo img { position: static; width: auto; height: 30px; max-width: none; mix-blend-mode: normal; filter: drop-shadow(0 0 10px rgba(196, 150, 255, .5)); }
+  .page { padding-bottom: 124px; }
+  #toast { bottom: calc(104px + env(safe-area-inset-bottom)); }
+}
+@media (max-width: 540px) {
+  .stat-card { padding: 16px; }
+  .reading-comparison { grid-template-columns: 1fr 1fr; }
+  .reading-comparison .comparison-box:last-child { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--line); padding-left: 0; }
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .sidebar, .card, .stat-grid, .modal, .account-menu, .orbit-hero, .side-nav { background: rgba(30, 14, 64, .9); border-color: var(--line-strong); }
+}

@@ -1,5 +1,5 @@
 // ชั้นข้อมูลจริง (Supabase) · mock.js มีหน้าตาเดียวกันไว้พรีวิวบน localhost
-import { SUPABASE_URL, SUPABASE_KEY } from './config.js';
+import { SUPABASE_URL, SUPABASE_KEY } from './config.js?v=w13';
 
 const PAGE = 1000; // เพดานแถวต่อคำขอของ PostgREST บน Supabase
 

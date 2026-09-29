@@ -1,6 +1,9 @@
 // ARIA หลังบ้าน · vanilla JS (ต่อจาก design/aria-prototype) + Supabase
 // ขอบเขต: ขั้น 3 ของแบบ v1 §7 (บัญชีเจ้าของ + 5 หน้า + reading_events) · บิลเป็นพรีวิว (ขั้น 4 ยังไม่มีตาราง invoices) · ยังไม่ส่งอีเมล (ขั้น 5)
-import * as L from './logic.js';
+import * as L from './logic.js?v=w13';
+import { createBackdrop } from './liquid.js?v=w14';
+
+let gateBg = null, appBg = null;   // วอลเปเปอร์สองโทน (อินสแตนซ์แยก · ตอนเปลี่ยนหน้าทำงานพร้อมกัน)
 
 const $ = sel => document.querySelector(sel);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -708,8 +711,11 @@ document.addEventListener('keydown', e => {
 function showGate(title, text, actions, note = '') {
   $('#app').hidden = true;
   $('#gate').hidden = false;
+  if (!gateBg) gateBg = createBackdrop($('#liquid'));
   $('#gate-title').textContent = title;
+  if (title.endsWith(' ARIA')) $('#gate-title').innerHTML = `${esc(title.slice(0, -5))} <span class="accent">ARIA</span>`;
   $('#gate-text').textContent = text;
+  $('#gate-text').hidden = !text;
   $('#gate-actions').innerHTML = actions;
   const n = $('#gate-note');
   n.textContent = note.text || '';
@@ -717,21 +723,23 @@ function showGate(title, text, actions, note = '') {
   n.hidden = !note.text;
 }
 
-const SIGN_IN_BTN = '<button class="btn primary gate-google" data-action="sign-in"><span class="g-mark" aria-hidden="true">G</span> เข้าสู่ระบบด้วย Google</button>';
+const G_LOGO = '<svg class="g-logo" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>';
+const SIGN_IN_BTN = `<button class="gate-google" data-action="sign-in"><span class="g-mark">${G_LOGO}</span><span class="g-label">Continue with Google</span><span class="g-arrow" aria-hidden="true">→</span></button>`;
 const GATE_NOTES = {
-  'signed-out': { text: 'ออกจากระบบแล้ว', tone: 'good' },
-  'signed-out-all': { text: 'ออกจากระบบทุกอุปกรณ์แล้ว', tone: 'good' },
-  'global-failed': { text: 'ออกจากเครื่องนี้แล้ว แต่สั่งออกทุกอุปกรณ์ไม่สำเร็จ (เน็ต?) — ล็อกอินแล้วลองใหม่', tone: 'warn' },
-  expired: { text: 'เซสชันหมดอายุหรือถูกออกจากที่อื่น — เข้าสู่ระบบใหม่', tone: 'warn' },
+  'signed-out': { text: 'Signed out', tone: 'good' },
+  'signed-out-all': { text: 'Signed out on all devices', tone: 'good' },
+  'global-failed': { text: 'Signed out here only — other devices failed', tone: 'warn' },
+  expired: { text: 'Session expired', tone: 'warn' },
 };
 
 async function startSignIn(btn) {
+  sessionStorage.setItem('aria.fly', '1');   // กลับจาก Google แล้วเล่นอะนิเมชันโลโก้ (หน้าโหลดใหม่ทั้งหน้า จึงต้องจำไว้ข้าม reload)
   btn.disabled = true;
-  btn.innerHTML = 'กำลังไปหน้า Google…';
+  btn.innerHTML = '<span class="g-mark"><span class="spinner" aria-hidden="true"></span></span><span class="g-label">Redirecting…</span>';
   try { await api.signIn(); } catch (e) {
     btn.disabled = false;
     btn.outerHTML = SIGN_IN_BTN;
-    const n = $('#gate-note'); n.textContent = `เข้าสู่ระบบไม่ได้: ${friendlyError(e.message)}`; n.className = 'gate-note bad'; n.hidden = false;
+    const n = $('#gate-note'); n.textContent = 'Sign-in failed — try again'; n.className = 'gate-note bad'; n.hidden = false;
   }
 }
 
@@ -742,18 +750,18 @@ function takeAuthError() {
   if (!code) return null;
   const desc = q.get('error_description') || h.get('error_description') || code;
   history.replaceState(null, '', location.pathname + (q.has('mock') ? '?mock' : ''));
-  if (code === 'access_denied') return { text: 'ยกเลิกการเข้าสู่ระบบ', tone: 'warn' };
-  return { text: `Google/Supabase ปฏิเสธการเข้าสู่ระบบ: ${desc}`, tone: 'bad' };
+  if (code === 'access_denied') return { text: 'Sign-in cancelled', tone: 'warn' };
+  return { text: `Sign-in rejected: ${desc}`, tone: 'bad' };
 }
 
 async function boot() {
   document.querySelectorAll('[data-icon]').forEach(n => { n.innerHTML = icon(n.dataset.icon); });
   const local = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
   if (local && new URLSearchParams(location.search).has('mock')) {
-    api = (await import('./mock.js')).createMockApi();
+    api = (await import('./mock.js?v=w13')).createMockApi();
   } else {
-    if (!window.supabase) return showGate('โหลดไม่สำเร็จ', 'ไฟล์ supabase-js ไม่ถูกโหลด ลองรีเฟรชหน้า', '');
-    api = (await import('./api.js')).createApi();
+    if (!window.supabase) return showGate('Failed to load', '', '<button class="gate-google plain" data-action="reload"><span>Reload</span></button>');
+    api = (await import('./api.js?v=w13')).createApi();
   }
   const urlError = takeAuthError();
   const flag = sessionStorage.getItem('aria.gate');
@@ -763,28 +771,105 @@ async function boot() {
   try { session = await api.session(); } catch (e) {
     if (/code verifier|pkce|invalid.*grant|expired/i.test(e.message)) {   // ลิงก์กลับจาก Google ใช้ซ้ำ/หมดอายุ
       history.replaceState(null, '', location.pathname);
-      return showGate('เข้าสู่ระบบ ARIA', 'หลังบ้านสำหรับเจ้าของหอพัก · ใช้บัญชี Google ที่ได้รับสิทธิ์เท่านั้น', SIGN_IN_BTN, { text: 'ลิงก์เข้าสู่ระบบหมดอายุ — กดเข้าสู่ระบบอีกครั้ง', tone: 'warn' });
+      return showGate('Welcome to ARIA', '', SIGN_IN_BTN, { text: 'Link expired — sign in again', tone: 'warn' });
     }
-    return showGate('เชื่อมต่อไม่ได้', friendlyError(e.message), '<button class="btn" data-action="reload">ลองใหม่</button>');
+    return showGate('Can’t connect', '', '<button class="gate-google plain" data-action="reload"><span>Try again</span></button>');
   }
   if (!session) {
     api.onAuthChange((_ev, s) => { if (s) location.reload(); });   // ล็อกอินเสร็จในแท็บอื่น
-    return showGate('เข้าสู่ระบบ ARIA', 'หลังบ้านสำหรับเจ้าของหอพัก · ใช้บัญชี Google ที่ได้รับสิทธิ์เท่านั้น', SIGN_IN_BTN, note);
+    return showGate('Welcome to ARIA', '', SIGN_IN_BTN, note);
   }
   state.user = session.user;
   // ล็อกอินได้ไม่พอ ต้องอยู่ใน owners (RLS บังคับอีกชั้น — ถึงข้ามหน้านี้ไปก็ไม่เห็นข้อมูล)
   if (!(await api.isOwner().catch(() => false))) {
-    return showGate('บัญชีนี้ยังไม่ได้รับสิทธิ์', `${session.user.email || 'บัญชีนี้'} ไม่อยู่ในรายชื่อเจ้าของหอ · ให้ผู้ดูแลเพิ่มอีเมลในตาราง owners แล้วเข้าใหม่`,
-      '<button class="btn primary" data-action="sign-out">ใช้บัญชีอื่น</button>');
+    return showGate('No access', session.user.email || '',
+      '<button class="gate-google plain" data-action="sign-out"><span>Use another account</span></button>');
   }
   // ออกจากระบบในแท็บอื่น / token ถูกเพิกถอน (ออกทุกอุปกรณ์จากเครื่องอื่น) → กลับหน้าเข้าสู่ระบบ
   api.onAuthChange(ev => {
     if (ev === 'SIGNED_OUT' && !signingOut) { sessionStorage.setItem('aria.gate', 'expired'); location.replace(location.pathname + (api.mock ? '?mock' : '')); }
   });
-  $('#gate').hidden = true;
-  $('#app').hidden = false;
   if (location.search.includes('code=')) history.replaceState(null, '', location.pathname + (api.mock ? '?mock' : ''));
-  try { await reload(); } catch (e) { toast(`โหลดข้อมูลไม่ได้: ${e.message}`, true); }
+  const fly = sessionStorage.getItem('aria.fly') === '1' && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+  sessionStorage.removeItem('aria.fly');
+  if (fly) showGate('Welcome to ARIA', '', '', { text: 'Signed in', tone: 'good' });   // ฉากเริ่มของอะนิเมชัน = หน้าเข้าสู่ระบบ
+  const loading = reload().catch(e => toast(`โหลดข้อมูลไม่ได้: ${e.message}`, true));
+  // หลังบ้านใช้วอลเปเปอร์เดียวกับหน้าเข้าสู่ระบบ โทนมืด (ผู้ใช้สั่ง 29 ก.ย.) · ความละเอียดต่ำ + 30 fps เพราะเปิดตลอดเวลาทำงาน
+  appBg = createBackdrop($('#app-bg'), { tone: 1, scale: 0.35, fps: 30 });
+  if (fly) {
+    await loading;
+    await new Promise(r => setTimeout(r, 800));   // ให้การ์ดเล่นท่าเข้าจนจบ + เห็นคำว่า Signed in แวบหนึ่ง
+    await flyToApp();
+  } else {
+    $('#gate').hidden = true;
+    gateBg?.stop(); gateBg = null;
+    $('#app').hidden = false;
+    await loading;
+  }
+}
+
+// ───────── อะนิเมชันเปลี่ยนหน้า: โลโก้บนการ์ดเข้าสู่ระบบ → ที่อยู่ในหลังบ้าน (shared element) ─────────
+// 1) ข้อความ/ปุ่มบนการ์ดจางออก  2) โลโก้ลอยไปที่กล่องโลโก้ใน sidebar (จอคอม) หรือแถบบน (มือถือ) พร้อม crossfade เป็นแบบของปลายทาง
+// 3) ผ้าสว่างละลายเป็นผ้ามืด · sidebar เลื่อนเข้าจากซ้าย · แถบบนหล่นลง · เนื้อหาลอยขึ้น
+// ใช้แค่ transform/opacity/ขนาดของโลโก้ตัวเดียว · ลดการเคลื่อนไหว = ไม่เล่น (เช็คตอนเริ่มใน boot)
+async function flyToApp() {
+  const gate = $('#gate'), app = $('#app');
+  const srcImg = gate.querySelector('.gate-logo');
+  const from = srcImg.getBoundingClientRect();
+  gate.classList.add('gate-leaving');                      // ลอยเป็นชั้นบนสุด fixed ทับหลังบ้าน
+  app.hidden = false;                                      // ต้องแสดงก่อนจึงวัดตำแหน่งปลายทางได้
+  const desktop = matchMedia('(min-width: 801px)').matches;
+  const target = desktop ? $('.brand-glass img') : $('.mobile-logo img');
+  const to = target.getBoundingClientRect();
+
+  // โลโก้บิน: กล่องเดียว มีรูปต้นทาง (โลโก้เต็ม) กับรูปปลายทาง (ตัวมาร์ค) ซ้อนกันแล้ว crossfade
+  const flyer = document.createElement('div');
+  flyer.className = 'logo-flyer';
+  flyer.innerHTML = `<img class="a" src="${srcImg.getAttribute('src')}" alt=""><img class="b" src="${target.getAttribute('src')}" alt="">`;
+  Object.assign(flyer.style, { left: `${from.left}px`, top: `${from.top}px`, width: `${from.width}px`, height: `${from.height}px` });
+  document.body.appendChild(flyer);
+  srcImg.style.visibility = 'hidden';
+  target.style.visibility = 'hidden';
+
+  const E = 'cubic-bezier(.65, 0, .35, 1)', OUT = 'cubic-bezier(.16, 1, .3, 1)';
+  const mine = [];                                         // เก็บเฉพาะอะนิเมชันที่สร้างเอง (ห้ามไปยกเลิกของ CSS เช่นแสงวาบ)
+  const run = (el, kf, o) => { if (!el) return Promise.resolve(); const an = el.animate(kf, { fill: 'both', ...o }); mine.push(an); return an.finished; };
+  const card = gate.querySelector('.gate-card');
+  const jobs = [];
+  // 1) ของบนการ์ด (ยกเว้นโลโก้) จางออก แล้วตัวการ์ดกระจกยุบหาย
+  [...card.children].filter(el => el !== srcImg).forEach((el, i) =>
+    jobs.push(run(el, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(-6px)' }], { duration: 260, delay: i * 30, easing: 'ease-out' })));
+  jobs.push(run(card, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'scale(.94)' }], { duration: 420, delay: 180, easing: E }));
+  // 2) โลโก้ลอย (ตำแหน่ง/ขนาดของกล่องเดียว) + crossfade ต้นทาง → ปลายทาง
+  jobs.push(run(flyer, [
+    { left: `${from.left}px`, top: `${from.top}px`, width: `${from.width}px`, height: `${from.height}px` },
+    { left: `${to.left}px`, top: `${to.top}px`, width: `${to.width}px`, height: `${to.height}px` },
+  ], { duration: 950, delay: 260, easing: E }));
+  jobs.push(run(flyer.querySelector('.a'), [{ opacity: 1 }, { opacity: 0 }], { duration: 500, delay: 560, easing: 'ease-in-out' }));
+  jobs.push(run(flyer.querySelector('.b'), [{ opacity: 0 }, { opacity: 1 }], { duration: 500, delay: 560, easing: 'ease-in-out' }));
+  // 3) ผ้าสว่างละลายเป็นผ้ามืด (หลังบ้านอยู่ใต้ชั้นนี้อยู่แล้ว)
+  jobs.push(run(gate, [{ opacity: 1 }, { opacity: 0 }], { duration: 700, delay: 420, easing: 'ease-in-out' }));
+  // หลังบ้านประกอบตัว
+  const sidebar = $('.sidebar'), topbar = $('.topbar');
+  if (desktop) {
+    jobs.push(run(sidebar, [{ opacity: 0, transform: 'translateX(-28px)' }, { opacity: 1, transform: 'none' }], { duration: 700, delay: 520, easing: OUT }));
+    jobs.push(run($('.brand-glass'), [{ opacity: 0, transform: 'scale(.9)' }, { opacity: 1, transform: 'none' }], { duration: 600, delay: 700, easing: OUT }));
+  } else {
+    jobs.push(run($('.side-nav'), [{ opacity: 0, transform: 'translateY(24px)' }, { opacity: 1, transform: 'none' }], { duration: 650, delay: 700, easing: OUT }));
+  }
+  jobs.push(run(topbar, [{ opacity: 0, transform: 'translateY(-18px)' }, { opacity: 1, transform: 'none' }], { duration: 650, delay: 620, easing: OUT }));
+  [...$('#page-content .page').children].slice(0, 6).forEach((el, i) =>
+    jobs.push(run(el, [{ opacity: 0, transform: 'translateY(22px)' }, { opacity: 1, transform: 'none' }], { duration: 700, delay: 760 + i * 70, easing: OUT })));
+
+  await Promise.all(jobs);
+  // เก็บกวาด: คืนสภาพทุกอย่างให้เหมือนเข้าหน้าปกติ (ไม่ทิ้ง style/animation ค้าง)
+  target.style.visibility = '';
+  flyer.remove();
+  mine.forEach(an => an.cancel());
+  srcImg.style.visibility = '';
+  gate.classList.remove('gate-leaving');
+  gate.hidden = true;
+  gateBg?.stop(); gateBg = null;
 }
 
 boot();

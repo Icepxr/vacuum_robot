@@ -1,13 +1,18 @@
 /* ส่วนเพิ่มของเว็บจริง (ต่อจาก styles.css + theme.css ของต้นแบบ ARIA Orbit) */
+
+/* ฟอนต์ Anuphan (Cadson Demak · OFL 1.1 · fonts/OFL-Anuphan.txt) ฝังในเว็บเอง — CSP ไม่อนุญาต Google Fonts
+   variable font ไฟล์เดียวต่อชุดอักษร (น้ำหนัก 100–700) · แยกไทย/ละติน โหลดเฉพาะที่ใช้ตาม unicode-range */
+@font-face { font-family: "Anuphan"; font-style: normal; font-display: swap; font-weight: 100 700;
+  src: url("../fonts/anuphan-thai-wght-normal.woff2") format("woff2-variations"), url("../fonts/anuphan-thai-wght-normal.woff2") format("woff2");
+  unicode-range: U+02D7, U+0303, U+0331, U+0E01-0E5B, U+200C-200D, U+25CC; }
+@font-face { font-family: "Anuphan"; font-style: normal; font-display: swap; font-weight: 100 700;
+  src: url("../fonts/anuphan-latin-wght-normal.woff2") format("woff2-variations"), url("../fonts/anuphan-latin-wght-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+body { font-family: "Anuphan", "Noto Sans Thai", "Thonburi", system-ui, -apple-system, sans-serif; }
 [hidden] { display: none !important; }
 body.busy { cursor: progress; }
 body.busy button[type="submit"], body.busy .btn.danger { opacity: .55; pointer-events: none; }
 
-.gate { min-height: 100vh; display: grid; place-items: center; padding: 16px; background: #211036; }
-.gate-card { width: min(100%, 420px); background: #fff; border-radius: 20px; padding: 28px 24px; text-align: center; box-shadow: 0 20px 80px #0006; }
-.gate-logo { margin: 0 auto 18px; }
-.gate-card h1 { font-size: 22px; margin: 0 0 8px; }
-.gate-actions { margin-top: 20px; display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
 
 .cycle-nav { display: inline-flex; align-items: center; gap: 4px; }
 .cycle-btn { border: 1px solid var(--line); background: #fff; border-radius: 99px; width: 28px; height: 28px; color: var(--violet); font-size: 16px; line-height: 1; }
@@ -82,16 +87,144 @@ button.avatar[aria-expanded="true"] { box-shadow: 0 0 0 3px #cdb6f5; }
 .side-logout:hover { background: #ffffff1a; color: #fff; }
 .side-logout .ui-icon { width: 18px; height: 18px; }
 
-.gate-note { margin: 14px 0 0; padding: 9px 12px; border-radius: 10px; font-size: 13px; font-weight: 650; }
-.gate-note.good { background: var(--green-bg); color: var(--green); }
-.gate-note.warn { background: var(--amber-bg); color: var(--amber); }
-.gate-note.bad { background: var(--red-bg); color: var(--red); }
-.gate-google { min-width: 240px; min-height: 46px; }
-.gate-google .g-mark { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: #fff; color: var(--violet); font-weight: 900; font-size: 13px; }
-
 /* ต้นแบบซ่อน avatar บนจอแคบ → เปิดกลับ เพราะเป็นทางเดียวไปเมนูบัญชี/ออกจากระบบบนมือถือ (sidebar กลายเป็นแถบล่าง) */
 @media (max-width: 800px) {
   .topbar .avatar { display: grid !important; width: 32px; height: 32px; }
   .account-menu { position: fixed; right: 12px; left: 12px; top: 60px; min-width: 0; }
   .side-account { display: none; }
 }
+
+/* ══ หน้าเข้าสู่ระบบ: วอลเปเปอร์ซาตินโทนม่วง (WebGL · js/liquid.js) + การ์ดกระจกฝ้าสว่าง ══════
+   พื้นหลังลาเวนเดอร์ → การ์ดกระจกขาวฝ้า + ตัวอักษรเข้ม · ลดการเคลื่อนไหว = ภาพนิ่ง */
+.gate {
+  position: relative; min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; padding: 24px 16px;
+  overflow: hidden; isolation: isolate; color: #2a1330;
+  background: #b9a3ea;
+}
+.liquid { position: absolute; inset: 0; z-index: -1; width: 100%; height: 100%; display: block; }
+/* ไม่มี WebGL: ไล่สีซาตินนิ่ง */
+.liquid.liquid-fallback {
+  background:
+    radial-gradient(60% 45% at 70% 20%, #f3eeff 0%, transparent 60%),
+    radial-gradient(55% 50% at 20% 60%, #7d5cc4 0%, transparent 65%),
+    radial-gradient(40% 35% at 80% 85%, #d8f3ec 0%, transparent 60%),
+    linear-gradient(160deg, #cdbcf5, #9c80dd 55%, #c6b3f2);
+}
+
+/* การ์ดกระจกฝ้าสว่าง */
+.gate-card {
+  position: relative; width: min(100%, 420px); padding: 30px 26px 22px; border-radius: 28px; text-align: center; isolation: isolate;
+  border: 1px solid transparent;
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, .38), rgba(255, 255, 255, .14) 45%, rgba(255, 255, 255, .10) 65%, rgba(255, 255, 255, .26)) padding-box,
+    linear-gradient(140deg, rgba(255, 255, 255, .95), rgba(255, 255, 255, .35) 35%, rgba(225, 210, 255, .5) 70%, rgba(255, 255, 255, .9)) border-box;
+  -webkit-backdrop-filter: blur(18px) saturate(175%) brightness(1.08);
+  backdrop-filter: blur(18px) saturate(175%) brightness(1.08);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, .9), inset 0 -10px 30px rgba(255, 255, 255, .25), 0 30px 80px rgba(60, 30, 120, .32), 0 2px 10px rgba(60, 30, 120, .14);
+  animation: card-in .9s cubic-bezier(.16, 1, .3, 1) both;
+}
+.gate-card::before { /* ประกายมุมบน */
+  content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+  background: radial-gradient(110% 55% at 15% -10%, rgba(255, 255, 255, .45), transparent 55%);
+}
+.gate-card::after { /* แสงวาบกวาดผ่านทุก 7 วินาที */
+  content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+  background: linear-gradient(105deg, transparent 40%, rgba(255, 255, 255, .55) 50%, transparent 60%) no-repeat; background-size: 250% 100%;
+  animation: sheen 7s cubic-bezier(.4, 0, .2, 1) 1.2s infinite;
+}
+@keyframes sheen { 0% { background-position: 130% 0; } 30%, 100% { background-position: -30% 0; } }
+@keyframes card-in { from { opacity: 0; transform: translate3d(0, 26px, 0) scale(.96); } to { opacity: 1; transform: none; } }
+
+.gate-logo { display: block; width: min(100%, 300px); height: auto; margin: 0 auto 14px; filter: drop-shadow(0 0 10px rgba(255, 255, 255, .85)) drop-shadow(0 0 2px rgba(255, 255, 255, .9)); }
+@keyframes float { 50% { transform: translate3d(0, -6px, 0); } }
+.gate-card h1 { font-size: 27px; font-weight: 600; letter-spacing: -.01em; line-height: 1.3; margin: 4px 0 6px; color: #231036; text-shadow: 0 0 14px rgba(255, 255, 255, .7); }
+.gate-card h1 .accent { background: linear-gradient(100deg, #5b21b6, #9d4edd 55%, #c026d3); -webkit-background-clip: text; background-clip: text; color: transparent; text-shadow: none; }
+.gate-text { margin: 0 auto; max-width: 30ch; color: #3b2b57; font-weight: 400; font-size: 14.5px; text-shadow: 0 0 10px rgba(255, 255, 255, .8); font-size: 13px; line-height: 1.6; }
+.gate-card > * { animation: rise .8s cubic-bezier(.16, 1, .3, 1) both; }
+.gate-card > :nth-child(1) { animation: rise .8s cubic-bezier(.16, 1, .3, 1) .08s both, float 6s ease-in-out 1s infinite; }
+.gate-card > :nth-child(2) { animation-delay: .16s; } .gate-card > :nth-child(3) { animation-delay: .22s; }
+.gate-card > :nth-child(4) { animation-delay: .28s; } .gate-card > :nth-child(5) { animation-delay: .34s; } .gate-card > :nth-child(6) { animation-delay: .4s; }
+@keyframes rise { from { opacity: 0; transform: translate3d(0, 12px, 0); } to { opacity: 1; transform: none; } }
+
+.gate-note { margin: 16px auto 0; max-width: 32ch; padding: 8px 14px; border-radius: 999px; font-size: 13px; font-weight: 500; border: 1px solid; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+.gate-note.good { background: rgba(214, 247, 232, .75); border-color: #7fd6b0; color: #0f6b47; }
+.gate-note.warn { background: rgba(255, 240, 205, .8); border-color: #f0c460; color: #7a5200; }
+.gate-note.bad { background: rgba(255, 222, 230, .85); border-color: #f08aa5; color: #9b1638; }
+
+.gate-actions { margin-top: 20px; display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
+@property --spin { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+.gate-google {
+  --rim: conic-gradient(from var(--spin), #a78bfa, #f0abfc, #93c5fd, #c4b5fd, #f9a8d4, #a78bfa);
+  position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 12px;
+  min-width: 270px; min-height: 54px; padding: 0 20px 0 10px; border-radius: 999px; border: 1.5px solid transparent;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .92), rgba(255, 255, 255, .72)) padding-box, var(--rim) border-box;
+  color: #231036; font: inherit; font-weight: 600; font-size: 15.5px; letter-spacing: .005em; cursor: pointer;
+  box-shadow: 0 10px 28px rgba(76, 29, 149, .22), 0 1px 2px rgba(76, 29, 149, .12), inset 0 1px 0 #fff;
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  transition: transform .35s cubic-bezier(.16, 1, .3, 1), box-shadow .35s ease;
+  animation: rim-spin 6s linear infinite;
+}
+@keyframes rim-spin { to { --spin: 360deg; } }
+.gate-google::after { /* ประกายเลื่อนผ่านเมื่อชี้ */
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, .8) 50%, transparent 65%) no-repeat; background-size: 250% 100%; background-position: 130% 0;
+  transition: background-position .8s cubic-bezier(.16, 1, .3, 1);
+}
+.gate-google:hover { transform: translate3d(0, -2px, 0); box-shadow: 0 16px 36px rgba(124, 58, 237, .32), 0 0 0 6px rgba(196, 181, 253, .28), inset 0 1px 0 #fff; }
+.gate-google:hover::after { background-position: -30% 0; }
+.gate-google:active { transform: scale(.975); }
+.gate-google:disabled { cursor: progress; opacity: .9; }
+.gate-google:focus-visible { outline: none; box-shadow: 0 0 0 4px rgba(124, 58, 237, .45), 0 10px 28px rgba(76, 29, 149, .22); }
+.gate-google .g-label { flex: 1; text-align: left; }
+.gate-google .g-arrow { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; background: linear-gradient(135deg, #7c3aed, #c026d3); color: #fff; font-size: 15px; transition: transform .35s cubic-bezier(.16, 1, .3, 1); box-shadow: 0 4px 12px rgba(124, 58, 237, .4); }
+.gate-google:hover .g-arrow { transform: translateX(3px); }
+.gate-google.plain { padding: 0 24px; }
+.g-mark { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(76, 29, 149, .18); flex: none; }
+.g-logo { width: 18px; height: 18px; }
+.spinner { width: 18px; height: 18px; border-radius: 50%; border: 2.5px solid rgba(124, 58, 237, .25); border-top-color: #7c3aed; animation: spinr .8s linear infinite; }
+@keyframes spinr { to { transform: rotate(360deg); } }
+.gate-foot { margin: 20px 0 0; font-size: 11px; letter-spacing: .16em; color: #4a3a68; font-weight: 500; text-shadow: 0 0 8px rgba(255, 255, 255, .8); }
+.gate-foot::before { content: "✦"; margin-right: 8px; color: #8b5cf6; }   /* ไม่ใช้จุดเขียว: สื่อว่าหุ่นออนไลน์ ซึ่งหน้านี้ไม่รู้ (แบบ v1 §4.1) */
+
+@media (max-width: 540px) {
+  .gate-card { padding: 26px 18px 18px; border-radius: 24px; }
+  .gate-google { min-width: 0; width: 100%; }
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .gate-card { background: rgba(248, 245, 255, .92); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gate-card, .gate-card > *, .gate-card::after, .gate-logo, .gate-google { animation: none !important; }
+  .gate-google::after { transition: none; }
+}
+
+/* ── โลโก้ sidebar: กระจก liquid glass แทนกล่องขาว (29 ก.ย.) ── */
+.brand-glass {
+  position: relative; isolation: isolate; overflow: hidden; width: 100%; padding: 16px 18px; border-radius: 20px;
+  border: 1px solid transparent;
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, .16), rgba(255, 255, 255, .04) 45%, rgba(255, 255, 255, .02) 65%, rgba(255, 255, 255, .09)) padding-box,
+    linear-gradient(140deg, rgba(255, 255, 255, .55), rgba(255, 255, 255, .06) 35%, rgba(196, 160, 255, .22) 70%, rgba(255, 255, 255, .38)) border-box;
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  backdrop-filter: blur(14px) saturate(160%);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, .35), inset 0 -8px 20px rgba(160, 110, 255, .10), 0 10px 30px rgba(8, 2, 24, .35);
+}
+.brand-glass::before { /* ประกายมุมบน */
+  content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: radial-gradient(120% 60% at 15% -15%, rgba(255, 255, 255, .22), transparent 55%), radial-gradient(80% 60% at 110% 120%, rgba(180, 130, 255, .22), transparent 60%);
+}
+.brand-glass::after { /* แสงวาบกวาดผ่านทุก 9 วินาที */
+  content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: linear-gradient(105deg, transparent 40%, rgba(255, 255, 255, .16) 50%, transparent 60%) no-repeat; background-size: 250% 100%;
+  animation: sheen 9s cubic-bezier(.4, 0, .2, 1) 2s infinite;
+}
+.brand-glass img { display: block; width: 100%; height: auto; filter: drop-shadow(0 0 10px rgba(190, 150, 255, .55)) drop-shadow(0 0 1px rgba(255, 255, 255, .8)); }
+.brand .brand-caption { padding-left: 4px; }
+@media (prefers-reduced-motion: reduce) { .brand-glass::after { animation: none; } }
+
+/* ── อะนิเมชันเปลี่ยนหน้า login → หลังบ้าน (js/app.js flyToApp) ── */
+.gate.gate-leaving { position: fixed; inset: 0; z-index: 100; }
+.logo-flyer { position: fixed; z-index: 101; pointer-events: none; will-change: left, top, width, height; }
+.logo-flyer img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.logo-flyer .a { filter: drop-shadow(0 0 10px rgba(255, 255, 255, .85)); }
+.logo-flyer .b { opacity: 0; filter: drop-shadow(0 0 10px rgba(190, 150, 255, .55)); }

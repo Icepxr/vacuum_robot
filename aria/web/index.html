@@ -3,30 +3,38 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#211036">
+  <meta name="theme-color" content="#1a0d38">
   <meta name="robots" content="noindex">
   <title>ARIA — หลังบ้านหอพัก</title>
-  <link rel="icon" href="img/aria-logo.png">
+  <!-- ไอคอนแท็บ: เฉพาะตัวอักษร ARIA ตัดชิด · แท็บสีเข้มใช้ลาเวนเดอร์ แท็บสว่างใช้ม่วงเข้ม -->
+  <link rel="icon" type="image/png" sizes="64x64" href="img/icon-light.png">
+  <link rel="icon" type="image/png" sizes="64x64" href="img/icon-light.png" media="(prefers-color-scheme: light)">
+  <link rel="icon" type="image/png" sizes="64x64" href="img/icon-dark.png" media="(prefers-color-scheme: dark)">
+  <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
   <link rel="stylesheet" href="css/styles.css?v=w1">
   <link rel="stylesheet" href="css/theme.css?v=w1">
-  <link rel="stylesheet" href="css/app.css?v=w2">
+  <link rel="stylesheet" href="css/app.css?v=w12">
+  <link rel="stylesheet" href="css/glass.css?v=g5">
 </head>
 <body>
   <a class="skip-link" href="#page-content">ข้ามไปเนื้อหา</a>
 
-  <div id="gate" class="gate" hidden>
+  <div id="gate" class="gate" lang="en" hidden>
+    <canvas id="liquid" class="liquid" aria-hidden="true"></canvas>
     <div class="gate-card">
-      <div class="logo-window gate-logo"><img src="img/aria-logo.png" alt="ARIA"></div>
-      <h1 id="gate-title">เข้าสู่ระบบ ARIA</h1>
-      <p id="gate-text" class="muted">หลังบ้านสำหรับเจ้าของหอพัก · ใช้บัญชี Google ที่ได้รับสิทธิ์เท่านั้น</p>
+      <img class="gate-logo" src="img/aria-logo-plum.png" alt="ARIA — Autonomous Refuse-collection &amp; Intelligent Metering Assistant" width="360" height="144">
+      <h1 id="gate-title">Welcome to <span class="accent">ARIA</span></h1>
+      <p id="gate-text" class="gate-text" hidden></p>
       <p id="gate-note" class="gate-note" role="status" hidden></p>
       <div id="gate-actions" class="gate-actions"></div>
+      <p class="gate-foot">ARIA-001</p>
     </div>
   </div>
 
   <div class="app-shell" id="app" hidden>
+    <canvas id="app-bg" class="app-bg" aria-hidden="true"></canvas>
     <aside class="sidebar" aria-label="เมนูหลัก">
-      <div class="brand"><div class="logo-window"><img src="img/aria-logo.png" alt="ARIA"></div><span class="brand-caption">INTELLIGENT METERING</span></div>
+      <div class="brand"><div class="brand-glass"><img src="img/aria-mark-light.png" alt="ARIA" width="480" height="249"></div><span class="brand-caption">INTELLIGENT METERING</span></div>
       <div class="workspace-card"><span class="workspace-icon" data-icon="rooms" aria-hidden="true"></span><div><strong id="ws-name">หอพัก</strong><small id="ws-meta">—</small></div><span class="workspace-demo" id="ws-demo" hidden>DEMO</span></div>
       <div class="side-label">พื้นที่จัดการ</div>
       <nav class="side-nav" id="side-nav">
@@ -37,14 +45,14 @@
         <button type="button" data-page="settings"><span data-icon="settings" aria-hidden="true"></span><span class="nav-label">ตั้งค่า</span></button>
       </nav>
       <div class="sidebar-bottom">
-        <div class="side-device"><span data-icon="robot" aria-hidden="true"></span><div><strong id="dev-name">MRC-001</strong><small id="dev-seen">ยังไม่เคยส่งข้อมูล</small></div><span class="device-dot" id="dev-dot"></span></div>
+        <div class="side-device"><span data-icon="robot" aria-hidden="true"></span><div><strong id="dev-name">ARIA-001</strong><small id="dev-seen">ยังไม่เคยส่งข้อมูล</small></div><span class="device-dot" id="dev-dot"></span></div>
         <div class="side-account"><div><small>เข้าสู่ระบบเป็น</small><strong id="side-email">—</strong></div><button type="button" class="side-logout" data-action="sign-out" title="ออกจากระบบ" aria-label="ออกจากระบบ"><span data-icon="logout" aria-hidden="true"></span></button></div>
         <div class="sidebar-note">ARIA / จากภาพสู่ข้อมูลที่มั่นใจ</div>
       </div>
     </aside>
     <div class="main-area">
       <header class="topbar">
-        <div class="top-left"><span class="mobile-logo logo-window"><img src="img/aria-logo.png" alt="ARIA"></span><span class="top-brand">ARIA</span><span class="top-divider">/</span><span id="top-page-name">หน้าหลัก</span></div>
+        <div class="top-left"><span class="mobile-logo"><img src="img/aria-mark-light.png" alt="ARIA" width="480" height="249"></span><span class="top-brand">ARIA</span><span class="top-divider">/</span><span id="top-page-name">หน้าหลัก</span></div>
         <div class="top-right">
           <span class="cycle-nav"><button type="button" class="cycle-btn" data-cycle-step="-1" aria-label="รอบก่อน">‹</button><span class="cycle-tag"><span data-icon="calendar" aria-hidden="true"></span> <span id="cycle-name">—</span></span><button type="button" class="cycle-btn" data-cycle-step="1" aria-label="รอบถัดไป">›</button></span>
           <span class="demo-badge" id="demo-badge" hidden>มีข้อมูลตัวอย่าง</span>
@@ -65,6 +73,6 @@
   <div id="modal-root"></div>
   <div id="toast" role="status" aria-live="polite"></div>
   <script src="vendor/supabase-2.117.2.js"></script>
-  <script type="module" src="js/app.js?v=w2"></script>
+  <script type="module" src="js/app.js?v=w14"></script>
 </body>
 </html>

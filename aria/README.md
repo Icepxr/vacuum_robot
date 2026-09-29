@@ -12,7 +12,7 @@
 | `web/` | **เว็บหลังบ้าน** (vanilla JS) · **ออนไลน์ที่ https://aria-th.netlify.app** (Netlify Free · base `aria/web`) · ล็อกอิน Google ใช้ได้ 29 ก.ย. — ขั้นตอนตั้งค่าใน [`web/README.md`](web/README.md) |
 | `supabase/functions/ingest/index.ts` | deploy แล้ว (verify_jwt = false · ยืนยันตัวด้วย `x-device-token`) |
 
-อุปกรณ์ที่ลงทะเบียน: `MRC-001` (หุ่นจริง) · `TEST-01` (ทดสอบจาก Mac) — token จริงอยู่ที่ `~/.config/mrc/aria_device_token_*` บน Mac ของผู้ใช้ (สิทธิ์ 600) · คลาวด์เก็บแค่ SHA-256
+อุปกรณ์ที่ลงทะเบียน: `ARIA-001` (หุ่นจริง · เดิมชื่อ `MRC-001` เปลี่ยนเฉพาะชื่อที่แสดงเมื่อ 29 ก.ย. — โค้ดบน Pi ยังใช้ MRC-001 ภายใน) · `TEST-01` (ทดสอบจาก Mac) — token จริงอยู่ที่ `~/.config/mrc/aria_device_token_*` บน Mac ของผู้ใช้ (สิทธิ์ 600) · คลาวด์เก็บแค่ SHA-256
 
 ## Auth (ตั้ง 29 ก.ย.)
 - Provider เหลือ **Google อย่างเดียว** (Email ปิด · sign-up เปิดไว้ให้ Google สร้าง user ครั้งแรก) · Google OAuth client แยกเฉพาะ ARIA (อยู่ในโปรเจกต์ Google Cloud เดิมของผู้ใช้ · consent screen สถานะ Testing → ต้องเพิ่ม test user ก่อนเพิ่มเจ้าของคนใหม่)

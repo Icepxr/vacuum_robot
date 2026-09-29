@@ -1,6 +1,6 @@
 // ข้อมูลจำลองในหน่วยความจำ · เปิดได้เฉพาะ localhost ด้วย ?mock (ดู app.js) · ไม่แตะเครือข่าย
 // ชุดเดียวกับ migrations 0300_demo_seed + 20260929000100_demo_readings เพื่อให้พรีวิวหน้าตาตรงกับของจริง
-import { readingMeterId, meterIndex } from './logic.js';
+import { readingMeterId, meterIndex } from './logic.js?v=w13';
 
 export function createMockApi() {
   const prev = { '101': [1231, 3502], '102': [987, 2140], '103': [1518, 2901], '104': [1192, 3271], '105': [1402, 5012], '106': [802, 1320], '107': [1105, 4521], '108': [1351, 3204], '109': [890, 2750], '110': [1120, 2876] };
@@ -17,7 +17,7 @@ export function createMockApi() {
   const mk = (n, room, type, value, conf, meter) => ({ id: ++rid, local_id: rid.toString(16).padStart(12, '0'), device_id: 'DEMO-01', captured_at: at(n), decided_at: at(n), received_at: at(n + 60), clock_synced: room !== '107', run_id: null, room_id: room, meter_type: type, meter_id: meter, registry_version: null, raw_text: String(value), value, confidence: conf, ocr_engine: 'sevenseg', source: 'demo', image_path: null, air: n % 3 ? null : { eco2_ppm: 620 + n * 10, tvoc_ppb: 80 + n, aqi: 2, temp_c: 29.5, rh_pct: 58, validity: 0 }, crop_path: null, crop_expired_at: null, status: 'ocr', confirmed_value: null, assigned_meter_id: null, is_demo: true });
   for (const [n, room, type, v, c] of ocr) d.readings.push(mk(n, room, type, v, c, `${type === 'water' ? 'W' : 'E'}-${room}-01`));
   d.readings.push(mk(19, null, 'water', 1188, .88, null));
-  d.devices.push({ device_id: 'MRC-001', revoked_at: null, last_seen_at: '2026-09-28T13:12:00Z', pending_rows: 0, pending_crops: 2, pending_decisions: 1, app_version: 'c51-f10', disk_free_mb: 41200, clock_synced: true, warn: '', cam_ok: true, air_available: true, cpu_temp_c: 52.1 });
+  d.devices.push({ device_id: 'ARIA-001', revoked_at: null, last_seen_at: '2026-09-28T13:12:00Z', pending_rows: 0, pending_crops: 2, pending_decisions: 1, app_version: 'c51-f10', disk_free_mb: 41200, clock_synced: true, warn: '', cam_ok: true, air_available: true, cpu_temp_c: 52.1 });
   const done = ['W-101-01', 'E-101-01', 'W-102-01', 'E-102-01', 'W-103-01', 'E-105-01', 'W-106-01', 'E-106-01', 'W-107-01', 'E-107-01', 'W-108-01', 'W-110-01', 'E-110-01'];
   for (const r of d.readings) if (done.includes(r.meter_id)) apply({ reading_id: r.id, event: 'confirmed', confirmed_value: r.value, actor: null });
 
