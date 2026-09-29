@@ -24,6 +24,15 @@ const iconPaths = {
   arrow: '<path d="M4 12h16m-6-6 6 6-6 6"/>',
   water: '<path d="M12 3S5 11 5 15a7 7 0 0 0 14 0c0-4-7-12-7-12Z"/>',
   electric: '<path d="m13 2-9 12h7l-1 8 10-13h-7l1-7Z"/>',
+  upload: '<path d="M12 16V4m-5 5 5-5 5 5"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/>',
+  cloud: '<path d="M7 18h10a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.1 9.1 4.5 4.5 0 0 0 7 18Z"/>',
+  check: '<path d="m5 12 5 5 9-10"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  sd: '<path d="M8 3h8l3 3v13a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a3 3 0 0 1 3-3Z"/><path d="M9 7v3m3-3v3m3-3v3"/>',
+  link: '<path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1"/><path d="M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1"/>',
+  down: '<path d="M3 7l6 6 4-4 8 8"/><path d="M15 17h6v-6"/>',
+  scan: '<path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><path d="M8 12h8"/>',
+  baht: '<circle cx="12" cy="12" r="9"/><text x="12" y="16.2" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor" stroke="none">฿</text>',
   logout: '<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l-5-5 5-5M5 12h11"/>',
 };
 const icon = name => `<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${iconPaths[name] || iconPaths.review}</svg>`;
@@ -39,7 +48,7 @@ const FLAG_TEXT = {
 const EVENT_TEXT = { confirmed: 'ยืนยัน', corrected: 'แก้ค่าแล้วยืนยัน', rejected: 'ปฏิเสธ', assigned: 'ผูกมิเตอร์' };
 const PAGE_NAMES = { home: 'หน้าหลัก', review: 'ยืนยันค่ามิเตอร์', bills: 'บิล', rooms: 'ห้องและมิเตอร์', settings: 'ตั้งค่า' };
 
-const state = { page: 'home', cycle: null, selectedReading: null, selectedRoom: null, billFilter: 'all', roomQuery: '', user: null, data: null, busy: false };
+const state = { page: 'home', cycle: null, selectedReading: null, selectedRoom: null, billFilter: 'all', homeRoom: null, roomQuery: '', user: null, data: null, busy: false };
 let api;
 let mIdx = new Map();
 
@@ -151,45 +160,98 @@ const realDevices = () => state.data.devices.filter(x => !x.revoked_at).sort((a,
 function attentionItems(c) {
   const list = [];
   const by = f => c.queue.filter(q => q.flags.includes(f));
-  const push = (tone, mark, title, desc, attrs) => list.push({ tone, mark, title, desc, attrs });
+  const push = (tone, mark, title, desc, attrs, act) => list.push({ tone, mark, title, desc, attrs, act });
   const firstAttr = q => `data-page="review" data-reading="${q.r.id}"`;
   const un = by('unassigned');
-  if (un.length) push('red', '!', `ยังไม่ผูกมิเตอร์ ${un.length} ค่า`, 'คนขับไม่ได้เลือกห้อง หรือรหัสมิเตอร์ไม่อยู่ในทะเบียน · ผูกก่อนยืนยัน', firstAttr(un[0]));
-  for (const q of by('below_prev')) push('red', '!', `${esc(meterLabel(q.meterId))} ต่ำกว่าค่าก่อน`, `OCR ${num(q.value)} < ค่ายืนยันก่อน ${num(q.prev.value)} · ต้องดูรูป`, firstAttr(q));
+  if (un.length) push('red', 'link', `ยังไม่ผูกมิเตอร์ ${un.length} ค่า`, 'คนขับไม่ได้เลือกห้อง หรือรหัสไม่อยู่ในทะเบียน', firstAttr(un[0]), 'ผูกมิเตอร์');
+  for (const q of by('below_prev')) push('red', 'down', `${esc(meterLabel(q.meterId))} ต่ำกว่าค่าก่อน`, `OCR ${num(q.value)} · ค่าก่อน ${num(q.prev.value)}`, firstAttr(q), 'ดูรูป');
   const ur = by('unreadable');
-  if (ur.length) push('amber', '?', `OCR อ่านไม่ออก ${ur.length} ค่า`, 'ต้องกรอกค่าเองจากรูป', firstAttr(ur[0]));
+  if (ur.length) push('amber', 'scan', `OCR อ่านไม่ออก ${ur.length} ค่า`, 'ต้องกรอกค่าเองจากรูป', firstAttr(ur[0]), 'กรอกค่า');
   const lc = by('low_conf');
-  if (lc.length) push('amber', '?', `OCR ไม่มั่นใจ ${lc.length} ค่า`, `ความมั่นใจต่ำกว่า ${pct(L.LOW_CONFIDENCE)} · ดูรูปเทียบ`, firstAttr(lc[0]));
+  if (lc.length) push('amber', 'scan', `OCR ไม่มั่นใจ ${lc.length} ค่า`, `ความมั่นใจต่ำกว่า ${pct(L.LOW_CONFIDENCE)}`, firstAttr(lc[0]), 'ดูรูป');
   const ck = by('clock');
-  if (ck.length) push('amber', '⏱', `เวลาจาก Pi ยังไม่ยืนยัน ${ck.length} ค่า`, 'ตรวจว่าเข้ารอบบิลถูกเดือนก่อนยืนยัน (F1)', firstAttr(ck[0]));
+  if (ck.length) push('amber', 'clock', `เวลาจาก Pi ยังไม่ยืนยัน ${ck.length} ค่า`, 'ตรวจว่าเข้ารอบบิลถูกเดือน', firstAttr(ck[0]), 'ตรวจ');
   const missing = c.rooms.filter(r => c.capture.get(r.room_id).meters.length && !c.capture.get(r.room_id).captured);
-  if (missing.length) push('amber', '◌', `ยังไม่มีค่าในรอบนี้ ${missing.length} ห้อง`, `ห้อง ${missing.slice(0, 8).map(r => esc(r.room_id)).join(', ')}${missing.length > 8 ? ' …' : ''}`, `data-page="rooms" data-room="${esc(missing[0].room_id)}"`);
+  if (missing.length) push('amber', 'camera', `ยังไม่มีค่าในรอบนี้ ${missing.length} ห้อง`, `ห้อง ${missing.slice(0, 8).map(r => esc(r.room_id)).join(', ')}${missing.length > 8 ? ' …' : ''}`, `data-page="rooms" data-room="${esc(missing[0].room_id)}"`, 'ดูห้อง');
   const noMeter = c.rooms.filter(r => !c.capture.get(r.room_id).meters.length);
-  if (noMeter.length) push('amber', '▦', `ห้องไม่มีมิเตอร์ติดตั้ง ${noMeter.length} ห้อง`, `ห้อง ${noMeter.slice(0, 8).map(r => esc(r.room_id)).join(', ')}`, `data-page="rooms" data-room="${esc(noMeter[0].room_id)}"`);
+  if (noMeter.length) push('amber', 'rooms', `ห้องไม่มีมิเตอร์ติดตั้ง ${noMeter.length} ห้อง`, `ห้อง ${noMeter.slice(0, 8).map(r => esc(r.room_id)).join(', ')}`, `data-page="rooms" data-room="${esc(noMeter[0].room_id)}"`, 'เพิ่มมิเตอร์');
   const noEmail = c.bills.filter(b => b.noEmail);
-  if (noEmail.length) push('amber', '@', `ผู้เช่า ${noEmail.length} ห้องยังไม่มีอีเมล`, `ห้อง ${noEmail.map(b => esc(b.room.room_id)).join(', ')} · ดูบิลได้ แต่ส่งไม่ได้`, `data-page="rooms" data-room="${esc(noEmail[0].room.room_id)}"`);
+  if (noEmail.length) push('amber', 'mail', `ผู้เช่า ${noEmail.length} ห้องยังไม่มีอีเมล`, `ห้อง ${noEmail.map(b => esc(b.room.room_id)).join(', ')} · ดูบิลได้ แต่ส่งไม่ได้`, `data-page="rooms" data-room="${esc(noEmail[0].room.room_id)}"`, 'เพิ่มอีเมล');
   const noRate = L.TYPES.filter(t => !L.rateOn(c.d.rates, t, c.range.to));
-  if (noRate.length) push('amber', '฿', `ยังไม่ตั้งอัตรา${noRate.map(t => L.TYPE_TH[t]).join('และ')}`, `ต้องมีอัตราที่มีผล ณ ${L.dateTh(c.range.to)} ถึงจะคิดบิลได้`, 'data-page="settings"');
+  if (noRate.length) push('amber', 'baht', `ยังไม่ตั้งอัตรา${noRate.map(t => L.TYPE_TH[t]).join('และ')}`, `ต้องมีอัตราที่มีผล ณ ${L.dateTh(c.range.to)} ถึงจะคิดบิลได้`, 'data-page="settings"', 'ตั้งอัตรา');
   return list;
 }
 
+// การ์ด "จากหุ่น": ตัวตน + อายุข้อมูล → เส้นทางรูปจากหุ่นถึงคลาวด์ → สุขภาพเครื่อง (ทุกค่าคือที่ Pi รายงานตอนซิงก์ ไม่ใช่สถานะสด)
+function ageText(iso) {
+  const min = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60000));
+  const text = min < 1 ? 'เมื่อสักครู่' : min < 60 ? `${min} นาทีก่อน` : min < 1440 ? `${Math.round(min / 60)} ชม. ก่อน` : `${Math.round(min / 1440)} วันก่อน`;
+  return [text, min <= 120 ? 'good' : min <= 1440 ? 'purple' : 'warn'];
+}
+// "ต้องดูก่อน": สรุปจำนวน → กลุ่มเร่งด่วน (แดง) / ควรดู (เหลือง) · แต่ละแถวบอกสิ่งที่ต้องทำเป็นคำกริยา
+function attentionPanel(items) {
+  if (!items.length) return `<div class="attn-clear"><span>${icon('check')}</span><div><b>ไม่มีอะไรค้าง</b><small>ค่าทุกตัวพร้อมคิดบิล</small></div></div>`;
+  const groups = [['red', 'เร่งด่วน'], ['amber', 'ควรดู']].map(([t, name]) => [t, name, items.filter(x => x.tone === t)]).filter(g => g[2].length);
+  const row = x => `<button class="attn" ${x.attrs}><span class="attn-ic">${icon(x.mark)}</span><span class="attn-copy"><b>${x.title}</b><small>${x.desc}</small></span><span class="attn-act">${x.act || 'ดู'}${icon('arrow')}</span></button>`;
+  return `<div class="attn-summary">${groups.map(([t, name, xs]) => `<span class="g-${t}"><b>${xs.length}</b>${name}</span>`).join('')}</div>`
+    + groups.map(([t, name, xs]) => `<div class="attn-group g-${t}"><div class="attn-label">${name}</div>${xs.map(row).join('')}</div>`).join('');
+}
 function devicePanel() {
   const devs = realDevices();
   if (!devs.length) return `<div class="empty">ยังไม่มีหุ่นที่ลงทะเบียน</div>`;
   return devs.map(v => {
-    const warn = v.warn ? status(`เตือน ${v.warn}`, 'warn') : '';
-    const kv = [
-      ['ข้อมูลล่าสุดเมื่อ', v.last_seen_at ? L.dateTimeTh(v.last_seen_at) : 'ยังไม่เคยส่ง'],
-      ['แถวรอส่งบน Pi', v.pending_rows ?? '—'],
-      ['รูป crop รอส่ง', v.pending_crops ?? '—'],
-      ['รูปรอคนขับตัดสิน', v.pending_decisions ?? '—'],
-      ['นาฬิกา Pi', v.clock_synced == null ? '—' : v.clock_synced ? 'ซิงก์แล้ว' : 'ยังไม่ซิงก์'],
-      ['พื้นที่ว่าง SD', v.disk_free_mb == null ? '—' : `${num(v.disk_free_mb / 1024, 1)} GB`],
-    ];
-    return `<div class="device-block"><div class="device-title"><b>${esc(v.device_id)}</b>${warn}</div><div class="kv-grid">${kv.map(([k, val]) => `<div><small>${k}</small><b>${esc(val)}</b></div>`).join('')}</div></div>`;
-  }).join('') + `<p class="fine">ตัวเลขเหล่านี้คือสิ่งที่ Pi รายงานครั้งล่าสุดตอนซิงก์ ไม่ใช่สถานะสด</p>`;
+    const [age, ageTone] = v.last_seen_at ? ageText(v.last_seen_at) : ['ยังไม่เคยซิงก์', 'warn'];
+    const n = x => x ?? '—';
+    const rows = v.pending_rows ?? 0, crops = v.pending_crops ?? 0;
+    const queued = v.pending_rows == null && v.pending_crops == null ? null : rows + crops;
+    const step = (ic, big, label, sub, hot) => `<div class="bf ${hot ? 'hot' : ''}"><span class="bf-ic">${icon(ic)}</span><b>${big}</b><span class="bf-label">${label}</span>${sub ? `<small>${sub}</small>` : ''}</div>`;
+    const arrow = '<span class="bf-arrow" aria-hidden="true"><i></i></span>';
+    const clean = queued === 0;
+    const sd = v.disk_free_mb == null ? null : v.disk_free_mb / 1024;
+    const chip = (ic, text, tone) => `<span class="bot-chip ${tone}">${icon(ic)}${text}</span>`;
+    return `<div class="bot">
+      <div class="bot-head"><span class="bot-avatar">${icon('robot')}</span>
+        <div class="bot-id"><b>${esc(v.device_id)}</b><small>${v.last_seen_at ? `ซิงก์ล่าสุด ${L.dateTimeTh(v.last_seen_at)}` : 'ยังไม่เคยส่งข้อมูล'}</small></div>
+        ${status(age, ageTone)}</div>
+      ${v.warn ? `<div class="bot-warn">${icon('review')}หุ่นแจ้งเตือน: ${esc(v.warn)}</div>` : ''}
+      <div class="bot-flow">
+        ${step('camera', n(v.pending_decisions), 'รอคนขับตัดสิน', 'รูปบนหุ่น', v.pending_decisions > 0)}${arrow}
+        ${step('upload', n(queued), 'รอส่งขึ้นคลาวด์', queued == null ? '' : `${rows} แถว · ${crops} รูป`, queued > 0)}${arrow}
+        ${step('cloud', clean ? icon('check') : '…', 'คลาวด์', clean ? 'ส่งครบแล้ว' : queued == null ? 'ไม่ทราบ' : 'รอซิงก์รอบถัดไป', false)}
+      </div>
+      <div class="bot-chips">
+        ${chip('clock', v.clock_synced == null ? 'นาฬิกา —' : v.clock_synced ? 'นาฬิกาซิงก์แล้ว' : 'นาฬิกายังไม่ซิงก์', v.clock_synced === false ? 'warn' : v.clock_synced ? 'good' : '')}
+        ${chip('sd', sd == null ? 'SD —' : `SD ว่าง ${num(sd, 1)} GB`, sd != null && sd < 2 ? 'warn' : '')}
+      </div>
+    </div>`;
+  }).join('') + `<p class="bot-note">ค่าที่หุ่นรายงานตอนซิงก์ ไม่ใช่สถานะสด</p>`;
 }
 
+// แถบขั้นของรอบบิล: อ่าน → ยืนยัน → คิดบิล → ส่ง · แต่ละขั้นมีเศษส่วน + แถบความคืบหน้า
+function cycleSteps(c, { total, captured, pendingInCycle, ready, blocked }) {
+  const withMeters = c.rooms.filter(r => c.capture.get(r.room_id).meters.length);
+  const confirmedRooms = withMeters.filter(r => c.capture.get(r.room_id).confirmed).length;
+  const billable = c.bills.filter(b => b.state !== 'vacant').length;
+  const steps = [
+    { ic: 'camera', name: 'อ่านมิเตอร์', n: captured, d: total, unit: 'ห้อง', hint: total - captured ? `ยังขาด ${total - captured} ห้อง` : 'ครบทุกห้อง', page: 'rooms' },
+    { ic: 'review', name: 'ยืนยันค่า', n: confirmedRooms, d: total, unit: 'ห้อง', hint: c.queue.length ? `รอยืนยัน ${c.queue.length} ค่า${pendingInCycle !== c.queue.length ? ` (รอบนี้ ${pendingInCycle})` : ''}` : 'ไม่มีค่าค้าง', page: 'review', hot: c.queue.length > 0 },
+    { ic: 'bills', name: 'คิดบิล', n: ready, d: billable, unit: 'ห้อง', hint: blocked ? `ข้อมูลไม่ครบ ${blocked} ห้อง` : 'พร้อมทุกห้อง', page: 'bills' },
+    { ic: 'mail', name: 'ส่งอีเมล', off: true, hint: 'เปิดใช้ในขั้น 5' },
+  ];
+  const html = steps.map((x, i) => {
+    const ratio = x.off || !x.d ? 0 : x.n / x.d;
+    const st = x.off ? 'off' : ratio >= 1 ? 'done' : ratio > 0 ? 'doing' : 'todo';
+    const tag = x.page ? 'button' : 'div';
+    return `<${tag} class="cs ${st} ${x.hot && st !== 'done' ? 'hot' : ''}" ${x.page ? `data-page="${x.page}"` : ''} style="--p:${Math.round(ratio * 100)}%">
+      <span class="cs-node">${st === 'done' ? icon('check') : icon(x.ic)}</span>
+      <span class="cs-step">ขั้น ${i + 1}</span>
+      <span class="cs-name">${x.name}</span>
+      <span class="cs-num">${x.off ? 'ยังไม่เปิด' : `<b>${x.n}</b><small>/ ${x.d} ${x.unit}</small>`}</span>
+      <span class="cs-bar"><i></i></span>
+      <span class="cs-hint">${x.hint}</span></${tag}>`;
+  }).join('<span class="cs-link" aria-hidden="true"></span>');
+  return `<div class="cycle-steps" aria-label="ความคืบหน้ารอบบิล">${html}</div>`;
+}
 function renderHome(c) {
   const withMeters = c.rooms.filter(r => c.capture.get(r.room_id).meters.length);
   const captured = withMeters.filter(r => c.capture.get(r.room_id).captured).length;
@@ -207,24 +269,65 @@ function renderHome(c) {
     <div class="hero-progress"><svg viewBox="0 0 180 180" aria-hidden="true"><circle class="progress-track" cx="90" cy="90" r="74"/><circle class="progress-value" cx="90" cy="90" r="74" pathLength="100" stroke-dasharray="${ratio} 100"/></svg><div class="progress-copy"><span>อ่านครบแล้ว</span><strong>${captured}<small> / ${total}</small></strong><span>ห้อง</span></div><span class="progress-caption">METER CAPTURE / THIS CYCLE</span></div>
   </div>
   ${hasDemo() ? `<div class="demo-note">${icon('review')}<span>ฐานข้อมูลนี้มีข้อมูลตัวอย่าง (ห้อง 101–110 · หุ่น DEMO-01) ปนอยู่ · ลบได้ก่อนใช้กับหอจริง ดูหน้าตั้งค่า</span></div>` : ''}
-  <div class="grid stat-grid">
-    <div class="card stat-card"><span class="stat-icon mint">${icon('camera')}</span><div class="label">อ่านมิเตอร์ครบ</div><div class="number">${captured}<small> / ${total} ห้อง</small></div><div class="hint">ทุกมิเตอร์ของห้องมีค่าในรอบนี้</div></div>
-    <div class="card stat-card"><span class="stat-icon amber">${icon('review')}</span><div class="label">ค่ารอยืนยัน</div><div class="number warn">${c.queue.length}<small> ค่า</small></div><div class="hint">ในรอบนี้ ${pendingInCycle} · ทุกรอบรวมกัน ${c.queue.length}</div></div>
-    <div class="card stat-card"><span class="stat-icon violet">${icon('bills')}</span><div class="label">บิลคำนวณได้</div><div class="number accent">${ready}<small> ห้อง</small></div><div class="hint">ข้อมูลไม่ครบ ${blocked} ห้อง</div></div>
-    <div class="card stat-card"><span class="stat-icon mint">${icon('mail')}</span><div class="label">ส่งอีเมล</div><div class="number">—</div><div class="hint">ยังไม่เปิด (ขั้น 5)</div></div>
-  </div>
+  ${cycleSteps(c, { total, captured, pendingInCycle, ready, blocked })}
   <div class="grid two-col">
-    <div class="card card-pad"><div class="card-head"><div><h2>ต้องดูก่อน</h2><p>รายการที่อาจทำให้บิลคลาดเคลื่อน</p></div><button class="text-link" data-page="review">ไปหน้ายืนยัน →</button></div>
-      <div class="attention-list">${items.map(x => `<button class="attention-item" ${x.attrs}><span class="attention-icon ${x.tone}">${x.mark}</span><span class="attention-copy"><strong>${x.title}</strong><span>${x.desc}</span></span><span class="attention-chevron">›</span></button>`).join('') || '<div class="empty">ไม่มีรายการเร่งด่วน</div>'}</div></div>
-    <div class="card card-pad"><div class="card-head"><div><h2>จากหุ่น</h2><p>heartbeat ที่แนบมากับการซิงก์ครั้งล่าสุด</p></div></div>${devicePanel()}</div>
+    <div class="card card-pad"><div class="card-head"><div><h2>ต้องดูก่อน</h2><p>สิ่งที่อาจทำให้บิลคลาดเคลื่อน</p></div><button class="text-link" data-page="review">ไปหน้ายืนยัน →</button></div>
+      ${attentionPanel(items)}</div>
+    <div class="card card-pad"><div class="card-head"><div><h2>จากหุ่น</h2><p>สถานะที่ส่งมากับการซิงก์ครั้งล่าสุด</p></div></div>${devicePanel()}</div>
   </div>
-  <div class="card"><div class="card-head card-pad" style="margin-bottom:0"><div><h2>ห้องในรอบนี้</h2><p>ค่าล่าสุดในรอบของมิเตอร์แต่ละตัว</p></div><button class="text-link" data-page="rooms">ดูทะเบียนทั้งหมด →</button></div>
-    <div class="table-wrap"><table class="data-table"><thead><tr><th>ห้อง</th><th>มิเตอร์น้ำ</th><th>มิเตอร์ไฟ</th><th>บิล</th></tr></thead><tbody>${c.rooms.map((r, i) => {
-      const cap = c.capture.get(r.room_id);
-      const cell = t => { const p = cap.meters.find(x => x.meter.type === t); if (!p) return '<span class="muted">ไม่มีมิเตอร์</span>'; if (!p.latest) return '<span class="muted">ยังไม่อ่าน</span>'; const l = p.latest; return `<span class="meter-mini ${t}"><span class="type">${icon(t)}</span><strong>${num(l.confirmed_value ?? l.value)}</strong></span> ${l.status === 'confirmed' ? status('ยืนยันแล้ว', 'good') : status('รอยืนยัน', 'warn')}`; };
-      return `<tr class="room-row" data-page="rooms" data-room="${esc(r.room_id)}" tabindex="0"><td><span class="room-label">ห้อง ${esc(r.room_id)}</span></td><td>${cell('water')}</td><td>${cell('electric')}</td><td>${billBadge(c.bills[i])}</td></tr>`;
-    }).join('') || '<tr><td colspan="4" class="empty">ยังไม่มีห้องในทะเบียน · เพิ่มที่หน้า “ห้องและมิเตอร์”</td></tr>'}</tbody></table></div></div>
+  ${roomBoard(c)}
   </section>`;
+}
+
+// ห้องในรอบนี้ · แผนผังอาคาร (ผู้ใช้เลือกแบบ A 29 ก.ย.) · ช่องละห้อง ไอคอนน้ำ/ไฟ:
+// เขียว = ยืนยันแล้ว · เหลือง = มีค่าแต่รอยืนยัน/อ่านไม่ออก · แดง = ยังไม่มีค่า · เทา = ห้องว่าง หรือไม่ได้ติดมิเตอร์ชนิดนั้น
+// วาดเป็นผังหอ: แยกชั้นจากเลขห้อง (101 → ชั้น 1) · ห้องครึ่งแรกอยู่ฝั่งบน ครึ่งหลังฝั่งล่าง มีทางเดินคั่น (มือถือ: หมุนเป็นแนวตั้ง)
+const METER_STATE = { ok: ['ยืนยันแล้ว', 'good'], wait: ['รอยืนยัน', 'warn'], bad: ['อ่านไม่ออก', 'warn'], unread: ['ยังไม่มีค่า', 'bad'], none: ['ไม่มีมิเตอร์', ''] };
+function roomSummary(r, c, i) {
+  const cap = c.capture.get(r.room_id);
+  const bill = c.bills[i];
+  const vacant = bill.state === 'vacant';
+  const ms = L.TYPES.map(t => {
+    const p = cap.meters.find(x => x.meter.type === t);
+    const l = p?.latest;
+    const kind = !p ? 'none' : !l ? 'unread' : l.status === 'confirmed' ? 'ok' : (l.confirmed_value ?? l.value) == null ? 'bad' : 'wait';
+    const dot = vacant || kind === 'none' ? 'off' : kind === 'unread' ? 'miss' : kind === 'ok' ? 'have' : 'wait';
+    return { t, kind, dot, v: l ? l.confirmed_value ?? l.value : null };
+  });
+  return { r, bill, vacant, ms };
+}
+// เลขห้อง 3–4 หลัก → ชั้น = ตัวเลขหน้าสองหลักท้าย (101 → 1, 1203 → 12) · รูปแบบอื่นรวมเป็นกลุ่มเดียว
+function floorsOf(list) {
+  const m = new Map();
+  for (const x of list) { const k = /^\d{3,4}$/.test(x.r.room_id) ? String(Number(x.r.room_id.slice(0, -2))) : ''; if (!m.has(k)) m.set(k, []); m.get(k).push(x); }
+  return [...m];
+}
+function roomBoard(c) {
+  const all = c.rooms.map((r, i) => roomSummary(r, c, i));
+  if (!all.length) return `<div class="card card-pad"><div class="card-head"><div><h2>ห้องในรอบนี้</h2></div></div><div class="empty">ยังไม่มีห้องในทะเบียน · เพิ่มที่หน้า “ห้องและมิเตอร์”</div></div>`;
+  const sel = all.find(x => x.r.room_id === state.homeRoom) || all.find(x => x.ms.some(m => m.dot === 'miss')) || all[0];
+  const DOT_TH = { have: 'ยืนยันแล้ว', wait: 'รอยืนยัน', miss: 'ยังไม่มีค่า', off: 'ไม่ต้องอ่าน' };
+  const tile = (x, side, i) => `<button class="map-room ${side} ${x.vacant ? 'vacant' : ''} ${x === sel ? 'active' : ''}" style="--i:${i + 1}" data-home-room="${esc(x.r.room_id)}" aria-pressed="${x === sel}"
+      aria-label="ห้อง ${esc(x.r.room_id)}${x.vacant ? ' ห้องว่าง' : ''} · ${x.ms.map(m => `${L.TYPE_TH[m.t]}${DOT_TH[m.dot]}`).join(' · ')}">
+      <span class="mr-no">${esc(x.r.room_id)}</span><span class="mr-icons">${x.ms.map(m => `<span class="mr-ic ${m.t} ${m.dot}">${icon(m.t)}</span>`).join('')}</span></button>`;
+  const line = m => { const [txt, tone] = METER_STATE[m.kind];
+    return `<div class="md-line"><span class="mr-ic ${m.t} ${sel.vacant ? 'off' : m.dot}">${icon(m.t)}</span><span class="md-type">${L.TYPE_TH[m.t]}</span><b>${m.kind === 'ok' || m.kind === 'wait' ? num(m.v) : '—'}</b>${status(txt, tone)}</div>`; };
+  const pending = sel.ms.some(m => m.kind === 'wait' || m.kind === 'bad');
+  const missing = sel.ms.filter(m => !sel.vacant && m.dot === 'miss').length;
+  return `<div class="card card-pad room-board"><div class="card-head"><div><h2>ห้องในรอบนี้</h2><p>กดห้องเพื่อดูค่าล่าสุด</p></div>
+      <div class="map-legend"><span><i class="have"></i>ยืนยันแล้ว</span><span><i class="wait"></i>รอยืนยัน</span><span><i class="miss"></i>ยังไม่มีค่า</span><span><i class="off"></i>ห้องว่าง</span></div></div>
+    <div class="map-layout"><div class="floors">${floorsOf(all).map(([fl, rs]) => {
+      const half = Math.ceil(rs.length / 2);
+      return `<div class="floor"><div class="floor-label">${fl ? `ชั้น ${esc(fl)}` : 'ผังห้อง'}</div><div class="floor-plan" style="--n:${half}">
+        ${rs.slice(0, half).map((x, i) => tile(x, 'side-a', i)).join('')}
+        <div class="corridor" aria-hidden="true"><span>ทางเดิน</span></div>
+        ${rs.slice(half).map((x, i) => tile(x, 'side-b', i)).join('')}</div></div>`;
+    }).join('')}</div>
+    <aside class="map-detail" aria-live="polite"><div class="md-head"><span class="md-no">ห้อง ${esc(sel.r.room_id)}</span>${billBadge(sel.bill)}</div>
+      ${sel.ms.map(line).join('')}
+      <p class="md-note">${sel.vacant ? 'ห้องว่าง · ไม่คิดบิลรอบนี้' : missing ? `ยังขาด ${missing} มิเตอร์ในรอบนี้ · ให้หุ่นถ่ายเพิ่ม` : pending ? 'มีค่ารอยืนยัน · ตรวจที่หน้ายืนยันค่า' : 'ค่าครบและยืนยันแล้ว'}</p>
+      <div class="md-actions">${pending ? `<button class="btn small primary" data-page="review">ไปยืนยันค่า</button>` : ''}<button class="btn small" data-page="rooms" data-room="${esc(sel.r.room_id)}">เปิดห้องนี้ ›</button></div>
+    </aside></div></div>`;
 }
 
 function billBadge(b) {
@@ -633,6 +736,14 @@ document.addEventListener('click', e => {
   const t = e.target;
   // ปิดเมนูบัญชีเมื่อคลิกที่อื่น (หรือหลังเลือกเมนู)
   if (!$('#account-menu').hidden && !t.closest('.account-head') && !t.closest('#avatar')) toggleAccountMenu(false);
+  const hr = t.closest('[data-home-room]');
+  if (hr) {
+    state.homeRoom = hr.dataset.homeRoom; render();
+    document.querySelector(`[data-home-room="${CSS.escape(state.homeRoom)}"]`)?.focus({ preventScroll: true });
+    // จอแคบ: รายละเอียดอยู่ใต้ผัง → เลื่อนให้เห็น
+    if (matchMedia('(max-width: 1000px)').matches) $('.map-detail')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    return;
+  }
   const step = t.closest('[data-cycle-step]');
   if (step) { state.cycle = L.shiftCycle(state.cycle, Number(step.dataset.cycleStep)); render(); return; }
   const nav = t.closest('[data-page]');
