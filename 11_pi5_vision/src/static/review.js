@@ -6,8 +6,38 @@
   const box = $("review"), badge = $("review-badge");
   if (!box) return;
   let queue = [], cur = null, armT = null, busy = false, replaying = false;
+  // อะนิเมชั่น: เข้า = การ์ดเด้งขึ้น · ออก = เก็บ (ลอยขึ้น) / ไม่เอา (ย่อหาย) / ไว้ทีหลัง (เลื่อนลง) · ปิด motion ในระบบ = ไม่ขยับ
+  const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)");
+  const OUT_MS = 260;   // = ระยะออกใน review.css
+  let closing = false, hideT = null, waiting = null;   // waiting = รูปใหม่ที่มาระหว่างการ์ดเก่ากำลังออก
   let last = {};
   try { last = JSON.parse(localStorage.getItem("mrc.review.last") || "{}"); } catch (e) {}
+
+  // เลขห้อง = dropdown จากทะเบียน (meters.json) · "ห้องอื่น" = พิมพ์เอง (ห้องยังไม่อยู่ในทะเบียน → meter_id null ให้ ARIA ผูกทีหลัง)
+  const OTHER = "__other";
+  let rooms = [];
+  const roomSel = $("review-room"), roomOther = $("review-room-other");
+  const roomValue = () => (roomSel.value === OTHER || !rooms.length ? roomOther.value : roomSel.value).trim();
+  function syncOther() {
+    const typing = !rooms.length || roomSel.value === OTHER;
+    roomOther.hidden = !typing;
+    roomSel.closest(".review-select").hidden = !rooms.length;
+  }
+  function paintRooms() {
+    const keep = roomSel.value;
+    roomSel.innerHTML = `<option value="">— เลือกห้อง —</option>` +
+      rooms.map((r) => `<option value="${r}">ห้อง ${r}</option>`).join("") +
+      `<option value="${OTHER}">ห้องอื่น (พิมพ์เอง)</option>`;
+    if (keep) roomSel.value = keep;
+    syncOther();
+  }
+  function setRoom(r) {
+    if (r && rooms.includes(r)) { roomSel.value = r; roomOther.value = ""; }
+    else if (r) { roomSel.value = OTHER; roomOther.value = r; }
+    else { roomSel.value = ""; roomOther.value = ""; }
+    syncOther();
+  }
+  roomSel.addEventListener("change", () => { syncOther(); err(""); if (roomSel.value === OTHER) roomOther.focus(); });
 
   const typeInputs = () => [...document.querySelectorAll('input[name="review-type"]')];
   const fmtTime = (iso) => { try { return new Date(iso).toLocaleString("th-TH", { hour12: false, dateStyle: "short", timeStyle: "short" }); } catch (e) { return ""; } };
@@ -29,19 +59,44 @@
     $("review-value").textContent = item.value == null ? "อ่านไม่ออก" : String(item.value);
     $("review-value").classList.toggle("none", item.value == null);
     $("review-conf").textContent = item.confidence != null && item.value != null ? `ความมั่นใจ ${Math.round(item.confidence * 100)} %` : "";
-    $("review-room").value = last.room || "";
+    setRoom(last.room || "");
     typeInputs().forEach((r) => { r.checked = r.value === last.type; });
-    box.hidden = false; paintBadge();
-    ($("review-room").value ? $("review-keep") : $("review-room")).focus();
+    clearTimeout(hideT); closing = false;
+    box.classList.remove("out", "out-keep", "out-discard", "out-later", "in");
+    box.hidden = false;
+    void box.offsetWidth;                 // เริ่มจากสถานะก่อนเข้า ไม่งั้น transition ไม่เล่น
+    box.classList.add("in");
+    paintBadge();
+    (roomValue() ? $("review-keep") : roomOther.hidden ? roomSel : roomOther).focus({ preventScroll: true });
   }
-  function close() { box.hidden = true; cur = null; disarm(); paintBadge(); }
-  function next() { const nx = queue.find((q) => !cur || q.local_id !== cur.local_id); close(); return nx; }
+  // คืน Promise ที่จบเมื่ออะนิเมชั่นออกเล่นเสร็จ · kind = keep | discard | later
+  function close(kind = "later") {
+    cur = null; disarm();
+    if (box.hidden || closing) { paintBadge(); return Promise.resolve(); }
+    closing = true;
+    box.classList.remove("in");
+    box.classList.add("out", "out-" + kind);
+    return new Promise((res) => {
+      hideT = setTimeout(() => {
+        closing = false;
+        box.hidden = true;
+        box.classList.remove("out", "out-" + kind);
+        paintBadge();
+        res();
+        if (waiting && !cur) { const w = waiting; waiting = null; open(w); }
+      }, reduceMotion.matches ? 0 : OUT_MS);
+    });
+  }
+  async function closeThenNext(kind) {
+    await close(kind);
+    if (!cur && queue.length) open(queue[0]);
+  }
   function drop(lid) { queue = queue.filter((q) => q.local_id !== lid); }
 
   async function decide(keep) {
     if (!cur || busy) return;
-    const room = $("review-room").value.trim(), t = typeInputs().find((r) => r.checked);
-    if (keep && !/^[A-Za-z0-9]{1,10}$/.test(room)) { err("ใส่เลขห้อง (ตัวอักษร/ตัวเลข ไม่เกิน 10 ตัว)"); $("review-room").focus(); return; }
+    const room = roomValue(), t = typeInputs().find((r) => r.checked);
+    if (keep && !/^[A-Za-z0-9]{1,10}$/.test(room)) { err(roomOther.hidden ? "เลือกเลขห้อง" : "พิมพ์เลขห้อง (ตัวอักษร/ตัวเลข ไม่เกิน 10 ตัว)"); (roomOther.hidden ? roomSel : roomOther).focus(); return; }
     if (keep && !t) { err("เลือกชนิดมิเตอร์ น้ำ หรือ ไฟ"); return; }
     busy = true; err("");
     const lid = cur.local_id;      // ต้องจำไว้ก่อน await: เหตุการณ์ "decided" ทาง WebSocket อาจมาถึงก่อน response แล้วเลื่อน cur ไปรูปถัดไปแล้ว
@@ -52,7 +107,7 @@
       if (!r.ok && d.reason !== "not_pending") { err(d.reason === "bad_room" ? "เลขห้องไม่ถูกต้อง" : "บันทึกไม่ได้: " + (d.reason || r.status)); return; }
       if (keep) { last = { room, type: t.value }; try { localStorage.setItem("mrc.review.last", JSON.stringify(last)); } catch (e) {} }
       drop(lid);
-      if (cur && cur.local_id === lid) { const nx = next(); if (nx) open(nx); } else paintBadge();
+      if (cur && cur.local_id === lid) closeThenNext(keep ? "keep" : "discard"); else paintBadge();
     } catch (e) {
       err("ติดต่อ Pi ไม่ได้ — รูปยังค้างอยู่บน Pi กดใหม่ได้เมื่อเชื่อมต่อกลับมา");
     } finally { busy = false; }
@@ -63,15 +118,17 @@
     if (!armT) { $("review-discard").classList.add("armed"); $("review-discard").textContent = "แตะอีกครั้งเพื่อลบถาวร"; armT = setTimeout(disarm, 3000); return; }
     disarm(); decide(false);
   };
-  $("review-later").onclick = close;
+  $("review-later").onclick = () => close("later");
   badge.onclick = () => { if (queue.length) open(queue[0]); };
-  $("review-room").addEventListener("keydown", (e) => { if (e.key === "Enter") decide(true); });
+  roomOther.addEventListener("keydown", (e) => { if (e.key === "Enter") decide(true); });
 
   async function refresh() {
     try {
       const d = await (await fetch("/api/pending", { cache: "no-store" })).json();
       queue = d.items || [];
-      $("review-rooms").innerHTML = (d.rooms || []).map((r) => `<option value="${String(r).replace(/[^A-Za-z0-9]/g, "")}">`).join("");
+      rooms = [...new Set((d.rooms || []).map((r) => String(r).replace(/[^A-Za-z0-9]/g, "")).filter(Boolean))]
+        .sort((a, b) => a.localeCompare(b, "en", { numeric: true }));
+      paintRooms();
       if (cur && !queue.some((q) => q.local_id === cur.local_id)) close();
       paintBadge();
     } catch (e) {}
@@ -85,11 +142,14 @@
       drop(ev.local_id);
       const item = { local_id: ev.local_id, captured_at: ev.captured_at, value: ev.value, confidence: ev.confidence, crop_url: ev.crop_url };
       queue.unshift(item);
-      if (box.hidden) open(item); else paintBadge();                             // กำลังตัดสินรูปก่อนหน้าอยู่ → ไม่แย่งจอ ต่อคิวไว้
+      if (closing) { waiting = item; paintBadge(); }                             // การ์ดเก่ากำลังออก → เปิดต่อทันทีที่ออกเสร็จ
+      else if (!cur) open(item); else paintBadge();                              // กำลังตัดสินรูปก่อนหน้าอยู่ → ไม่แย่งจอ ต่อคิวไว้
     } else if (ev.t === "decided") {                                             // ตัดสินจากเครื่องอื่น/แท็บอื่น
       drop(ev.local_id);
-      if (cur && cur.local_id === ev.local_id) { const nx = next(); if (nx) open(nx); } else paintBadge();
+      if (waiting && waiting.local_id === ev.local_id) waiting = null;
+      if (cur && cur.local_id === ev.local_id) closeThenNext("later"); else paintBadge();
     }
   });
+  syncOther();
   refresh();
 })();

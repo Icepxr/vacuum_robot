@@ -7,7 +7,7 @@
 <title>ARIA · MRC-001 POV Control</title>
 <link rel="stylesheet" href="/static/drive.css?v=c44">
 <link rel="stylesheet" href="/static/drive-vr.css?v=20260927">
-<link rel="stylesheet" href="/static/review.css?v=f10">
+<link rel="stylesheet" href="/static/review.css?v=f10-roomsel">
 </head>
 <body>
 <main class="cockpit" id="cockpit">
@@ -134,8 +134,8 @@
     <div class="review-crop"><img id="review-img" alt="รูปหน้าปัดที่ถ่าย"><span id="review-noimg" hidden>ไม่มีรูป crop (OCR/กรอบมีปัญหา)</span></div>
     <div class="review-ocr"><small>OCR อ่านได้</small><strong id="review-value">—</strong><small id="review-conf"></small></div>
     <label class="review-field">เลขห้อง
-      <input id="review-room" inputmode="text" autocomplete="off" maxlength="10" list="review-rooms" placeholder="เช่น 204" required>
-      <datalist id="review-rooms"></datalist>
+      <span class="review-select"><select id="review-room" required><option value="">— เลือกห้อง —</option></select></span>
+      <input id="review-room-other" inputmode="text" autocomplete="off" maxlength="10" placeholder="พิมพ์เลขห้อง เช่น 204" hidden>
     </label>
     <fieldset class="review-type"><legend>ชนิดมิเตอร์</legend>
       <label><input type="radio" name="review-type" value="water"> น้ำ</label>
@@ -308,6 +308,6 @@
 </section>
 <script src="/static/drive-state.js?v=20260927"></script>
 <script src="/static/drive.js?v=c51-f10"></script>
-<script src="/static/review.js?v=f10"></script>
+<script src="/static/review.js?v=f10-roomsel"></script>
 </body>
 </html>
