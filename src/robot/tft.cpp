@@ -36,9 +36,15 @@ uint32_t lastDraw = 0;
 
 // Approved outer-ring identity: no wordmark, faces or mode text.
 constexpr uint16_t rgb(int r,int g,int b) { return ((r>>3)<<11)|((g>>2)<<5)|(b>>3); }
-constexpr uint16_t C_BG=rgb(16,11,27), C_PANEL=rgb(52,38,63), C_INK=rgb(245,239,255);
-constexpr uint16_t C_MUT=rgb(166,154,182), C_UNKNOWN=rgb(113,103,127), C_ACC=rgb(182,160,207);
-constexpr uint16_t C_OK=rgb(158,217,189), C_WARN=rgb(230,207,148), C_BAD=rgb(237,150,164), C_STOP_BG=0x3803;
+// 29 ก.ย. 2026 ผู้ใช้ (2 รอบ): ม่วงเดิมมืด/หม่น → พื้นสว่างขึ้น + สีวงแหวนทุก state สดขึ้น (แทนโทนนุ่มที่เคยอนุมัติ)
+// พื้น L_hsl 7 % → 33 % · รางวงแหวนเปลี่ยนเป็น "ร่อง" เข้มกว่าพื้น ให้สีสดเด่นบนราง
+// คอนทราสต์ (หลังปัด RGB565 · ไฟล์ 19 §19.11): ตัวอักษรบนพื้น INK 11.9 · MUT 8.4 · UNKNOWN 5.7 · ACC 7.1 · OK 8.3 · WARN 8.1 · BAD 4.5
+//   สีวงแหวนบนราง ≥ 6.3 · รางเทียบพื้น 1.4
+// ค่าเดิม (ก่อน 29 ก.ย.): BG (16,11,27) · PANEL (52,38,63) · INK (245,239,255) · MUT (166,154,182) · UNKNOWN (113,103,127)
+//   ACC (182,160,207) · OK (158,217,189) · WARN (230,207,148) · BAD (237,150,164) · STOP_BG 0x3803
+constexpr uint16_t C_BG=rgb(70,34,132), C_PANEL=rgb(40,14,86), C_INK=rgb(255,255,255);
+constexpr uint16_t C_MUT=rgb(222,210,250), C_UNKNOWN=rgb(186,168,228), C_ACC=rgb(232,178,255);
+constexpr uint16_t C_OK=rgb(64,240,170), C_WARN=rgb(255,204,64), C_BAD=rgb(255,112,146), C_STOP_BG=rgb(128,16,44);
 
 // Clip only display copy, never the underlying IP / telemetry / protocol data.
 void drawFitted(lgfx::LovyanGFX& g, const char* text, int y, int width) {
@@ -210,8 +216,9 @@ void drawHud(lgfx::LovyanGFX& g,bool fresh) {
 
 // Same 400–2000 ppm mapping and band boundaries, with the approved softer colors.
 struct Seg { int lo, hi; uint16_t c; };
-const Seg SEGS[5]={{400,600,rgb(158,217,189)},{600,800,rgb(195,215,154)},{800,1000,rgb(230,207,148)},
-  {1000,1500,rgb(235,173,134)},{1500,2000,rgb(237,150,164)}};
+// แถบ eCO2 สดขึ้น (29 ก.ย.) · เดิม (158,217,189) (195,215,154) (230,207,148) (235,173,134) (237,150,164)
+const Seg SEGS[5]={{400,600,C_OK},{600,800,rgb(184,240,80)},{800,1000,C_WARN},
+  {1000,1500,rgb(255,150,72)},{1500,2000,C_BAD}};
 int airLevel() { int level=0; while(level<4 && info.co2>=SEGS[level].hi) ++level; return level; }
 float airAngle(int value) {
   float f=(value-400)/1600.0f; if(f<0) f=0; if(f>1) f=1; return 135.0f+270.0f*f;
