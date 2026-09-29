@@ -305,6 +305,8 @@ void motorSetup() {
 #ifndef ROBOT_MERGED
   Serial.begin(115200);
   delay(2000);  // รอ USB CDC พร้อมก่อน ไม่งั้นบรรทัดแรกๆ จะหาย
+  // C52: 20 kHz / 11 บิต ต้องใช้ APB (XTAL ได้ div 250 < 256 · ไฟล์ 17) · เฟิร์มแวร์รวมตั้งไว้ใน robot/main.cpp แล้ว
+  if (!ledcSetClockSource(LEDC_USE_APB_CLK)) Serial.println("[ledc] ⚠ ตั้งนาฬิกา APB ไม่สำเร็จ");
 #endif
 
   Serial.println();

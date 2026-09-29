@@ -237,6 +237,10 @@ void setup() {
   Serial.println(" MRC-001 · เฟิร์มแวร์รวม (M1 + M2 + M3) — คุมผ่าน Serial");
   Serial.println("════════════════════════════════════════════════════════");
 
+  // C52 (29 ก.ย. 2026): ล้อ 20 kHz / 11 บิต ใช้นาฬิกา XTAL ไม่ได้ (div = 250 < 256) และ S3 ใช้นาฬิกา LEDC ตัวเดียวร่วมทุก timer
+  // → บังคับ APB 80 MHz ก่อน ledcAttach ตัวแรก (ไฟล์ 17 §17.3) · C51 ลืมข้อนี้ → บูตแล้ว motorSetup ล้ม "เริ่มต้นฮาร์ดแวร์ไม่สำเร็จ — หยุด"
+  if (!ledcSetClockSource(LEDC_USE_APB_CLK)) Serial.println("[ledc] ⚠ ตั้งนาฬิกา APB ไม่สำเร็จ — ล้อ 20 kHz จะผูก PWM ไม่ได้");
+
   // เรียง blower ก่อน เพราะ setup ของมันเป็นตัวเดียวที่ผูก LEDC ค้างไว้ (ช่องแปรง)
   blowerSetup();
   servoSetup();
