@@ -1,0 +1,185 @@
+{
+  "sources": {
+    "assembly_stl": "scissorPart/assembly/arm assembly.stl",
+    "mesh_audit": "simulation\\results\\mesh_audit.json",
+    "step_bom": "simulation/results/step_bom.csv"
+  },
+  "geometry": {
+    "link_count": 6,
+    "link_lengths_mm": [
+      74.2,
+      74.2,
+      74.2,
+      85.0,
+      85.0,
+      85.0
+    ],
+    "link_length_total_mm": 477.6,
+    "link_width_mm": 11.981141090393066,
+    "link_thickness_assumed_mm": 5.4,
+    "cad_pose_angle_from_horizontal_deg": 67.11769466801606,
+    "cad_pose_total_height_mm": 461.726877450943,
+    "fixed_overhead_inferred_mm": 21.71135399788693,
+    "maximum_total_height_mm": 499.31135399788695,
+    "target_extended_mm": 550.0,
+    "extended_shortfall_mm": 50.688646002113046,
+    "target_stow_mm": 100.0,
+    "stow_angle_deg": 9.43455603818852,
+    "clearance_at_100mm_stow_mm": 0.017271236701354553,
+    "height_for_0_4mm_clearance_mm": 102.57185973987472
+  },
+  "mass": {
+    "six_link_petg_solid_mass_kg": 0.12377808248166305,
+    "camera_housing_petg_solid_mass_kg": 0.1872853268563598,
+    "assembly_petg_equivalent_mass_proxy_kg": 0.6985118115202213,
+    "assembly_volume_centroid_y_mm": 229.82631913289725
+  },
+  "servo": {
+    "joint_efficiency_assumed": 0.65,
+    "capacity_5v_nm_estimated": 0.9218251000000001,
+    "capacity_6v_nm_spec": 1.0787315,
+    "direct_servo_travel_deg": 80.56544396181148,
+    "ratio_needed_for_sf2_at_5v": 2.5354573693068794,
+    "servo_travel_with_sf2_ratio_5v_deg": 204.27024860445536,
+    "ratio_needed_for_sf2_at_6v": 2.1666635701349697,
+    "servo_travel_with_sf2_ratio_6v_deg": 174.5582124438073,
+    "results": [
+      {
+        "case": "sensitivity_95g",
+        "payload_kg": 0.095,
+        "effective_lift_mass_kg": 0.1623509494315967,
+        "servos": 1,
+        "peak_torque_per_servo_nm": 1.2044103580540293,
+        "sf_5v": 0.7653746032950071,
+        "sf_6v": 0.8956511315154336
+      },
+      {
+        "case": "sensitivity_95g",
+        "payload_kg": 0.095,
+        "effective_lift_mass_kg": 0.1623509494315967,
+        "servos": 2,
+        "peak_torque_per_servo_nm": 0.6272051790270147,
+        "sf_5v": 1.4697345156333532,
+        "sf_6v": 1.7199020927624344
+      },
+      {
+        "case": "cad_solid_housing_plus_camera",
+        "payload_kg": 0.2472853268563598,
+        "effective_lift_mass_kg": 0.3146362762879565,
+        "servos": 1,
+        "peak_torque_per_servo_nm": 2.287248243007051,
+        "sf_5v": 0.4030280066094069,
+        "sf_6v": 0.4716285183727102
+      },
+      {
+        "case": "cad_solid_housing_plus_camera",
+        "payload_kg": 0.2472853268563598,
+        "effective_lift_mass_kg": 0.3146362762879565,
+        "servos": 2,
+        "peak_torque_per_servo_nm": 1.1686241215035256,
+        "sf_5v": 0.7888123161568842,
+        "sf_6v": 0.9230782423112474
+      },
+      {
+        "case": "sensitivity_300g",
+        "payload_kg": 0.3,
+        "effective_lift_mass_kg": 0.3673509494315967,
+        "servos": 1,
+        "peak_torque_per_servo_nm": 2.6620804500961173,
+        "sf_5v": 0.3462799555763676,
+        "sf_6v": 0.40522122461064286
+      },
+      {
+        "case": "sensitivity_300g",
+        "payload_kg": 0.3,
+        "effective_lift_mass_kg": 0.3673509494315967,
+        "servos": 2,
+        "peak_torque_per_servo_nm": 1.3560402250480588,
+        "sf_5v": 0.6797918549704749,
+        "sf_6v": 0.7955011068803428
+      }
+    ]
+  },
+  "structure": {
+    "theta_deg": 9.43455603818852,
+    "effective_mass_kg": 0.3146362762879565,
+    "horizontal_force_total_n": 28.576918330490297,
+    "axial_force_per_path_n": 9.414848618380866,
+    "moment_per_path_nmm": 303.6297572614594,
+    "bending_stress_mpa": 2.3876875090441003,
+    "axial_stress_mpa": 0.19412794736632294,
+    "combined_stress_mpa": 2.5818154564104234,
+    "static_sf": 5.80986528791448,
+    "impact_2x_sf": 2.90493264395724,
+    "impact_2x_kt2_sf": 1.45246632197862,
+    "bearing_stress_mpa": 0.5811634949617818,
+    "bearing_sf_using_15mpa": 25.810292852248786,
+    "euler_buckling_load_n": 429.5266407893639,
+    "buckling_sf": 45.62225673504589
+  },
+  "stability": {
+    "base_mass_after_removing_old_lift_kg": 1.991,
+    "base_cog_m_inferred": 0.03625870416875942,
+    "new_mast_cog_m_at_cad_pose": 0.3298263191328973,
+    "cad_mass_proxy_case": {
+      "mast_mass_kg": 0.7,
+      "robot_mass_kg": 2.691,
+      "robot_cog_m": 0.11262337547121073,
+      "tip_angle_deg": 41.60235780748833,
+      "tip_acceleration_m_s2": 8.710447506084272,
+      "guard_at_sf_2_5_m_s2": 3.4841790024337085
+    }
+  },
+  "base_plate_beam_check": {
+    "assumptions": {
+      "span_m": 0.18,
+      "effective_width_m": 0.08,
+      "petg_allow_mpa": 30.6,
+      "impact_factor": 2.0
+    },
+    "results": [
+      {
+        "thickness_mm": 2.0,
+        "dynamic_point_load_n": 13.704801742026744,
+        "stress_mpa": 11.563426469835065,
+        "safety_factor": 2.646274448133924,
+        "deflection_mm": 14.867262604073655
+      },
+      {
+        "thickness_mm": 3.0,
+        "dynamic_point_load_n": 13.704801742026744,
+        "stress_mpa": 5.139300653260029,
+        "safety_factor": 5.95411750830133,
+        "deflection_mm": 4.405114845651454
+      },
+      {
+        "thickness_mm": 4.0,
+        "dynamic_point_load_n": 13.704801742026744,
+        "stress_mpa": 2.890856617458766,
+        "safety_factor": 10.585097792535697,
+        "deflection_mm": 1.858407825509207
+      },
+      {
+        "thickness_mm": 5.0,
+        "dynamic_point_load_n": 13.704801742026744,
+        "stress_mpa": 1.8501482351736103,
+        "safety_factor": 16.53921530083703,
+        "deflection_mm": 0.9515048066607138
+      },
+      {
+        "thickness_mm": 6.0,
+        "dynamic_point_load_n": 13.704801742026744,
+        "stress_mpa": 1.2848251633150072,
+        "safety_factor": 23.81647003320532,
+        "deflection_mm": 0.5506393557064317
+      }
+    ]
+  },
+  "limitations": [
+    "The serial equal-angle six-link model is inferred from six CAD link components; Fusion joints were not exported to STL/STEP.",
+    "STL has no material or print-infill metadata; CAD masses are solid PETG equivalents.",
+    "The 5 V MG996R torque, joint efficiency, PETG allowable stress, and Kt=2 are estimates.",
+    "Collision is represented by adjacent-link planar clearance; full 3D contact requires the Fusion assembly joints.",
+    "Linear static FEA at holes, gear teeth, tapers, and layer interfaces remains required."
+  ]
+}
