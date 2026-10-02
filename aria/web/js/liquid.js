@@ -1,10 +1,36 @@
 // วอลเปเปอร์ผ้าซาตินโทนม่วง/โลหะเหลว (WebGL) หลังหน้าเข้าสู่ระบบ · ไหลเองอย่างเดียว ไม่ตามเมาส์ (ผู้ใช้สั่ง 29 ก.ย.)
 // พื้นผิว = noise บิดซ้อน (domain warping) → ความสูง → normal (finite difference) → แสงกระจาย + เงาคม + รุ้งอ่อนที่ขอบรอยพับ
 // เรนเดอร์ความละเอียดต่ำแล้วขยาย (ผิวนุ่มอยู่แล้ว) · rAF หยุดเองตอนแท็บถูกซ่อน · ไม่มี WebGL = ไล่สี CSS นิ่ง (.liquid-fallback) · ลดการเคลื่อนไหว = ภาพนิ่ง
+// จานสีม่วงต้นฉบับ (สว่าง, มืด) · ธีม teal = เลื่อน hue ด้วยสูตรเดียวกับ tools/make_accent.py
+const PURPLE = { deep: [[0.40, 0.26, 0.66], [0.07, 0.035, 0.16]], mid: [[0.66, 0.53, 0.90], [0.22, 0.12, 0.44]], hi: [[0.92, 0.87, 1.0], [0.38, 0.28, 0.66]] };
+function shiftHue([r, g, b]) {
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, d = mx - mn;
+  if (!d) return [r, g, b];
+  const s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+  let h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  h *= 60;
+  if (h < 235 || h > 335 || s < 0.08) return [r, g, b];
+  const nh = (172 + (h - 250) * 0.55) / 360, ns = s * 0.9;
+  const q = l < 0.5 ? l * (1 + ns) : l + ns - l * ns, p = 2 * l - q;
+  const f = t => { t = (t + 1) % 1; return t < 1 / 6 ? p + (q - p) * 6 * t : t < 1 / 2 ? q : t < 2 / 3 ? p + (q - p) * (2 / 3 - t) * 6 : p; };
+  return [f(nh + 1 / 3), f(nh), f(nh - 1 / 3)];
+}
+// ทุกสี (สว่าง/มืด) ต้องสว่างจริงเท่าม่วง: เขียวที่ HSL lightness เท่ากันสว่างกว่า (ช่อง G หนัก) → ตัวอักษรขาวเหลือ 3.5:1
+// จึงสเกลสีให้ relative luminance เท่าต้นฉบับ (คำนวณ 2 ต.ค. · ม่วง ink 6.6:1 → teal เท่ากัน)
+const lum = c => c.map(x => x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4).reduce((s, x, i) => s + x * [0.2126, 0.7152, 0.0722][i], 0);
+function matchLum(c, ref) {
+  if (lum(c) <= lum(ref)) return c;
+  let lo = 0, hi = 1;
+  for (let i = 0; i < 24; i++) { const m = (lo + hi) / 2; lum(c.map(x => x * m)) > lum(ref) ? hi = m : lo = m; }
+  return c.map(x => x * lo);
+}
+const PALETTES = { purple: PURPLE, teal: Object.fromEntries(Object.entries(PURPLE).map(([k, v]) => [k, v.map(c => matchLum(shiftHue(c), c))])) };
+export const accentNow = () => document.documentElement.dataset.accent === 'teal' ? 'teal' : 'purple';
 const VERT = `attribute vec2 a; void main(){ gl_Position = vec4(a, 0.0, 1.0); }`;
 const FRAG = `
 precision highp float;
 uniform vec2 uRes; uniform float uTime; uniform float uTone;   // uTone 0 = หน้าเข้าสู่ระบบ (สว่าง) · 1 = หลังบ้าน (มืด)
+uniform vec3 uDeep0, uDeep1, uMid0, uMid1, uHi0, uHi1;          // จานสีตามธีม (ม่วง/เขียวฟ้า) · ค่าใน PALETTES ด้านล่าง
 float hash(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 float noise(vec2 p){
   vec2 i = floor(p), f = fract(p); vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);   // quintic = ผิวลื่นไม่มีรอยต่อ
@@ -35,9 +61,9 @@ void main(){
   float spec = pow(max(R.z, 0.0), 60.0);                                // เส้นเงาคม
   float sheen = pow(max(R.z, 0.0), 8.0);                                // เงาเนื้อผ้านุ่ม
   float fres = pow(1.0 - clamp(n.z, 0.0, 1.0), 2.2);
-  vec3 deep = mix(vec3(0.40, 0.26, 0.66), vec3(0.07, 0.035, 0.16), uTone);   // ม่วงเข้ม → ลาเวนเดอร์ → ขาวอมม่วง (สว่าง)
-  vec3 mid  = mix(vec3(0.66, 0.53, 0.90), vec3(0.22, 0.12, 0.44), uTone);   // โทนมืด: ไฮไลต์ถูกกดให้ตัวอักษรขาวบนพื้นยังอ่านได้ (≥ 4.5:1)
-  vec3 hi   = mix(vec3(0.92, 0.87, 1.0),  vec3(0.38, 0.28, 0.66), uTone);   // กดไฮไลต์ลง → กระจกใสบนพื้นนี้ตัวอักษรยัง ≥ 5.2:1
+  vec3 deep = mix(uDeep0, uDeep1, uTone);   // ม่วงเข้ม → ลาเวนเดอร์ → ขาวอมม่วง (สว่าง)
+  vec3 mid  = mix(uMid0, uMid1, uTone);   // โทนมืด: ไฮไลต์ถูกกดให้ตัวอักษรขาวบนพื้นยังอ่านได้ (≥ 4.5:1)
+  vec3 hi   = mix(uHi0, uHi1, uTone);   // กดไฮไลต์ลง → กระจกใสบนพื้นนี้ตัวอักษรยัง ≥ 5.2:1
   vec3 col = mix(deep, mid, smoothstep(0.15, 0.75, diff));
   col = mix(col, hi, smoothstep(0.7, 1.0, diff) * 0.7);
   // รุ้งเฉพาะขอบรอยพับที่ชันมาก (เหมือนมุกบนผ้า) · อ่อน
@@ -76,6 +102,14 @@ export function createBackdrop(canvas, o = {}) {
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);   // สามเหลี่ยมเดียวคลุมจอ
   const a = gl.getAttribLocation(prog, 'a'); gl.enableVertexAttribArray(a); gl.vertexAttribPointer(a, 2, gl.FLOAT, false, 0, 0);
   const loc = { res: gl.getUniformLocation(prog, 'uRes'), time: gl.getUniformLocation(prog, 'uTime'), tone: gl.getUniformLocation(prog, 'uTone') };
+  // จานสีตามธีม: อ่านทุกเฟรม (เปลี่ยนธีมไม่ต้องสร้าง WebGL ใหม่ = ไม่ต้อง compile shader ซ้ำ)
+  const palLoc = ['uDeep', 'uMid', 'uHi'].map(n => [gl.getUniformLocation(prog, n + '0'), gl.getUniformLocation(prog, n + '1')]);
+  let palKey = null;
+  const setPal = () => {
+    const k = accentNow(); if (k === palKey) return; palKey = k;
+    const p = PALETTES[k];
+    [p.deep, p.mid, p.hi].forEach(([c0, c1], i) => { gl.uniform3fv(palLoc[i][0], c0); gl.uniform3fv(palLoc[i][1], c1); });
+  };
   let raf = 0, lastDraw = 0, alive = true;
   const t0 = performance.now();
 
@@ -93,6 +127,7 @@ export function createBackdrop(canvas, o = {}) {
     gl.uniform2f(loc.res, canvas.width, canvas.height);
     gl.uniform1f(loc.time, reduced() ? 8 : (ms - t0) / 1000 + 8);
     gl.uniform1f(loc.tone, opts.tone);
+    setPal();
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     if (!reduced()) raf = requestAnimationFrame(render);
   }
@@ -101,6 +136,7 @@ export function createBackdrop(canvas, o = {}) {
   addEventListener('resize', onResize);
   raf = requestAnimationFrame(render);
   return {
+    drawNow() { if (alive) { lastDraw = 0; render(performance.now()); } },   // วาดทันที (ใช้ตอนเปลี่ยนธีม ให้ภาพปลายทางของ crossfade เป็นสีใหม่)
     stop() {
       alive = false; cancelAnimationFrame(raf); removeEventListener('resize', onResize);
       gl.getExtension('WEBGL_lose_context')?.loseContext();   // คืนหน่วยความจำ GPU

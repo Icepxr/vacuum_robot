@@ -1,7 +1,7 @@
 // ARIA หลังบ้าน · vanilla JS (ต่อจาก design/aria-prototype) + Supabase
 // ขอบเขต: ขั้น 3 ของแบบ v1 §7 (บัญชีเจ้าของ + 5 หน้า + reading_events) · บิลเป็นพรีวิว (ขั้น 4 ยังไม่มีตาราง invoices) · ยังไม่ส่งอีเมล (ขั้น 5)
 import * as L from './logic.js?v=w13';
-import { createBackdrop } from './liquid.js?v=w14';
+import { createBackdrop, accentNow } from './liquid.js?v=w41';
 
 let gateBg = null, appBg = null;   // วอลเปเปอร์สองโทน (อินสแตนซ์แยก · ตอนเปลี่ยนหน้าทำงานพร้อมกัน)
 
@@ -33,9 +33,22 @@ const iconPaths = {
   down: '<path d="M3 7l6 6 4-4 8 8"/><path d="M15 17h6v-6"/>',
   scan: '<path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><path d="M8 12h8"/>',
   baht: '<circle cx="12" cy="12" r="9"/><text x="12" y="16.2" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor" stroke="none">฿</text>',
+  alert: '<path d="M12 4 2.5 20h19z"/><path d="M12 10v4"/><path d="M12 17h.01"/>',
+  edit: '<path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="m13.5 6.5 4 4"/>',
+  lock: '<rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
   user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
   logout: '<path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l-5-5 5-5M5 12h11"/>',
 };
+// ฟอร์มแก้ข้อมูลที่มีอยู่แล้ว = ดูก่อน → กด "แก้ไข" ถึงมีช่องกรอก + ยกเลิก/บันทึก (ผู้ใช้ขอ 3 ต.ค.: ปุ่มบันทึกไม่ควรลอยอยู่เฉยๆ)
+// state.editing = id ของฟอร์มที่เปิดแก้อยู่ (ทีละฟอร์ม) · บันทึกสำเร็จ / เปลี่ยนหน้า / Esc = กลับเป็นโหมดดู
+const isEditing = id => state.editing === id;
+const editCls = id => `editable${isEditing(id) ? ' editing' : ''}`;
+const editBtn = (id, label = 'แก้ไข') => isEditing(id) ? '' : `<button class="btn small ghost set-edit" type="button" data-action="edit" data-form="${id}">${icon('edit')}${label}</button>`;
+const editActions = (save = 'บันทึก', lead = '') => `<div class="set-actions">${lead}<button class="btn small" type="button" data-action="edit-cancel">ยกเลิก</button><button class="btn primary small" type="submit">${save}</button></div>`;
+const viewVal = (text, empty = 'ยังไม่ตั้ง') => text == null || text === '' ? `<span class="set-val empty">${empty}</span>` : `<span class="set-val">${esc(text)}</span>`;
+// แถว ป้าย/ค่า: โหมดดูเห็น view · โหมดแก้เห็น ctl (CSS สลับ ไม่ต้อง render ใหม่ตอนพิมพ์)
+const setRow = (label, ctl, hint = '', view = '') => `<label class="set-row"><span class="set-label">${label}${hint ? `<small>${hint}</small>` : ''}</span><span class="set-ctl">${view}${ctl}</span></label>`;
+
 const icon = name => `<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${iconPaths[name] || iconPaths.review}</svg>`;
 const status = (text, tone = '') => `<span class="status ${tone}">${esc(text)}</span>`;
 
@@ -46,10 +59,10 @@ const FLAG_TEXT = {
   low_conf: ['OCR ไม่มั่นใจ', 'warn'],
   clock: ['เวลา Pi ยังไม่ยืนยัน', 'warn'],
 };
-const EVENT_TEXT = { confirmed: 'ยืนยัน', corrected: 'แก้ค่าแล้วยืนยัน', rejected: 'ปฏิเสธ', assigned: 'ผูกมิเตอร์' };
+const EVENT_TEXT = { confirmed: 'ยืนยัน', corrected: 'แก้ค่าแล้วยืนยัน', rejected: 'ปฏิเสธ', assigned: 'ผูกมิเตอร์', reopened: 'ยกเลิกการยืนยัน' };
 const PAGE_NAMES = { home: 'หน้าหลัก', review: 'ยืนยันค่ามิเตอร์', bills: 'บิล', rooms: 'ห้องและมิเตอร์', settings: 'ตั้งค่า' };
 
-const state = { page: 'home', cycle: null, selectedReading: null, selectedRoom: null, billFilter: 'all', homeRoom: null, roomQuery: '', user: null, data: null, busy: false };
+const state = { guest: false, page: 'home', cycle: null, selectedReading: null, selectedRoom: null, billFilter: 'all', homeRoom: null, roomQuery: '', user: null, data: null, busy: false, editing: null };
 let api;
 let mIdx = new Map();
 
@@ -63,21 +76,32 @@ async function reload() {
 
 // ทุกปุ่มที่เขียนข้อมูลผ่านตรงนี้: กันกดซ้ำระหว่างรอ + โชว์ข้อความจากฐานข้อมูล (trigger เขียนเป็นภาษาไทยไว้แล้ว)
 async function write(fn, okText) {
+  if (state.guest) { toast('โหมดผู้ชม · ดูได้อย่างเดียว แก้ไขไม่ได้', true); return false; }
   if (state.busy) return false;
   state.busy = true;
   document.body.classList.add('busy');
   try {
     await fn();
+    state.editing = null;
     await reload();
     if (okText) toast(okText);
     return true;
   } catch (e) {
     toast(`บันทึกไม่สำเร็จ: ${friendlyError(e.message)}`, true);
+    const typed = keepTyped();
+    await reload().catch(() => {});   // บางอย่างอาจสำเร็จไปก่อนพัง (เช่น ส่งอีเมลชุดแรกแล้ว) → ให้หน้าตรงกับฐานข้อมูล
+    typed();                          // แต่ไม่ทิ้งสิ่งที่ผู้ใช้พิมพ์ไว้ในฟอร์ม → แก้แล้วกดบันทึกซ้ำได้
     return false;
   } finally {
     state.busy = false;
     document.body.classList.remove('busy');
   }
+}
+
+// จำค่าที่พิมพ์ในทุกฟอร์มของหน้า (ตาม id ฟอร์ม + name) แล้วคืนให้หลัง render ใหม่
+function keepTyped() {
+  const saved = [...document.querySelectorAll('#page-content form[id]')].map(f => [f.id, [...f.elements].filter(el => el.name && el.type !== 'radio' && el.type !== 'checkbox').map(el => [el.name, el.value])]);
+  return () => saved.forEach(([id, vals]) => { const f = document.getElementById(id); if (f) vals.forEach(([n, v]) => { if (f.elements[n] && 'value' in f.elements[n]) f.elements[n].value = v; }); });
 }
 
 // ข้อความจาก constraint ของ Postgres เป็นภาษาอังกฤษ · trigger ของเราเขียนไทยอยู่แล้ว ปล่อยผ่าน
@@ -109,6 +133,19 @@ function ctx() {
   const rooms = [...d.rooms].sort((a, b) => a.room_id.localeCompare(b.room_id, 'en', { numeric: true }));
   const capture = new Map(rooms.map(r => [r.room_id, L.roomCaptureState(r, range, d, mIdx, inCycle)]));
   const bills = rooms.map(r => L.billPreview(r, state.cycle, d, mIdx));
+  // บิลที่อนุมัติแล้ว (ฉบับปัจจุบัน) ของรอบนี้ · view = สถานะที่หน้าบิลแสดง (อนุมัติแล้วชนะสถานะพรีวิว)
+  for (const b of bills) {
+    b.inv = (d.invoices || []).find(v => v.cycle === state.cycle && v.room_id === b.room.room_id && v.state === 'approved') || null;
+    b.changed = b.inv ? invoiceDiff(b.inv, b) : [];
+    b.view = b.inv ? 'approved' : b.state;
+    // การส่ง: ครั้งล่าสุดของฉบับปัจจุบัน · การรับเงิน: รวมทุกรายการที่ไม่ยกเลิกของ รอบ+ห้อง เทียบยอดฉบับปัจจุบัน
+    const att = b.inv ? (d.deliveries || []).filter(a => a.invoice_id === b.inv.id).sort((x, y) => y.id - x.id) : [];
+    b.sent = att.some(a => a.result === 'sent') ? 'sent' : att.length ? 'failed' : null;
+    b.attempts = att;
+    b.payments = (d.payments || []).filter(p => p.cycle === state.cycle && p.room_id === b.room.room_id).sort((x, y) => y.id - x.id);
+    b.paid = b.payments.filter(p => !p.voided_at).reduce((sum, p) => sum + Number(p.amount), 0);
+    b.pay = !b.inv ? null : b.paid >= Number(b.inv.total_baht) - 0.004 ? 'paid' : b.paid > 0 ? 'partial' : 'unpaid';
+  }
   return { d, range, inCycle, queue, rooms, capture, bills };
 }
 const meterLabel = id => { const m = mIdx.get(id); return m ? `${L.TYPE_TH[m.type]} ห้อง ${m.room_id}` : 'ยังไม่ผูก'; };
@@ -121,6 +158,7 @@ function pageHead(kicker, title, subtitle, action = '') {
 }
 
 // ───────── โครงหน้า ─────────
+const shown = { page: null, sel: null };
 function render() {
   if (!state.data) return;
   $('#top-page-name').textContent = PAGE_NAMES[state.page];
@@ -135,18 +173,82 @@ function render() {
   renderChrome(c);
   const pages = { home: renderHome, review: renderReview, bills: renderBills, rooms: renderRooms, settings: renderSettings };
   $('#page-content').innerHTML = pages[state.page](c);
+  // เปลี่ยนหน้า = เลื่อนขึ้นจางเข้า · เปลี่ยนรายการที่เลือก = เฉพาะแผงรายละเอียดจางเข้า · render จากการบันทึก = ไม่ขยับ (ไม่กระพริบ)
+  const sel = `${state.selectedRoom}|${state.selectedReading}|${state.homeRoom}`;
+  if (state.page !== shown.page) $('#page-content > .page')?.classList.add('enter');
+  else if (sel !== shown.sel) document.querySelectorAll('.rm-detail, .review-detail, .map-detail').forEach(el => el.classList.add('enter'));
+  shown.page = state.page; shown.sel = sel;
+  if (state.guest) lockForGuest();
   if (state.page === 'review') loadCrop();
+  if (state.page === 'settings') { (window.requestIdleCallback || setTimeout)(() => prepStyles(accentNow() === 'teal' ? 'purple' : 'teal')); if (!state.guest) loadMailStatus(); }
 }
 
+// ธีมสี (ผู้ใช้ขอ 2 ต.ค. · ม่วงเก็บไว้สลับกลับ) · จำต่อเบราว์เซอร์ · ไฟล์ .teal.css สร้างจาก tools/make_accent.py
+const ACCENTS = { purple: { name: 'ม่วง', meta: '#1a0d38', logo: 'img/aria-logo-plum.png', sw: 'linear-gradient(135deg, #8b5cf6, #d946ef)' }, teal: { name: 'เขียวฟ้า', meta: '#071918', logo: 'img/aria-logo-teal.png', sw: 'linear-gradient(135deg, #388782, #3c94b2)' } };
+function applyAccentAssets() {
+  const a = ACCENTS[accentNow()];
+  const g = $('.gate-logo'); if (g) g.src = a.logo;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', a.meta);
+}
+// สลับไฟล์ CSS แบบไม่ค้าง: โหลดชุดของอีกธีมไว้ก่อนเป็น media="not all" (ไม่มีผลกับหน้า) → ตอนกดแค่สลับ media ทันที
+// ไฟล์ /css ตั้ง no-cache (netlify.toml) → ถ้าไม่โหลดไว้ก่อน ทุกครั้งที่กดต้องรอเซิร์ฟเวอร์
+const cssHref = (h, name) => name === 'teal' ? h.replace(/css\/(\w+)\.css/, 'css/$1.teal.css') : h.replace(/\.teal\.css/, '.css');
+const prepared = {};
+function prepStyles(name) {
+  if (prepared[name]) return prepared[name];
+  const live = [...document.querySelectorAll('link[data-css]:not([media])')];
+  const want = live.map(l => cssHref(l.getAttribute('href'), name));
+  if (live.every((l, i) => l.getAttribute('href') === want[i])) return Promise.resolve([]);
+  prepared[name] = Promise.all(live.map((old, i) => new Promise(res => {
+    const n = old.cloneNode(); n.setAttribute('href', want[i]); n.setAttribute('media', 'not all'); n.dataset.accentFor = name;
+    n.onload = n.onerror = () => res(n);
+    old.after(n);
+  })));
+  return prepared[name];
+}
+function commitStyles(name, links) {
+  const olds = [...document.querySelectorAll('link[data-css]:not([media])')];
+  links.forEach(n => n.removeAttribute('media'));
+  // ชุดเก่ากลายเป็นชุดสำรอง (media="not all") ไว้สลับกลับได้ทันที
+  const prev = accentNow();
+  olds.forEach(o => { o.setAttribute('media', 'not all'); o.dataset.accentFor = prev; });
+  prepared[prev] = Promise.resolve(olds);
+  delete prepared[name];
+}
+function applyAccentNow(name, links) {
+  try { localStorage.setItem('aria.accent', name); } catch {}
+  commitStyles(name, links);
+  if (name === 'teal') document.documentElement.dataset.accent = 'teal'; else delete document.documentElement.dataset.accent;
+  applyAccentAssets();
+  render();
+  appBg?.drawNow();   // พื้นหลังเดิม แค่เปลี่ยนจานสี
+}
+async function setAccent(name) {
+  if (!ACCENTS[name] || name === accentNow() || setAccent.busy) return;
+  setAccent.busy = true;
+  try {
+    const links = await prepStyles(name);   // ปกติโหลดไว้แล้วตั้งแต่เปิดหน้าตั้งค่า
+    const smooth = document.startViewTransition && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (smooth) await document.startViewTransition(() => applyAccentNow(name, links)).finished;
+    else applyAccentNow(name, links);
+  } finally { setAccent.busy = false; }
+}
+
+// โหมดผู้ชม: ปิดทุกช่องกรอก/ปุ่มบันทึก (ช่องค้นหา ตัวกรอง และการเลือกดูยังใช้ได้) · ฐานข้อมูลกันซ้ำด้วย RLS
+function lockForGuest() {
+  $('#page-content').querySelectorAll('form input, form select, form textarea, form button, #include-rent').forEach(el => { el.disabled = true; });
+}
 function renderChrome(c) {
   const d = c.d;
   $('#ws-name').textContent = d.settings.dorm_name || 'หอพัก (ยังไม่ตั้งชื่อ)';
   $('#ws-meta').textContent = `${d.rooms.length} ห้อง · ${d.meters.filter(m => L.meterActiveOn(m, L.todayBkk())).length} มิเตอร์`;
   const demo = hasDemo();
   $('#ws-demo').hidden = !demo;
-  $('#demo-badge').hidden = !demo;
-  const email = state.user?.email || '';
-  $('#avatar').textContent = (email[0] || '?').toUpperCase();
+  $('#demo-badge').hidden = !demo || state.guest;
+  const email = state.guest ? 'ผู้ชม (Guest)' : state.user?.email || '';
+  $('#guest-badge').hidden = !state.guest;
+  $('.account-head small').textContent = state.guest ? 'ดูได้อย่างเดียว · แก้ไขไม่ได้' : 'เจ้าของหอ · เข้าด้วย Google';
+  $('#avatar').textContent = state.guest ? 'G' : (email[0] || '?').toUpperCase();
   $('#avatar').title = email;
   $('#account-email').textContent = email || '—';
   $('#side-email').textContent = email || '—';
@@ -215,7 +317,7 @@ function devicePanel() {
       <div class="bot-head"><span class="bot-avatar">${icon('robot')}</span>
         <div class="bot-id"><b>${esc(v.device_id)}</b><small>${v.last_seen_at ? `ซิงก์ล่าสุด ${L.dateTimeTh(v.last_seen_at)}` : 'ยังไม่เคยส่งข้อมูล'}</small></div>
         ${status(age, ageTone)}</div>
-      ${v.warn ? `<div class="bot-warn">${icon('review')}หุ่นแจ้งเตือน: ${esc(v.warn)}</div>` : ''}
+      ${v.warn ? `<div class="bot-warn">${icon('alert')}หุ่นแจ้งเตือน: ${esc(v.warn)}</div>` : ''}
       <div class="bot-flow">
         ${step('camera', n(v.pending_decisions), 'รอคนขับตัดสิน', 'รูปบนหุ่น', v.pending_decisions > 0)}${arrow}
         ${step('upload', n(queued), 'รอส่งขึ้นคลาวด์', queued == null ? '' : `${rows} แถว · ${crops} รูป`, queued > 0)}${arrow}
@@ -233,12 +335,14 @@ function devicePanel() {
 function cycleSteps(c, { total, captured, pendingInCycle, ready, blocked }) {
   const withMeters = c.rooms.filter(r => c.capture.get(r.room_id).meters.length);
   const confirmedRooms = withMeters.filter(r => c.capture.get(r.room_id).confirmed).length;
-  const billable = c.bills.filter(b => b.state !== 'vacant').length;
+  const billable = c.bills.filter(b => b.state !== 'vacant' || b.inv).length;
+  const approved = c.bills.filter(b => b.inv).length, readyNow = c.bills.filter(b => b.view === 'ready').length;
+  const sentN = c.bills.filter(b => b.sent === 'sent').length, paidN = c.bills.filter(b => b.pay === 'paid').length;
   const steps = [
     { ic: 'camera', name: 'อ่านมิเตอร์', n: captured, d: total, unit: 'ห้อง', hint: !total ? 'ยังไม่มีห้องที่ติดมิเตอร์' : total - captured ? `ยังขาด ${total - captured} ห้อง` : 'ครบทุกห้อง', page: 'rooms' },
     { ic: 'review', name: 'ยืนยันค่า', n: confirmedRooms, d: total, unit: 'ห้อง', hint: c.queue.length ? `รอยืนยัน ${c.queue.length} ค่า${pendingInCycle !== c.queue.length ? ` (รอบนี้ ${pendingInCycle})` : ''}` : 'ไม่มีค่าค้าง', page: 'review', hot: c.queue.length > 0 },
-    { ic: 'bills', name: 'คิดบิล', n: ready, d: billable, unit: 'ห้อง', hint: !billable ? 'ยังไม่มีห้องที่มีผู้เช่า' : blocked ? `ข้อมูลไม่ครบ ${blocked} ห้อง` : 'พร้อมทุกห้อง', page: 'bills' },
-    { ic: 'mail', name: 'ส่งอีเมล', off: true, hint: 'เปิดใช้ในขั้น 5' },
+    { ic: 'lock', name: 'อนุมัติบิล', n: approved, d: billable, unit: 'ห้อง', hint: !billable ? 'ยังไม่มีห้องที่มีผู้เช่า' : readyNow ? `พร้อมอนุมัติ ${readyNow} ห้อง` : blocked ? `ข้อมูลไม่ครบ ${blocked} ห้อง` : 'อนุมัติครบ', page: 'bills', hot: readyNow > 0 },
+    { ic: 'mail', name: 'ส่งบิล', n: sentN, d: approved, unit: 'ห้อง', hint: !approved ? 'รออนุมัติบิลก่อน' : `รับเงินแล้ว ${paidN} / ${approved} ห้อง`, page: 'bills', hot: approved > sentN },
   ];
   const html = steps.map((x, i) => {
     const ratio = x.off || !x.d ? 0 : x.n / x.d;
@@ -274,7 +378,7 @@ function onboarding(c) {
   if (steps.every(x => x[1])) return '';
   const next = steps.findIndex(x => !x[1]);
   return `<section class="onb"><div class="onb-head"><b>เริ่มต้นใช้งาน</b><span>${steps.filter(x => x[1]).length} / ${steps.length}</span></div>
-    <div class="onb-steps">${steps.map(([t, ok, page], i) => `<button class="onb-step ${ok ? 'ok' : i === next ? 'next' : ''}" data-page="${page}"><span class="onb-dot">${ok ? icon('check') : i + 1}</span>${t}</button>`).join('')}</div></section>`;
+    <div class="onb-steps">${steps.map(([t, ok, page], i) => `<button class="onb-step ${ok ? 'ok' : i === next ? 'next' : ''}" data-page="${page}"${i === 0 && !ok ? ' data-edit="settings-form"' : ''}><span class="onb-dot">${ok ? icon('check') : i + 1}</span>${t}</button>`).join('')}</div></section>`;
 }
 function renderHome(c) {
   const withMeters = c.rooms.filter(r => c.capture.get(r.room_id).meters.length);
@@ -292,7 +396,7 @@ function renderHome(c) {
     <div class="hero-copy"><span class="hero-kicker"><span></span> ARIA · INTELLIGENT METERING</span><h2>จากภาพที่หุ่นอ่าน<br>สู่บิลที่คุณมั่นใจ</h2><p>รอบนี้อ่านครบ ${captured} จาก ${total} ห้อง<br>${c.queue.length ? `มีค่ารอยืนยัน ${c.queue.length} ค่า` : 'ไม่มีค่าค้างยืนยัน'}</p><div class="hero-actions"><button class="btn primary" data-page="review">ตรวจค่าที่ค้าง ${c.queue.length} ค่า ${icon('arrow')}</button><button class="btn hero-secondary" data-page="rooms">ดูห้องทั้งหมด</button></div></div>
     <div class="hero-progress"><svg viewBox="0 0 180 180" aria-hidden="true"><circle class="progress-track" cx="90" cy="90" r="74"/><circle class="progress-value" cx="90" cy="90" r="74" pathLength="100" stroke-dasharray="${ratio} 100"/></svg><div class="progress-copy"><span>อ่านครบแล้ว</span><strong>${captured}<small> / ${total}</small></strong><span>ห้อง</span></div><span class="progress-caption">METER CAPTURE / THIS CYCLE</span></div>
   </div>
-  ${hasDemo() ? `<div class="demo-note">${icon('review')}<span>ฐานข้อมูลนี้มีข้อมูลตัวอย่าง (ห้อง 101–110 · หุ่น DEMO-01) ปนอยู่ · ลบได้ก่อนใช้กับหอจริง ดูหน้าตั้งค่า</span></div>` : ''}
+  ${hasDemo() ? `<div class="demo-note">${icon('alert')}<span>ฐานข้อมูลนี้มีข้อมูลตัวอย่าง (ห้อง 101–110 · หุ่น DEMO-01) ปนอยู่ · ลบได้ก่อนใช้กับหอจริง ดูหน้าตั้งค่า</span></div>` : ''}
   ${onboarding(c)}
   ${cycleSteps(c, { total, captured, pendingInCycle, ready, blocked })}
   <div class="grid two-col">
@@ -387,41 +491,44 @@ function reviewDetail(r, c) {
   const { meterId, prev, value, flags } = L.readingFlags(r, c.d.readings, mIdx);
   const meter = meterId ? mIdx.get(meterId) : null;
   const decided = r.status !== 'ocr';
+  const manual = r.source === 'manual';   // เจ้าของกรอกเอง ไม่มีรูป (add_manual_reading)
   const tone = r.status === 'confirmed' ? ['ยืนยันแล้ว', 'good'] : r.status === 'rejected' ? ['ปฏิเสธแล้ว', 'bad'] : flags[0] ? FLAG_TEXT[flags[0]] : ['รอยืนยัน', 'purple'];
   const units = value != null && prev ? value - prev.value : null;
   const needReason = flags.some(f => ['below_prev', 'low_conf', 'unreadable', 'clock'].includes(f));
   const cropHtml = r.crop_path
     ? `<img id="crop-img" class="crop-img" alt="รูป crop หน้าปัดมิเตอร์" data-path="${esc(r.crop_path)}"><p class="image-caption" id="crop-cap">กำลังโหลดรูป…</p>`
-    : `<div class="crop-missing">${r.crop_expired_at ? `รูปหมดอายุแล้ว (ลบหลัง 12 เดือน · ${L.dateTh(L.bkkDate(r.crop_expired_at))})` : r.is_demo ? 'ข้อมูลตัวอย่าง — ไม่มีรูป' : 'รูปกำลังซิงก์จาก Pi · ยังยืนยันไม่ได้จนกว่ารูปจะขึ้น'}</div>`;
-  const cropBlocks = !r.crop_path && !r.crop_expired_at && !r.is_demo; // แบบ v1 §4.2 พักการยืนยันที่ต้องอาศัยรูป
+    : `<div class="crop-missing">${manual ? 'กรอกเองโดยเจ้าของหอ · ไม่มีรูป' : r.crop_expired_at ? `ลบรูปแล้ว ${L.dateTh(L.bkkDate(r.crop_expired_at))} · ตัวเลขยังอยู่ครบ (ลบเมื่อรับเงินครบ 30 วัน หรือรูปอายุ 12 เดือน)` : r.is_demo ? 'ข้อมูลตัวอย่าง — ไม่มีรูป' : 'รูปกำลังซิงก์จาก Pi · ยังยืนยันไม่ได้จนกว่ารูปจะขึ้น'}</div>`;
+  const cropBlocks = !r.crop_path && !r.crop_expired_at && !r.is_demo && !manual; // แบบ v1 §4.2 พักการยืนยันที่ต้องอาศัยรูป
   const candidates = c.d.meters.filter(m => (!r.meter_type || m.type === r.meter_type) && L.meterActiveOn(m, L.bkkDate(r.captured_at)))
     .sort((a, b) => (a.room_id === r.room_id ? -1 : 0) - (b.room_id === r.room_id ? -1 : 0) || a.meter_id.localeCompare(b.meter_id, 'en', { numeric: true }));
   const air = r.air ? `<div class="kv-grid air"><div><small>eCO₂</small><b>${esc(r.air.eco2_ppm)} ppm</b></div><div><small>TVOC</small><b>${esc(r.air.tvoc_ppb)} ppb</b></div><div><small>AQI</small><b>${esc(r.air.aqi)}</b></div><div><small>อุณหภูมิ / ชื้น</small><b>${esc(r.air.temp_c)} °C · ${esc(r.air.rh_pct)} %</b></div></div>${r.air.validity ? '<p class="fine">เซนเซอร์ยังไม่พร้อม (validity ≠ 0) ค่าอาจยังไม่นิ่ง</p>' : ''}` : '<p class="fine">ไม่มีค่าอากาศตอนถ่าย</p>';
   const hist = eventsOf(r.id);
   return `<div class="card review-detail">
-    <div class="review-header"><div><h2>${meter ? esc(meterLabel(meterId)) : `${r.room_id ? `ห้อง ${esc(r.room_id)}` : 'ไม่ระบุห้อง'} · ${L.TYPE_TH[r.meter_type] ?? '?'}`}</h2><p>${meterId ? `<code>${esc(meterId)}</code>` : 'ยังไม่ผูกมิเตอร์'} · ถ่าย ${L.dateTimeTh(r.captured_at)} · ${esc(r.device_id)}</p></div>${status(tone[0], tone[1])}</div>
+    <div class="review-header"><div><h2>${meter ? esc(meterLabel(meterId)) : `${r.room_id ? `ห้อง ${esc(r.room_id)}` : 'ไม่ระบุห้อง'} · ${L.TYPE_TH[r.meter_type] ?? '?'}`}</h2><p>${meterId ? `<code>${esc(meterId)}</code>` : 'ยังไม่ผูกมิเตอร์'} · ${manual ? 'อ่าน' : 'ถ่าย'} ${L.dateTimeTh(r.captured_at)} · ${manual ? 'กรอกเอง' : esc(r.device_id)}</p></div>${status(tone[0], tone[1])}</div>
     <div class="image-stage">${cropHtml}</div>
     <div class="reading-comparison">
       <div class="comparison-box"><small>ค่ายืนยันก่อนหน้า</small><strong>${prev ? num(prev.value) : '—'}</strong><small>${prev ? (prev.source === 'start' ? 'ค่าเริ่มตอนติดตั้ง' : L.dateTh(L.bkkDate(prev.at))) : 'ผูกมิเตอร์ก่อน'}</small></div>
-      <div class="comparison-box"><small>OCR (${esc(r.ocr_engine || '—')})</small><strong>${num(value)}</strong><small>ข้อความดิบ “${esc(r.raw_text ?? '')}” · มั่นใจ ${pct(r.confidence)}</small></div>
-      <div class="comparison-box"><small>หน่วยถ้ารับ OCR</small><strong class="${units != null && units < 0 ? 'neg' : ''}">${num(units)}</strong><small>${meter ? `${meter.digits} หลัก · ทศนิยม ${meter.decimals}` : ''}</small></div>
+      ${manual ? `<div class="comparison-box"><small>กรอกเอง</small><strong>${num(value)}</strong><small>ไม่มีรูป · เหตุผลอยู่ในประวัติ</small></div>` : `<div class="comparison-box"><small>OCR (${esc(r.ocr_engine || '—')})</small><strong>${num(value)}</strong><small>ข้อความดิบ “${esc(r.raw_text ?? '')}” · มั่นใจ ${pct(r.confidence)}</small></div>`}
+      <div class="comparison-box"><small>${manual ? 'หน่วยจากค่าที่กรอก' : 'หน่วยถ้ารับ OCR'}</small><strong class="${units != null && units < 0 ? 'neg' : ''}">${num(units)}</strong><small>${meter ? `${meter.digits} หลัก · ทศนิยม ${meter.decimals}` : ''}</small></div>
     </div>
     ${flags.length ? `<div class="alert ${flags.some(f => FLAG_TEXT[f][1] === 'bad') ? 'bad' : 'warn'}">${flags.map(f => `<strong>${FLAG_TEXT[f][0]}</strong>`).join(' · ')}${flags.includes('clock') ? ' — นาฬิกา Pi ยังไม่ซิงก์ตอนถ่าย ตรวจว่ารูปนี้เป็นของรอบนี้จริง' : ''}${flags.includes('below_prev') ? ' — ถ้ามิเตอร์ถูกเปลี่ยนตัว ให้ปลดตัวเก่าและเพิ่มตัวใหม่ที่หน้า “ห้องและมิเตอร์” แล้วผูกค่านี้กับตัวใหม่' : ''}</div>` : ''}
-    <div class="detail-grid"><div class="detail-kv"><small>คนขับเลือก</small><strong>ห้อง ${esc(r.room_id ?? '—')} · ${L.TYPE_TH[r.meter_type] ?? '—'}</strong></div><div class="detail-kv"><small>ขึ้นคลาวด์เมื่อ</small><strong>${L.dateTimeTh(r.received_at)}</strong></div></div>
+    <div class="detail-grid"><div class="detail-kv"><small>${manual ? 'กรอกให้' : 'คนขับเลือก'}</small><strong>ห้อง ${esc(r.room_id ?? '—')} · ${L.TYPE_TH[r.meter_type] ?? '—'}</strong></div><div class="detail-kv"><small>${manual ? 'บันทึกเมื่อ' : 'ขึ้นคลาวด์เมื่อ'}</small><strong>${L.dateTimeTh(r.received_at)}</strong></div></div>
 
-    <form id="assign-form" class="inline-form"><label>ผูกกับมิเตอร์<select name="meter_id" required><option value="">— เลือก —</option>${candidates.map(m => `<option value="${esc(m.meter_id)}" ${m.meter_id === meterId ? 'selected' : ''}>${esc(m.meter_id)} · ${esc(meterLabel(m.meter_id))}</option>`).join('')}</select></label><button class="btn small" type="submit">${meterId ? 'เปลี่ยนมิเตอร์' : 'ผูก'}</button></form>
+    ${meterId && !isEditing('assign-form') ? `<div class="bound-view"><span><small>ผูกกับมิเตอร์</small><b>${esc(meterId)}</b> · ${esc(meterLabel(meterId))}</span><button class="btn small ghost" type="button" data-action="edit" data-form="assign-form">${icon('link')}เปลี่ยน</button></div>`
+    : `<form id="assign-form" class="inline-form"><label>ผูกกับมิเตอร์<select name="meter_id" required><option value="">— เลือก —</option>${candidates.map(m => `<option value="${esc(m.meter_id)}" ${m.meter_id === meterId ? 'selected' : ''}>${esc(m.meter_id)} · ${esc(meterLabel(m.meter_id))}</option>`).join('')}</select></label>${meterId ? '<button class="btn small" type="button" data-action="edit-cancel">ยกเลิก</button>' : ''}<button class="btn small primary" type="submit">${meterId ? 'บันทึก' : 'ผูก'}</button></form>`}
 
-    ${r.status === 'rejected' ? '<div class="alert bad">ค่านี้ถูกปฏิเสธแล้ว · ให้คนขับถ่ายใหม่ในรอบถัดไป (ผูกมิเตอร์ใหม่จะเปิดให้ยืนยันได้อีกครั้ง)</div>' : `
-    <form id="confirm-form" class="confirm-form" data-ocr="${value ?? ''}" data-need-reason="${needReason ? 1 : 0}" data-decided="${decided ? 1 : 0}">
+    ${r.status === 'rejected' ? `<div class="alert bad reopen-row"><span>ค่านี้ถูกปฏิเสธแล้ว · ให้คนขับถ่ายใหม่ในรอบถัดไป หรือดึงกลับมาตรวจอีกครั้ง</span><button class="btn small" type="button" data-action="reopen" ${state.busy ? 'disabled' : ''}>ดึงกลับมาตรวจ</button></div>` : `
+    ${decided && !isEditing('confirm-form') ? `<div class="confirmed-view"><div><small>ค่าที่ยืนยัน</small><b>${num(Number(r.confirmed_value))}</b></div>
+      <span class="cv-acts"><button class="btn small" type="button" data-action="edit" data-form="confirm-form" ${!meterId || cropBlocks ? 'disabled' : ''}>${icon('edit')}แก้ค่า</button><button class="btn small" type="button" data-action="reopen" ${state.busy ? 'disabled' : ''} title="กลับเป็นรอยืนยัน · ประวัติเดิมยังอยู่">ยกเลิกการยืนยัน</button></span></div>` : `
+    <form id="confirm-form" class="confirm-form${decided ? ' editing-in' : ''}" data-ocr="${value ?? ''}" data-need-reason="${needReason ? 1 : 0}" data-decided="${decided ? 1 : 0}">
       <label>${decided ? 'แก้เป็นค่า' : 'ค่าที่จะยืนยัน'}<input name="value" type="number" inputmode="decimal" step="any" min="0" value="${esc(decided ? r.confirmed_value : value ?? '')}" required ${!meterId || cropBlocks ? 'disabled' : ''}></label>
       <label>เหตุผล ${decided || needReason ? '(จำเป็น)' : '(จำเป็นเมื่อแก้จาก OCR)'}<input name="reason" type="text" maxlength="200" placeholder="เช่น ดูรูปแล้วหลักสุดท้ายเป็น 7" ${!meterId || cropBlocks ? 'disabled' : ''}></label>
-      <button class="btn primary" type="submit" ${!meterId || cropBlocks ? 'disabled' : ''}>${decided ? 'บันทึกค่าที่แก้' : 'ยืนยันค่า'}</button>
-      ${decided ? '' : `<button class="btn danger" type="button" data-action="reject" ${state.busy ? 'disabled' : ''}>ปฏิเสธ</button>`}
-    </form>
+      ${decided ? `<button class="btn" type="button" data-action="edit-cancel">ยกเลิก</button><button class="btn primary" type="submit">บันทึกค่าที่แก้</button>` : `<button class="btn primary" type="submit" ${!meterId || cropBlocks ? 'disabled' : ''}>ยืนยันค่า</button><button class="btn danger" type="button" data-action="reject" ${state.busy ? 'disabled' : ''}>ปฏิเสธ</button>`}
+    </form>`}
     ${!meterId ? '<p class="fine">ต้องผูกมิเตอร์ก่อน ถึงจะยืนยันได้ (ฐานข้อมูลบังคับ)</p>' : ''}`}
 
-    <details class="more"><summary>ค่าอากาศตอนถ่าย</summary>${air}</details>
-    <div class="history"><strong>ประวัติ</strong><br>หุ่นอ่าน OCR ${num(value)} · ${L.dateTimeTh(r.captured_at)}${r.decided_at ? ` · คนขับกด “เก็บ” ${L.dateTimeTh(r.decided_at)}` : ''}
+    ${manual ? '' : `<details class="more"><summary>ค่าอากาศตอนถ่าย</summary>${air}</details>`}
+    <div class="history"><strong>ประวัติ</strong><br>${manual ? `กรอกเอง ${num(value)} · เวลาที่อ่าน` : `หุ่นอ่าน OCR ${num(value)} ·`} ${L.dateTimeTh(r.captured_at)}${r.decided_at && !manual ? ` · คนขับกด “เก็บ” ${L.dateTimeTh(r.decided_at)}` : ''}
       ${hist.map(e => `<br>${EVENT_TEXT[e.event]}${e.confirmed_value != null ? ` ${num(Number(e.confirmed_value))}` : ''}${e.meter_id ? ` → ${esc(e.meter_id)}` : ''}${e.reason ? ` · “${esc(e.reason)}”` : ''} · ${actorText(e.actor)} · ${L.dateTimeTh(e.at)}`).join('')}</div>
   </div>`;
 }
@@ -465,6 +572,47 @@ async function rejectReading() {
   if (await write(() => api.addEvent({ reading_id: r.id, event: 'rejected', reason: reason.trim() || null }), 'ปฏิเสธแล้ว · รอถ่ายใหม่') && next) { state.selectedReading = next; render(); }
 }
 
+// ยกเลิกการยืนยัน/ปฏิเสธ → กลับเป็นรอยืนยัน (event 'reopened') · บิลที่อนุมัติแล้วไม่เปลี่ยนเอง → หน้าบิลขึ้น "ค่าเปลี่ยน" ให้ออกฉบับแก้ไข
+async function reopenReading() {
+  const r = state.data.readings.find(x => x.id === state.selectedReading);
+  const meterId = L.readingMeterId(r, mIdx);
+  const roomId = meterId ? mIdx.get(meterId)?.room_id : r.room_id;
+  const cyc = L.cycleOfDate(L.bkkDate(r.captured_at), state.data.cycles, state.data.settings);
+  const inv = (state.data.invoices || []).find(v => v.cycle === cyc && v.room_id === roomId && v.state === 'approved');
+  const warn = inv && r.status === 'confirmed' ? `\n\nห้อง ${roomId} อนุมัติบิลรอบ${L.cycleLabel(cyc)} ไปแล้ว · บิลเดิมไม่เปลี่ยนเอง ต้องยืนยันค่าใหม่แล้วออกฉบับแก้ไขที่หน้าบิล` : '';
+  const reason = prompt(`${r.status === 'confirmed' ? `ยกเลิกการยืนยันค่า ${num(Number(r.confirmed_value))}` : 'ดึงค่าที่ปฏิเสธกลับมาตรวจ'} → กลับเป็น “รอยืนยัน”${warn}\n\nเหตุผล (เว้นว่างได้)`);
+  if (reason === null) return;
+  await write(() => api.addEvent({ reading_id: r.id, event: 'reopened', reason: reason.trim() || null }), 'กลับเป็นรอยืนยันแล้ว');
+}
+
+// กรอกเลขเอง: เวลาที่อ่าน (เวลาไทย) ตัดสินรอบบิลเหมือนเวลาถ่ายของหุ่น
+function showManualForm(meterId) {
+  const m = mIdx.get(meterId);
+  const last = state.data.readings.filter(r => L.readingMeterId(r, mIdx) === meterId && r.status === 'confirmed').sort((a, b) => b.captured_at.localeCompare(a.captured_at))[0];
+  const nowBkk = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 16);
+  openModal(`<div class="modal-head"><div><h2 id="modal-title">กรอกเลข ${esc(meterId)}</h2><p class="muted" style="font-size:12px;margin:0">${esc(meterLabel(meterId))} · ล่าสุด ${last ? `${num(Number(last.confirmed_value))} (${L.dateTh(L.bkkDate(last.captured_at))})` : `ค่าเริ่ม ${num(Number(m.start_value))}`}</p></div><button type="button" aria-label="ปิด" data-action="close-modal">×</button></div>
+    <form id="manual-form" class="set-inline manual-form" data-meter="${esc(meterId)}">
+      <label class="mini-field"><small>เลขบนหน้าปัด</small><input name="value" type="number" inputmode="decimal" min="0" step="any" required autofocus></label>
+      <label class="mini-field"><small>เวลาที่อ่าน (เวลาไทย)</small><input name="at" type="datetime-local" value="${nowBkk}" min="${esc(m.installed_at)}T00:00" max="${nowBkk}" required></label>
+      <label class="mini-field wide"><small>เหตุผล (จำเป็น · ไม่มีรูปเป็นหลักฐาน)</small><input name="reason" maxlength="200" required placeholder="เช่น หุ่นเข้าห้องนี้ไม่ได้ · จดจากหน้าปัดเอง"></label>
+      <button class="btn primary small" type="submit">บันทึกและยืนยัน</button></form>
+    <p class="set-hint">ค่าที่กรอกถูกยืนยันทันที · ต้องไม่ต่ำกว่าค่าที่ยืนยันก่อนหน้า · ยกเลิกได้ภายหลังที่หน้ายืนยันค่า</p>`);
+  $('#manual-form [name=value]')?.focus();
+}
+
+async function submitManual(form) {
+  const f = new FormData(form);
+  const raw = String(f.get('value') ?? '').trim();
+  const v = Number(raw);
+  const reason = String(f.get('reason') || '').trim();
+  const at = String(f.get('at') || '');
+  if (!raw || !Number.isFinite(v) || v < 0) return toast('ใส่ค่าเป็นตัวเลขไม่ติดลบ', true);
+  if (!reason) return toast('ต้องใส่เหตุผลที่กรอกเอง', true);
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(at)) return toast('เวลาที่อ่านไม่ถูกต้อง', true);
+  const iso = new Date(`${at}:00+07:00`).toISOString();
+  if (await write(() => api.addManualReading(form.dataset.meter, v, iso, reason), `บันทึก ${form.dataset.meter} = ${num(v)} แล้ว`)) closeModal();
+}
+
 async function submitAssign(form) {
   const meterId = new FormData(form).get('meter_id');
   if (!meterId) return;
@@ -474,8 +622,11 @@ async function submitAssign(form) {
 }
 
 // ───────── บิล (พรีวิว) ─────────
-const BILL_FILTERS = [['all', 'ทั้งหมด'], ['ready', 'พร้อม'], ['blocked', 'ติดปัญหา'], ['noemail', 'ไม่มีอีเมล'], ['vacant', 'ห้องว่าง']];
-const billMatch = (b, f) => f === 'all' || (f === 'noemail' ? b.noEmail : b.state === f);
+const BILL_FILTERS = [['all', 'ทั้งหมด'], ['ready', 'รออนุมัติ'], ['approved', 'อนุมัติแล้ว'], ['unpaid', 'ค้างชำระ'], ['paid', 'ชำระแล้ว'], ['blocked', 'ติดปัญหา'], ['noemail', 'ไม่มีอีเมล'], ['vacant', 'ห้องว่าง']];
+const billMatch = (b, f) => f === 'all' || (f === 'noemail' ? b.noEmail : f === 'paid' ? b.pay === 'paid' : f === 'unpaid' ? b.pay === 'unpaid' || b.pay === 'partial' : b.view === f);
+const SEND_TH = { sent: ['ส่งแล้ว', 'good'], failed: ['ส่งไม่สำเร็จ', 'bad'] };
+const PAY_TH = { paid: ['ชำระแล้ว', 'good'], partial: ['ชำระบางส่วน', 'warn'], unpaid: ['ค้างชำระ', 'idle'] };
+const METHOD_TH = { promptpay: 'พร้อมเพย์', transfer: 'โอน', cash: 'เงินสด', other: 'อื่นๆ' };
 // เหตุผลแบบสั้นบนการ์ด (ตัดรหัสมิเตอร์/วันที่ออก · ตัวเต็มอยู่ในหน้ารายละเอียด)
 const shortReason = r => r.replace(/\s*\([^)]*\)\s*$/, '').replace(/ที่มีผล ณ .*$/, '').trim();
 // อัตรายังไม่ตั้ง = ปัญหาระดับหน้า (ชิปแดงบนแถบสรุป) → ไม่ซ้ำบนทุกการ์ด · การ์ดโชว์เหตุผลของห้องนั้นก่อน
@@ -483,40 +634,80 @@ function whyLine(reasons) {
   const own = reasons.filter(r => !r.startsWith('ยังไม่ตั้งอัตรา'));
   const text = own.length ? shortReason(own[0]) : 'รอตั้งอัตรา';
   const more = own.length > 1 ? ` <em>+${own.length - 1}</em>` : '';
-  return `<span class="bc-why">${icon('review')}${esc(text)}${more}</span>`;
+  return `<span class="bc-why">${icon('alert')}${esc(text)}${more}</span>`;
 }
-const BILL_STATE = { ready: ['พร้อม', 'good'], blocked: ['ติดปัญหา', 'warn'], vacant: ['ห้องว่าง', 'off'] };
+const BILL_STATE = { approved: ['อนุมัติแล้ว', 'good'], ready: ['รออนุมัติ', 'ready'], blocked: ['ติดปัญหา', 'warn'], vacant: ['ห้องว่าง', 'off'] };
 
-// หน้าบิล (ออกแบบใหม่ 30 ก.ย. · ผู้ใช้: "ใช้ยาก ตัวอักษรเยอะ"): แถบสรุป → ตัวกรอง → การ์ดห้องละใบ · รายละเอียดเต็มอยู่ในหน้าต่างบิล
+// ── อนุมัติบิล (migration 20261003000100): ส่ง snapshot ของพรีวิว · ฐานข้อมูลคำนวณยอดเอง · แก้หลังอนุมัติ = ออกฉบับใหม่ ──
+function invoicePayload(b) {
+  const side = t => { const l = b.lines[t], sg = l.segments;
+    return { [`${t}_prev`]: sg[0]?.base ?? null, [`${t}_curr`]: sg[sg.length - 1]?.curr ?? null, [`${t}_units`]: l.units, [`${t}_rate`]: l.rate }; };
+  return { room_id: b.room.room_id, tenancy_id: b.tenancy.id, tenant_name: b.tenancy.tenant_name, recipient_email: b.tenancy.email || null,
+    ...side('water'), ...side('electric'), rent_baht: b.includeRent ? b.rent : 0,
+    detail: { segments: { water: b.lines.water.segments, electric: b.lines.electric.segments }, range: b.range } };
+}
+// ค่าที่เปลี่ยนไปหลังอนุมัติ (เทียบหน่วย/อัตรา/ค่าเช่า/ผู้รับ ไม่เทียบยอด → ไม่หลอกเพราะการปัดเศษ)
+function invoiceDiff(v, b) {
+  if (b.state !== 'ready') return [b.state === 'vacant' ? 'ห้องไม่มีผู้เช่าแล้ว' : 'ข้อมูลตอนนี้ยังไม่ครบ'];
+  const p = invoicePayload(b), out = [];
+  const same = (x, y) => Math.abs(Number(x) - Number(y)) < 1e-6;
+  if (!same(p.water_units, v.water_units) || !same(p.water_rate, v.water_rate)) out.push('ค่าน้ำ');
+  if (!same(p.electric_units, v.electric_units) || !same(p.electric_rate, v.electric_rate)) out.push('ค่าไฟ');
+  if (!same(p.rent_baht, v.rent_baht)) out.push('ค่าเช่า');
+  if (p.tenant_name !== v.tenant_name || (p.recipient_email || null) !== (v.recipient_email || null)) out.push('ผู้เช่า/อีเมล');
+  return out;
+}
+async function approveBills(rooms, revise = false) {
+  const c = ctx();
+  const items = c.bills.filter(b => rooms.includes(b.room.room_id) && b.state === 'ready').map(b => ({ ...invoicePayload(b), revise }));
+  if (!items.length) return;
+  const sum = items.reduce((s, it) => s + Math.round(it.water_units * it.water_rate * 100) / 100 + Math.round(it.electric_units * it.electric_rate * 100) / 100 + Number(it.rent_baht), 0);
+  const what = items.length === 1 ? `ห้อง ${items[0].room_id}` : `${items.length} ห้อง`;
+  if (!confirm(`${revise ? 'ออกฉบับแก้ไข' : 'อนุมัติบิล'} ${what} · รอบ${L.cycleLabel(state.cycle)}\nยอดรวม ${baht(sum)}\n\nอนุมัติแล้วยอดจะถูกตรึง แก้ภายหลังต้องออกฉบับแก้ไข (ฉบับเดิมเก็บเป็นประวัติ)`)) return;
+  const row = c.d.cycles.find(x => x.cycle === state.cycle);
+  if (await write(() => api.approveInvoices(state.cycle, row?.cutoff_date ?? c.range.to, items), `${revise ? 'ออกฉบับแก้ไข' : 'อนุมัติ'} ${what} แล้ว`)) closeModal();
+}
+
+// หน้าบิล (ออกแบบใหม่ 30 ก.ย. · อนุมัติ 3 ต.ค.): แถบสรุป → ตัวกรอง → การ์ดห้องละใบ · รายละเอียดเต็มอยู่ในหน้าต่างบิล
 function renderBills(c) {
   const row = c.d.cycles.find(x => x.cycle === state.cycle);
   const list = c.bills.filter(b => billMatch(b, state.billFilter));
-  const n = k => c.bills.filter(b => b.state === k).length;
-  const sum = c.bills.filter(b => b.state === 'ready').reduce((s, b) => s + b.total, 0);
+  const n = k => c.bills.filter(b => b.view === k).length;
+  const approvedSum = c.bills.filter(b => b.inv).reduce((s, b) => s + Number(b.inv.total_baht), 0);
+  const ready = c.bills.filter(b => b.view === 'ready');
+  const readySum = ready.reduce((s, b) => s + b.total, 0);
   const rateChip = t => { const x = L.rateOn(c.d.rates, t, c.range.to);
     return x ? `<span class="rate-chip ${t}">${icon(t)}<b>${baht(Number(x.baht_per_unit))}</b><small>/หน่วย</small></span>`
       : `<button class="rate-chip missing" data-page="settings">${icon(t)}ยังไม่ตั้งอัตรา</button>`; };
   const seg = k => `<i class="${BILL_STATE[k][1]}" style="flex:${n(k)}"></i>`;
-  const rent = `<label class="rent-switch" title="ค่าเช่ากำหนดต่อผู้เช่า · ตั้งแยกรายรอบ"><input id="include-rent" type="checkbox" ${row?.include_rent ? 'checked' : ''} ${row?.state === 'closed' ? 'disabled' : ''}><span class="sw" aria-hidden="true"></span>รวมค่าเช่า</label>`;
+  const locked = c.bills.some(b => b.inv);
+  const rent = `<label class="rent-switch" title="${locked ? 'มีบิลที่อนุมัติแล้วในรอบนี้ · เปลี่ยนแล้วบิลเหล่านั้นจะขึ้นว่าข้อมูลเปลี่ยน' : 'ค่าเช่ากำหนดต่อผู้เช่า · ตั้งแยกรายรอบ'}"><input id="include-rent" type="checkbox" ${row?.include_rent ? 'checked' : ''} ${row?.state === 'closed' ? 'disabled' : ''}><span class="sw" aria-hidden="true"></span>รวมค่าเช่า</label>`;
   const line = (b, t) => { const l = b.lines[t];
     return `<span class="bl ${t} ${l.ok ? '' : 'none'}"><span class="bl-ic">${icon(t)}</span><span class="bl-u">${l.ok ? `${num(l.units)} หน่วย` : '—'}</span><b>${l.ok && l.amount != null ? baht(l.amount) : ''}</b></span>`; };
+  const invLine = (v, t) => `<span class="bl ${t}"><span class="bl-ic">${icon(t)}</span><span class="bl-u">${num(Number(v[`${t}_units`]))} หน่วย</span><b>${baht(Number(v[`${t}_amount`]))}</b></span>`;
   const card = b => {
-    const [label, tone] = BILL_STATE[b.state];
-    const foot = b.state === 'ready' ? `<span class="bc-total"><small>รวม</small>${baht(b.total)}</span>`
-      : b.state === 'vacant' ? `<span class="bc-note">ไม่ออกบิลรอบนี้</span>`
+    const [label, tone] = BILL_STATE[b.view];
+    const v = b.inv;
+    const foot = v ? `<span class="bc-total"><small>${b.changed.length ? `<span class="bc-changed" title="เปลี่ยน: ${esc(b.changed.join(', '))}">${icon('alert')}ข้อมูลเปลี่ยน</span>` : `ฉบับ ${v.revision}`}</small>${baht(Number(v.total_baht))}</span>`
+      : b.view === 'ready' ? `<span class="bc-total"><small>รวม</small>${baht(b.total)}</span>`
+      : b.view === 'vacant' ? `<span class="bc-note">ไม่ออกบิลรอบนี้</span>`
       : whyLine(b.reasons);
+    const lines = v ? `${invLine(v, 'water')}${invLine(v, 'electric')}${Number(v.rent_baht) ? `<span class="bl rent"><span class="bl-ic">${icon('rooms')}</span><span class="bl-u">ค่าเช่า</span><b>${baht(Number(v.rent_baht))}</b></span>` : ''}`
+      : `${line(b, 'water')}${line(b, 'electric')}${b.includeRent ? `<span class="bl rent"><span class="bl-ic">${icon('rooms')}</span><span class="bl-u">ค่าเช่า</span><b>${baht(b.rent)}</b></span>` : ''}`;
     return `<button class="bill-card ${tone}" data-bill="${esc(b.room.room_id)}">
-      <span class="bc-head"><span class="bc-room">${esc(b.room.room_id)}</span><span class="bc-state"><i></i>${label}</span></span>
-      <span class="bc-tenant">${b.tenancy ? esc(b.tenancy.tenant_name) : 'ไม่มีผู้เช่า'}${b.noEmail ? `<span class="bc-noemail" title="ยังไม่มีอีเมล · ส่งบิลไม่ได้">${icon('mail')}</span>` : ''}</span>
-      ${b.state === 'vacant' ? '' : `<span class="bc-lines">${line(b, 'water')}${line(b, 'electric')}${b.includeRent ? `<span class="bl rent"><span class="bl-ic">${icon('rooms')}</span><span class="bl-u">ค่าเช่า</span><b>${baht(b.rent)}</b></span>` : ''}</span>`}
+      <span class="bc-head"><span class="bc-room">${esc(b.room.room_id)}</span><span class="bc-state">${v ? icon('lock') : '<i></i>'}${label}</span></span>
+      <span class="bc-tenant">${v ? esc(v.tenant_name) : b.tenancy ? esc(b.tenancy.tenant_name) : 'ไม่มีผู้เช่า'}${b.noEmail ? `<span class="bc-noemail" title="ยังไม่มีอีเมล · ส่งบิลไม่ได้">${icon('mail')}</span>` : ''}</span>
+      ${b.view === 'vacant' ? '' : `<span class="bc-lines">${lines}</span>`}
+      ${v ? `<span class="bc-chips">${b.sent ? `<span class="mini ${SEND_TH[b.sent][1]}">${icon('mail')}${SEND_TH[b.sent][0]}</span>` : `<span class="mini idle">${icon('mail')}${b.inv.recipient_email ? 'ยังไม่ส่ง' : 'ไม่มีอีเมล'}</span>`}<span class="mini ${PAY_TH[b.pay][1]}">${icon('baht')}${PAY_TH[b.pay][0]}</span></span>` : ''}
       <span class="bc-foot">${foot}</span></button>`;
   };
+  const toSend = c.bills.filter(b => b.inv && b.inv.recipient_email && b.sent !== 'sent');   // รวมฉบับที่เคยส่งไม่สำเร็จ
   return `<section class="page">
-  ${pageHead('BILLING', 'บิล', `รอบ${L.cycleLabel(state.cycle)} · ตัดรอบ ${L.dateTh(c.range.to)}`, `<span class="preview-pill" title="คำนวณสดจากค่าที่ยืนยันแล้ว · การอนุมัติบิล (ขั้น 4) และส่งอีเมล (ขั้น 5) ยังไม่เปิด">พรีวิว</span>${rent}`)}
+  ${pageHead('BILLING', 'บิล', `รอบ${L.cycleLabel(state.cycle)} · ตัดรอบ ${L.dateTh(c.range.to)}`, `${ready.length ? `<button class="btn primary" data-action="approve-all">${icon('lock')}อนุมัติ ${ready.length} ห้องที่พร้อม</button>` : ''}${toSend.length ? `<button class="btn" data-action="send-all">${icon('mail')}ส่งอีเมล ${toSend.length} ฉบับ</button>` : ''}${rent}`)}
   <div class="bill-summary">
-    <div class="bs-sum"><small>ยอดรวมที่คิดได้</small><b>${baht(sum)}</b><span>${n('ready')} จาก ${c.bills.length - n('vacant')} ห้องที่มีผู้เช่า</span></div>
-    <div class="bs-mix"><div class="bs-bar">${seg('ready')}${seg('blocked')}${seg('vacant')}</div>
-      <div class="bs-legend"><span class="good"><i></i>พร้อม ${n('ready')}</span><span class="warn"><i></i>ติดปัญหา ${n('blocked')}</span><span class="off"><i></i>ว่าง ${n('vacant')}</span></div></div>
+    <div class="bs-sum"><small>ยอดที่อนุมัติแล้ว</small><b>${baht(approvedSum)}</b><span>รับแล้ว ${baht(c.bills.reduce((t, b) => t + (b.inv ? Math.min(b.paid, Number(b.inv.total_baht)) : 0), 0))}${ready.length ? ` · รออนุมัติอีก ${ready.length} ห้อง` : ''}</span></div>
+    <div class="bs-mix"><div class="bs-bar">${seg('approved')}${seg('ready')}${seg('blocked')}${seg('vacant')}</div>
+      <div class="bs-legend"><span class="good"><i></i>อนุมัติแล้ว ${n('approved')}</span><span class="ready"><i></i>รออนุมัติ ${n('ready')}</span><span class="warn"><i></i>ติดปัญหา ${n('blocked')}</span><span class="off"><i></i>ว่าง ${n('vacant')}</span></div></div>
     <div class="bs-rates">${rateChip('water')}${rateChip('electric')}</div>
   </div>
   <div class="bill-filters" role="group" aria-label="ตัวกรอง">${BILL_FILTERS.map(([k, t]) => `<button class="${state.billFilter === k ? 'active' : ''}" data-filter="${k}" aria-pressed="${state.billFilter === k}">${t}<em>${c.bills.filter(b => billMatch(b, k)).length}</em></button>`).join('')}</div>
@@ -527,19 +718,113 @@ function renderBills(c) {
 function showBill(roomId) {
   const c = ctx();
   const b = c.bills.find(x => x.room.room_id === roomId);
-  const [label, tone] = BILL_STATE[b.state];
-  const seg = t => b.lines[t].segments.map(s => `<small class="inv-meter">${esc(s.meter_id)} · ${num(s.base)} → ${num(s.curr)}${s.baseSource === 'start' ? ' · ฐาน = ค่าตอนติดตั้ง' : ''}</small>`).join('');
+  const v = b.inv;
+  const [label, tone] = BILL_STATE[b.view];
+  const seg = (segs) => (segs || []).map(s => `<small class="inv-meter">${esc(s.meter_id)} · ${num(s.base)} → ${num(s.curr)}${s.baseSource === 'start' ? ' · ฐาน = ค่าตอนติดตั้ง' : ''}</small>`).join('');
   const line = t => { const l = b.lines[t];
-    return `<div class="inv-line ${t}"><span class="bl-ic">${icon(t)}</span><div><b>ค่า${L.TYPE_TH[t]}</b><small>${l.ok ? `${num(l.units)} หน่วย × ${l.rate != null ? baht(l.rate) : '?'}` : 'ยังคำนวณไม่ได้'}</small>${seg(t)}</div><strong>${baht(l.amount)}</strong></div>`; };
-  openModal(`<div class="modal-head"><div><h2 id="modal-title">ห้อง ${esc(roomId)}</h2><p class="muted" style="font-size:12px;margin:0">รอบ${L.cycleLabel(state.cycle)}${b.tenancy ? ` · ${esc(b.tenancy.tenant_name)}` : ''}</p></div><button type="button" aria-label="ปิด" data-action="close-modal">×</button></div>
+    return `<div class="inv-line ${t}"><span class="bl-ic">${icon(t)}</span><div><b>ค่า${L.TYPE_TH[t]}</b><small>${l.ok ? `${num(l.units)} หน่วย × ${l.rate != null ? baht(l.rate) : '?'}` : 'ยังคำนวณไม่ได้'}</small>${seg(l.segments)}</div><strong>${baht(l.amount)}</strong></div>`; };
+  const vline = t => `<div class="inv-line ${t}"><span class="bl-ic">${icon(t)}</span><div><b>ค่า${L.TYPE_TH[t]}</b><small>${num(Number(v[`${t}_units`]))} หน่วย × ${baht(Number(v[`${t}_rate`]))}</small>${seg(v.detail?.segments?.[t])}</div><strong>${baht(Number(v[`${t}_amount`]))}</strong></div>`;
+  const history = (c.d.invoices || []).filter(x => x.cycle === state.cycle && x.room_id === roomId && x.state === 'superseded').sort((a, b2) => b2.revision - a.revision);
+  const body = v ? `${vline('water')}${vline('electric')}${Number(v.rent_baht) ? `<div class="inv-line rent"><span class="bl-ic">${icon('rooms')}</span><div><b>ค่าเช่า</b></div><strong>${baht(Number(v.rent_baht))}</strong></div>` : ''}
+      <div class="inv-total"><span>รวม · ฉบับ ${v.revision}</span><b>${baht(Number(v.total_baht))}</b></div>`
+    : `${line('water')}${line('electric')}${b.includeRent && b.tenancy ? `<div class="inv-line rent"><span class="bl-ic">${icon('rooms')}</span><div><b>ค่าเช่า</b></div><strong>${baht(b.rent)}</strong></div>` : ''}
+      <div class="inv-total"><span>รวม</span><b>${baht(b.total)}</b></div>`;
+  const who = v ? (v.tenant_name) : b.tenancy?.tenant_name;
+  const mail = v ? (v.recipient_email || 'ยังไม่มีอีเมล') : b.tenancy ? (b.tenancy.email || 'ยังไม่มีอีเมล') : 'ไม่มีผู้เช่า';
+  const actions = [];
+  if (!v && b.state === 'ready') actions.push(`<button class="btn primary" data-action="approve" data-bill-room="${esc(roomId)}">${icon('lock')}อนุมัติบิลนี้</button>`);
+  if (v && b.changed.length && b.state === 'ready') actions.push(`<button class="btn primary" data-action="revise" data-bill-room="${esc(roomId)}">ออกฉบับแก้ไข</button>`);
+  if (v && v.recipient_email) actions.push(`<button class="btn ${b.sent ? '' : 'primary'}" data-action="send-one" data-bill-room="${esc(roomId)}">${icon('mail')}${b.sent ? 'ส่งอีเมลซ้ำ' : 'ส่งอีเมล'}</button>`);
+  if (!v && b.reasons.some(r => r.startsWith('ยังไม่ยืนยัน'))) actions.push(`<button class="btn primary" data-page="review">ไปยืนยันค่า</button>`);
+  if (!v && b.reasons.some(r => r.startsWith('ยังไม่ตั้งอัตรา'))) actions.push(`<button class="btn primary" data-page="settings">ตั้งอัตรา</button>`);
+  openModal(`<div class="modal-head"><div><h2 id="modal-title">ห้อง ${esc(roomId)}</h2><p class="muted" style="font-size:12px;margin:0">รอบ${L.cycleLabel(state.cycle)}${who ? ` · ${esc(who)}` : ''}</p></div><button type="button" aria-label="ปิด" data-action="close-modal">×</button></div>
     <div class="inv">
-      <div class="inv-top"><span class="bc-state ${tone}"><i></i>${label}</span><span class="inv-mail">${icon('mail')}${b.tenancy ? (b.tenancy.email ? esc(b.tenancy.email) : 'ยังไม่มีอีเมล') : 'ไม่มีผู้เช่า'}</span></div>
-      ${line('water')}${line('electric')}${b.includeRent && b.tenancy ? `<div class="inv-line rent"><span class="bl-ic">${icon('rooms')}</span><div><b>ค่าเช่า</b></div><strong>${baht(b.rent)}</strong></div>` : ''}
-      <div class="inv-total"><span>รวม</span><b>${baht(b.total)}</b></div>
+      <div class="inv-top"><span class="bc-state ${tone}">${v ? icon('lock') : '<i></i>'}${label}</span><span class="inv-mail">${icon('mail')}${esc(mail)}</span></div>
+      ${body}
     </div>
-    ${b.reasons.length ? `<ul class="inv-why">${b.reasons.map(r => `<li>${icon('review')}${esc(r)}</li>`).join('')}</ul>` : ''}
-    <p class="inv-note">พรีวิว · ยังไม่ใช่เอกสารเรียกเก็บเงิน</p>
-    <div class="modal-actions">${b.reasons.some(r => r.startsWith('ยังไม่ยืนยัน')) ? `<button class="btn primary" data-page="review">ไปยืนยันค่า</button>` : ''}${b.reasons.some(r => r.startsWith('ยังไม่ตั้งอัตรา')) ? `<button class="btn primary" data-page="settings">ตั้งอัตรา</button>` : ''}<button class="btn" data-action="close-modal">ปิด</button></div>`);
+    ${v && b.changed.length ? `<ul class="inv-why"><li>${icon('alert')}ข้อมูลเปลี่ยนหลังอนุมัติ: ${esc(b.changed.join(', '))}${b.state === 'ready' ? ` · ยอดใหม่ ${baht(b.total)}` : ''}</li></ul>` : ''}
+    ${!v && b.reasons.length ? `<ul class="inv-why">${b.reasons.map(r => `<li>${icon('alert')}${esc(r)}</li>`).join('')}</ul>` : ''}
+    ${v ? billFollowUp(b) : ''}
+    <p class="inv-note">${v ? `อนุมัติโดย ${esc(v.approved_by)} · ${L.dateTimeTh(v.approved_at)}${history.length ? ` · ฉบับเดิม ${history.map(h => `#${h.revision} ${baht(Number(h.total_baht))}`).join(', ')}` : ''}` : 'พรีวิว · ยังไม่ใช่เอกสารเรียกเก็บเงิน'}</p>
+    <div class="modal-actions">${actions.map((h, i) => i ? h.replace('btn primary', 'btn') : h).join('')}<button class="btn" data-action="close-modal">ปิด</button></div>`);   // ปุ่มหลักได้ทีละปุ่ม (HIG)
+}
+
+// ส่วนท้ายหน้าต่างบิลที่อนุมัติแล้ว: ผลการส่งอีเมล + การรับเงิน (บันทึก/ยกเลิก)
+function billFollowUp(b) {
+  const v = b.inv, due = Number(v.total_baht), left = Math.max(0, Math.round((due - b.paid) * 100) / 100);
+  const sends = b.attempts.length ? b.attempts.slice(0, 4).map(a => `<li class="${a.result}"><span>${a.result === 'sent' ? 'ส่งแล้ว' : 'ส่งไม่สำเร็จ'} · ${esc(a.to_email)}</span><small>${L.dateTimeTh(a.attempted_at)}${a.error ? ` · ${esc(a.error)}` : ''}</small></li>`).join('')
+    : `<li class="none"><span>${v.recipient_email ? 'ยังไม่ได้ส่ง' : 'ผู้เช่าไม่มีอีเมล · ส่งไม่ได้'}</span></li>`;
+  const pays = b.payments.map(p => `<li class="${p.voided_at ? 'void' : ''}"><span>${baht(Number(p.amount))} · ${METHOD_TH[p.method]} · ${L.dateTh(p.paid_on)}</span><small>${p.voided_at ? `ยกเลิก: ${esc(p.void_reason)}` : `บันทึกโดย ${esc(p.recorded_by)}`}${p.note ? ` · ${esc(p.note)}` : ''}</small>${p.voided_at ? '' : `<button class="mt-retire" data-action="void-pay" data-pay-id="${p.id}">ยกเลิก</button>`}</li>`).join('');
+  const [pt, pc] = PAY_TH[b.pay];
+  return `<div class="inv-follow">
+    <section><h4>${icon('mail')}อีเมล</h4><ul class="fu-list">${sends}</ul></section>
+    <section><h4>${icon('baht')}รับเงิน <span class="mini ${pc}">${pt}</span><small>${left ? `ค้าง ${baht(left)}` : 'ครบแล้ว'}</small></h4>
+      ${pays ? `<ul class="fu-list">${pays}</ul>` : ''}
+      ${left ? `<form id="pay-form" class="set-inline" data-pay-room="${esc(b.room.room_id)}">
+        <label class="mini-field"><small>ยอด (บาท)</small><input name="amount" type="number" min="0.01" step="0.01" value="${left.toFixed(2)}" required></label>
+        <label class="mini-field"><small>วันที่รับ</small><input name="paid_on" type="date" value="${L.todayBkk()}" required></label>
+        <label class="mini-field"><small>ช่องทาง</small><select name="method">${Object.entries(METHOD_TH).map(([k, t]) => `<option value="${k}">${t}</option>`).join('')}</select></label>
+        <label class="mini-field"><small>หมายเหตุ</small><input name="note" maxlength="120" placeholder="ไม่ใส่ก็ได้"></label>
+        <button class="btn primary small" type="submit">บันทึกรับเงิน</button></form>` : ''}
+    </section></div>`;
+}
+// ส่งทีละชุด 8 ฉบับ: Edge Function ฟรีเพลนรันได้ ≤ 150 s ต่อครั้ง · ฉบับละ ~3 s + หน่วง 2 s → 8 ฉบับ ≈ 40 s (เผื่อ 3.7 เท่า)
+const SEND_BATCH = 8;
+async function sendBills(rooms, resend = false) {
+  const bills = ctx().bills.filter(b => rooms.includes(b.room.room_id) && b.inv && b.inv.recipient_email);
+  if (!bills.length) return;
+  const what = bills.length === 1 ? `ห้อง ${bills[0].room.room_id} ถึง ${bills[0].inv.recipient_email}` : `${bills.length} ฉบับ`;
+  if (!confirm(`${resend ? 'ส่งซ้ำ' : 'ส่ง'}อีเมลบิล ${what}\nจาก Gmail ของหอ · ฉบับละประมาณ 5 วินาที`)) return;
+  const ids = bills.map(b => b.inv.id), results = [];
+  const ok = await write(async () => {
+    for (let i = 0; i < ids.length; i += SEND_BATCH) {
+      if (ids.length > SEND_BATCH) toast(`กำลังส่ง ${Math.min(i + SEND_BATCH, ids.length)} / ${ids.length} …`);
+      const res = await api.sendInvoices(ids.slice(i, i + SEND_BATCH), resend);
+      results.push(...(res.results || []));
+    }
+  }, null);
+  const sent = results.filter(x => x.result === 'sent').length, failed = results.filter(x => x.result === 'failed').length, skip = results.filter(x => x.skipped).length;
+  if (!ok) return;   // write แสดงสาเหตุแล้ว และโหลดข้อมูลใหม่ → ชิปบนการ์ดบอกว่าฉบับไหนส่งไปแล้ว
+  toast(`ส่งแล้ว ${sent}${failed ? ` · ไม่สำเร็จ ${failed}` : ''}${skip ? ` · ข้าม ${skip}` : ''}`, failed > 0);
+  closeModal();
+  if (bills.length === 1) showBill(bills[0].room.room_id);
+}
+async function addPayment(form) {
+  const b = ctx().bills.find(x => x.room.room_id === form.dataset.payRoom);
+  const f = new FormData(form);
+  const amount = Number(f.get('amount'));
+  if (!(amount > 0)) return toast('ยอดต้องมากกว่า 0', true);
+  if (!confirm(`บันทึกรับเงินห้อง ${b.room.room_id} ${baht(amount)} (${METHOD_TH[f.get('method')]}) วันที่ ${L.dateTh(f.get('paid_on'))}?\nแก้ภายหลังไม่ได้ ต้องยกเลิกแล้วบันทึกใหม่`)) return;
+  const row = { cycle: state.cycle, room_id: b.room.room_id, invoice_id: b.inv.id, amount, paid_on: f.get('paid_on'), method: f.get('method'), note: blankToNull(f.get('note')) };
+  if (await write(() => api.addPayment(row), `บันทึกรับเงินห้อง ${b.room.room_id} แล้ว`)) showBill(b.room.room_id);
+}
+async function voidPayment(id) {
+  const p = state.data.payments.find(x => x.id === id);
+  const reason = prompt(`ยกเลิกรายการรับเงิน ${baht(Number(p.amount))} ห้อง ${p.room_id}\nเหตุผล (จำเป็น · เก็บเป็นประวัติ):`, '');
+  if (!reason || !reason.trim()) return;
+  if (await write(() => api.voidPayment(id, reason.trim()), 'ยกเลิกรายการแล้ว')) showBill(p.room_id);
+}
+
+async function loadMailStatus() {
+  const el = $('#mail-status'), note = $('#mail-status-note');
+  if (!el) return;
+  try {
+    const m = await api.mailStatus();
+    if (!$('#mail-status')) return;
+    $('#mail-status').innerHTML = m.configured ? status('พร้อมส่ง', 'good') : status('ยังไม่ตั้ง', 'warn');
+    $('#mail-status-note').textContent = m.configured ? m.sender : 'ตั้ง secret ใน Supabase ก่อน (ดูวิธีด้านล่าง)';
+  } catch (e) { el.innerHTML = status('ตรวจไม่ได้', 'bad'); note.textContent = e.message; }
+}
+async function mailTest(btn) {
+  btn.disabled = true;
+  try { const r = await api.sendTestMail(); toast(`ส่งอีเมลทดสอบถึง ${r.to} แล้ว${r.qr ? ' (มี QR พร้อมเพย์)' : ' · ยังไม่มี QR เพราะยังไม่ตั้งพร้อมเพย์'}`); }
+  catch (e) { toast(`ส่งไม่ได้: ${e.message}`, true); }
+  finally { btn.disabled = false; }
+}
+async function savePayout(form) {
+  const v = String(new FormData(form).get('promptpay_id') || '').replace(/[\s-]/g, '');
+  if (v && !/^(0\d{9}|\d{13})$/.test(v)) return toast('พร้อมเพย์ต้องเป็นเบอร์มือถือ 10 หลัก หรือเลข 13 หลัก', true);
+  await write(() => api.setPromptpay(v || null), v ? 'บันทึกพร้อมเพย์แล้ว' : 'ลบพร้อมเพย์แล้ว');
 }
 
 async function toggleRent(on) {
@@ -609,21 +894,21 @@ function roomDetail(roomId, c) {
     const pend = rs.find(r => r.status === 'ocr');
     return `<div class="mt ${m.type} ${active ? '' : 'retired'}">
       <div class="mt-head"><span class="bl-ic">${icon(m.type)}</span><span class="mt-id"><b>${esc(m.meter_id)}</b><small>${L.TYPE_TH[m.type]} · ${m.digits} หลัก${m.decimals ? ` ทศนิยม ${m.decimals}` : ''}</small></span>
-        ${active ? `<button class="mt-retire" data-action="retire" data-meter="${esc(m.meter_id)}" title="ปลด/เปลี่ยนมิเตอร์">ปลด</button>` : status('ปลดแล้ว', '')}</div>
+        ${active ? `<button class="mt-retire mt-manual" data-action="manual-read" data-meter="${esc(m.meter_id)}" title="กรอกเลขเองเมื่อหุ่นถ่ายไม่ได้">กรอกเอง</button><button class="mt-retire" data-action="retire" data-meter="${esc(m.meter_id)}" title="ปลด/เปลี่ยนมิเตอร์">ปลด</button>` : status('ปลดแล้ว', '')}</div>
       <div class="mt-val ${!lastConf && pend ? 'pending' : ''}"><b>${lastConf ? num(Number(lastConf.confirmed_value)) : pend ? num(pend.value) : '—'}</b><small>${lastConf ? `ยืนยัน ${L.dateTh(L.bkkDate(lastConf.captured_at))}` : pend ? `OCR ${L.dateTh(L.bkkDate(pend.captured_at))} · รอยืนยัน` : 'ยังไม่มีค่า'}</small></div>
-      ${rs.length ? `<div class="mt-hist">${rs.slice(0, 4).map(r => `<button class="mt-chip ${r.status}" data-page="review" data-reading="${r.id}" title="${CHIP[r.status] || r.status}"><i></i>${num(r.confirmed_value ?? r.value)}<small>${L.dateTh(L.bkkDate(r.captured_at)).replace(/ \d{4}$/, '')}</small></button>`).join('')}</div>` : ''}
+      ${rs.length ? `<div class="mt-hist">${rs.slice(0, 4).map(r => `<button class="mt-chip ${r.status}${r.source === 'manual' ? ' manual' : ''}" data-page="review" data-reading="${r.id}" title="${CHIP[r.status] || r.status}${r.source === 'manual' ? ' · กรอกเอง' : ''}"><i></i>${num(r.confirmed_value ?? r.value)}<small>${L.dateTh(L.bkkDate(r.captured_at)).replace(/ \d{4}$/, '')}</small></button>`).join('')}</div>` : ''}
       <small class="mt-meta">ติดตั้ง ${L.dateTh(m.installed_at)} · เริ่ม ${num(Number(m.start_value))}${m.retired_at ? ` · ปลด ${L.dateTh(m.retired_at)} · สุดท้าย ${num(m.end_value == null ? null : Number(m.end_value))}` : ''}</small></div>`;
   };
   const nextW = L.nextMeterId(d.meters, roomId, 'water');
 
   const head = `<header class="rd-head"><span class="rd-no">${esc(roomId)}</span><div><b>ห้อง ${esc(roomId)}</b><small>ชั้น ${esc(room.floor || '—')}${room.is_demo ? ' · ข้อมูลตัวอย่าง' : ''}</small></div>${status(cur ? 'มีผู้เช่า' : 'ห้องว่าง', cur ? 'good' : 'purple')}</header>`;
 
-  const tenant = `<section class="set-card"><header class="set-head"><span class="set-ic">${icon('user')}</span><h2>ผู้เช่า</h2>${cur ? `<small class="set-sub">เข้าอยู่ ${L.dateTh(cur.start_date)}${cur.end_date ? ` – ${L.dateTh(cur.end_date)}` : ''}</small>` : ''}</header>
-    ${cur ? `<form id="tenancy-edit" class="set-form" data-id="${cur.id}">
-      ${row('ชื่อ', `<input name="tenant_name" value="${esc(cur.tenant_name)}" required maxlength="120">`)}
-      ${row('อีเมลรับบิล', `<input name="email" type="email" value="${esc(cur.email)}" placeholder="เว้นว่าง = ส่งบิลไม่ได้">`)}
-      ${row('ค่าเช่า / เดือน', `<input name="rent_baht" type="number" min="0" step="0.01" value="${esc(cur.rent_baht)}" placeholder="฿">`, 'ใช้เมื่อเปิดรวมค่าเช่า')}
-      <div class="set-actions"><button class="btn small danger" type="button" data-action="move-out" data-id="${cur.id}">ย้ายออก</button><button class="btn primary small" type="submit">บันทึก</button></div></form>`
+  const tenant = `<section class="set-card"><header class="set-head"><span class="set-ic">${icon('user')}</span><h2>ผู้เช่า</h2>${cur ? `<small class="set-sub">เข้าอยู่ ${L.dateTh(cur.start_date)}${cur.end_date ? ` – ${L.dateTh(cur.end_date)}` : ''}</small>${editBtn('tenancy-edit')}` : ''}</header>
+    ${cur ? `<form id="tenancy-edit" class="set-form ${editCls('tenancy-edit')}" data-id="${cur.id}">
+      ${setRow('ชื่อ', `<input name="tenant_name" value="${esc(cur.tenant_name)}" required maxlength="120">`, '', viewVal(cur.tenant_name))}
+      ${setRow('อีเมลรับบิล', `<input name="email" type="email" value="${esc(cur.email)}" placeholder="เว้นว่าง = ส่งบิลไม่ได้">`, '', viewVal(cur.email, 'ไม่มี · ส่งบิลทางอีเมลไม่ได้'))}
+      ${setRow('ค่าเช่า / เดือน', `<input name="rent_baht" type="number" min="0" step="0.01" value="${esc(cur.rent_baht)}" placeholder="฿">`, 'ใช้เมื่อเปิดรวมค่าเช่า', viewVal(cur.rent_baht == null ? null : baht(Number(cur.rent_baht))))}
+      ${editActions('บันทึก', `<button class="btn small danger set-lead" type="button" data-action="move-out" data-id="${cur.id}">ย้ายออก</button>`)}</form>`
     : `<form id="tenancy-add" class="set-form">
       ${row('ชื่อ', '<input name="tenant_name" required maxlength="120" placeholder="ชื่อผู้เช่า">')}
       ${row('อีเมลรับบิล', '<input name="email" type="email" placeholder="เว้นว่างได้">')}
@@ -713,8 +998,7 @@ function renderSettings(c) {
   const d = c.d;
   const s = d.settings;
   const today = L.todayBkk();
-  const sec = (ic, title, body, foot = '') => `<section class="set-card"><header class="set-head"><span class="set-ic">${icon(ic)}</span><h2>${title}</h2></header>${body}${foot ? `<footer class="set-foot">${foot}</footer>` : ''}</section>`;
-  const row = (label, ctl, hint = '') => `<label class="set-row"><span class="set-label">${label}${hint ? `<small>${hint}</small>` : ''}</span><span class="set-ctl">${ctl}</span></label>`;
+  const sec = (ic, title, body, foot = '', act = '') => `<section class="set-card"><header class="set-head"><span class="set-ic">${icon(ic)}</span><h2>${title}</h2>${act}</header>${body}${foot ? `<footer class="set-foot">${foot}</footer>` : ''}</section>`;
   const rateTile = t => {
     const all = d.rates.filter(x => x.type === t).sort((a, b) => b.effective_from.localeCompare(a.effective_from));
     const cur = L.rateOn(d.rates, t, today);
@@ -730,11 +1014,11 @@ function renderSettings(c) {
   const demoCount = ['rooms', 'meters', 'tenancies', 'readings'].reduce((n, k) => n + d[k].filter(x => x.is_demo).length, 0);
   const email = state.user?.email || '—';
 
-  const dorm = sec('rooms', 'หอพัก', `<form id="settings-form" class="set-form">
-      ${row('ชื่อหอ', `<input name="dorm_name" value="${esc(s.dorm_name)}" maxlength="120" placeholder="หอพักสุขใจ">`)}
-      ${row('ตัดรอบทุกวันที่', `<select name="default_cutoff_day"><option value="">สิ้นเดือน</option>${Array.from({ length: 28 }, (_, i) => i + 1).map(n => `<option value="${n}" ${s.default_cutoff_day === n ? 'selected' : ''}>${n}</option>`).join('')}</select>`, 'รอบที่ตั้งเฉพาะไว้ไม่เปลี่ยนตาม')}
-      ${row('Gmail ผู้ส่งบิล', `<input name="sender_email" type="email" value="${esc(s.sender_email)}" placeholder="billing.dorm@gmail.com">`, 'ยังไม่เชื่อม · ขั้น 5')}
-      <div class="set-actions"><button class="btn primary small" type="submit">บันทึก</button></div></form>`);
+  // Gmail ผู้ส่งจริงมาจาก secret GMAIL_USER (การ์ดอีเมล) → เอาช่อง sender_email ที่ไม่มีผลออกจากหน้านี้
+  const dorm = sec('rooms', 'หอพัก', `<form id="settings-form" class="set-form ${editCls('settings-form')}">
+      ${setRow('ชื่อหอ', `<input name="dorm_name" value="${esc(s.dorm_name)}" maxlength="120" placeholder="หอพักสุขใจ">`, 'ขึ้นหัวบิลและชื่อผู้ส่งอีเมล', viewVal(s.dorm_name))}
+      ${setRow('ตัดรอบทุกวันที่', `<select name="default_cutoff_day"><option value="">สิ้นเดือน</option>${Array.from({ length: 28 }, (_, i) => i + 1).map(n => `<option value="${n}" ${s.default_cutoff_day === n ? 'selected' : ''}>${n}</option>`).join('')}</select>`, 'รอบที่ตั้งเฉพาะไว้ไม่เปลี่ยนตาม', viewVal(s.default_cutoff_day ? `วันที่ ${s.default_cutoff_day}` : 'สิ้นเดือน'))}
+      ${editActions()}</form>`, '', editBtn('settings-form'));
 
   const rates = sec('baht', 'อัตราค่าน้ำค่าไฟ', `<div class="rate-tiles">${rateTile('water')}${rateTile('electric')}</div>
     <details class="set-more"><summary>${icon('arrow')}เพิ่มอัตราใหม่</summary>
@@ -746,12 +1030,12 @@ function renderSettings(c) {
       </form><p class="set-hint">เพิ่มแล้วแก้/ลบไม่ได้ · เปลี่ยนราคา = เพิ่มแถวใหม่ที่มีผลวันใหม่</p></details>`);
 
   const cyc = sec('calendar', 'รอบบิลที่ตั้งเฉพาะ', `${cycles.length ? `<div class="cycle-list">${cycles.map(x => `<div class="cycle-item"><b>${L.cycleLabel(x.cycle)}</b><span>ตัดรอบ ${L.dateTh(x.cutoff_date)}${x.include_rent ? ' · รวมค่าเช่า' : ''}</span>${status(x.state === 'closed' ? 'ปิดแล้ว' : 'เปิด', x.state === 'closed' ? '' : 'purple')}</div>`).join('')}</div>` : '<p class="set-empty">ยังไม่มี · ทุกรอบใช้วันตัดรอบปกติ</p>'}
-    <form id="cycle-form" class="set-inline">
+    <details class="set-more"><summary>${icon('arrow')}ตั้งวันตัดรอบเฉพาะรอบ</summary><form id="cycle-form" class="set-inline">
       <label class="mini-field"><small>รอบ</small><input name="cycle" type="month" value="${esc(state.cycle)}" required></label>
       <label class="mini-field"><small>วันตัดรอบ</small><input name="cutoff_date" type="date" value="${esc(L.cutoffFor(state.cycle, d.cycles, s))}" required></label>
-      <button class="btn small" type="submit">บันทึก</button></form>`);
+      <button class="btn primary small" type="submit">ตั้งวันตัดรอบ</button></form><p class="set-hint">ใช้เมื่อรอบนั้นตัดไม่ตรงวันปกติ เช่น เลื่อนเพราะวันหยุด</p></details>`);
 
-  const acct = sec('user', 'บัญชี', `<div class="acct"><span class="acct-av">${esc((email[0] || '?').toUpperCase())}</span><div><b>${esc(email)}</b><small>Google · เจ้าของหอ${api.mock ? ' · โหมดจำลอง' : ''}</small></div></div>`,
+  const acct = sec('user', 'บัญชี', `<div class="acct"><span class="acct-av">${state.guest ? 'G' : esc((email[0] || '?').toUpperCase())}</span><div><b>${state.guest ? 'ผู้ชม (Guest)' : esc(email)}</b><small>${state.guest ? 'ผู้ชม · ดูได้อย่างเดียว' : 'Google · เจ้าของหอ'}${api.mock ? ' · โหมดจำลอง' : ''}</small></div></div>`,
     `<button class="btn small" data-action="sign-out">ออกจากระบบ</button><button class="btn small ghost" data-action="sign-out-all" title="ใช้เมื่อลืมออกจากเครื่องอื่น">ทุกอุปกรณ์</button>`);
 
   const adv = sec('settings', 'ขั้นสูง', `<div class="set-rows">
@@ -760,14 +1044,23 @@ function renderSettings(c) {
       ${demoCount ? `<code class="set-code">select public.delete_demo_data();</code>` : ''}
       <div class="set-row static"><span class="set-label">โซนเวลา</span><span class="set-ctl"><b>${esc(s.timezone || 'Asia/Bangkok')}</b></span></div></div>`);
 
+  const pp = d.payout?.promptpay_id || '';
+  const mail = state.guest ? '' : sec('mail', 'อีเมลบิลและการรับเงิน', `<div class="set-rows">
+      <div class="set-row static"><span class="set-label">ผู้ส่ง (Gmail ของหอ)<small id="mail-status-note">กำลังตรวจ…</small></span><span class="set-ctl"><span id="mail-status">${status('…', '')}</span></span></div>
+      <div class="set-row static"><span class="set-label">ทดสอบการส่ง<small>ส่งบิลตัวอย่างถึงอีเมลที่ล็อกอินอยู่</small></span><span class="set-ctl"><button class="btn small" type="button" data-action="mail-test">${icon('mail')}ส่งทดสอบ</button></span></div></div>
+    <form id="payout-form" class="set-form ${editCls('payout-form')}">
+      ${setRow('พร้อมเพย์รับเงิน', `<input name="promptpay_id" inputmode="numeric" maxlength="17" value="${esc(pp)}" placeholder="0812345678">`, 'มือถือ 10 หลัก หรือเลขบัตร 13 หลัก · ใส่ QR ในอีเมล', viewVal(pp, 'ยังไม่ตั้ง · อีเมลไม่มี QR'))}
+      ${editActions()}</form>
+    <details class="rt-hist rd-past"><summary>วิธีตั้ง Gmail ผู้ส่ง</summary><span>1. บัญชี Google ของหอ → Security → เปิด 2-Step Verification</span><span>2. myaccount.google.com/apppasswords → สร้าง App Password (16 ตัว)</span><span>3. Supabase → Edge Functions → Secrets → เพิ่ม GMAIL_USER = อีเมลหอ และ GMAIL_APP_PASSWORD = รหัส 16 ตัว</span><span>4. กลับมากด "ส่งทดสอบ" ด้านบน</span></details>`, '', editBtn('payout-form'));
+  const look = sec('settings', 'ธีมสี', `<div class="accent-picks">${Object.entries(ACCENTS).map(([k, v]) => `<button class="accent-pick ${k} ${accentNow() === k ? 'active' : ''}" data-accent-pick="${k}" aria-pressed="${accentNow() === k}"><span class="sw" style="background:${v.sw}" aria-hidden="true"></span>${v.name}</button>`).join('')}</div><p class="set-hint">จำไว้เฉพาะเบราว์เซอร์นี้</p>`);
   return `<section class="page">${pageHead('PREFERENCES', 'ตั้งค่า', 'มีผลกับบิลรอบที่ยังไม่ปิด')}
-  <div class="set-layout"><div class="set-col">${dorm}${rates}${cyc}</div><div class="set-col">${acct}${adv}</div></div></section>`;
+  <div class="set-layout"><div class="set-col">${dorm}${rates}${cyc}</div><div class="set-col">${acct}${mail}${look}${adv}</div></div></section>`;
 }
 
 async function saveSettings(form) {
   const f = new FormData(form);
   const day = blankToNull(f.get('default_cutoff_day'));
-  await write(() => api.updateSettings({ dorm_name: blankToNull(f.get('dorm_name')), sender_email: blankToNull(f.get('sender_email'))?.toLowerCase() ?? null, default_cutoff_day: day == null ? null : Number(day) }), 'บันทึกการตั้งค่าแล้ว');
+  await write(() => api.updateSettings({ dorm_name: blankToNull(f.get('dorm_name')), default_cutoff_day: day == null ? null : Number(day) }), 'บันทึกการตั้งค่าแล้ว');
 }
 
 async function addRate(form) {
@@ -790,14 +1083,41 @@ async function saveCycle(form) {
 
 // ───────── modal ─────────
 function openModal(html) {
+  // เปิดซ้ำตอนหน้าต่างยังเปิดอยู่ (เช่น บันทึกรับเงินแล้วแสดงบิลใหม่) = เปลี่ยนเนื้อหาเฉยๆ ไม่เล่นแอนิเมชันเปิดซ้ำ
+  const live = $('#modal-root .modal-backdrop:not(.closing) .modal');
+  if (live) { live.innerHTML = html; return; }
   $('#modal-root').innerHTML = `<div class="modal-backdrop" data-action="close-modal"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">${html}</div></div>`;
   $('.modal [aria-label="ปิด"]')?.focus();
 }
-const closeModal = () => { $('#modal-root').innerHTML = ''; };
+// ปิดแบบจางออก 160 ms · เปิดใหม่ระหว่างนั้น = แทนที่ทันที (openModal เขียนทับ #modal-root)
+function closeModal() {
+  const bd = $('#modal-root .modal-backdrop');
+  if (!bd || bd.classList.contains('closing')) return;
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) { bd.remove(); return; }
+  bd.classList.add('closing');
+  setTimeout(() => bd.remove(), 170);
+}
+
+// โหมดแก้: render ใหม่ด้วย state.editing แล้วโฟกัสช่องแรก · ยกเลิก = render ค่าจากฐานข้อมูลกลับมา (ทิ้งที่พิมพ์)
+function startEdit(id) {
+  if (state.guest) return;
+  state.editing = id;
+  render();
+  const f = document.getElementById(id);
+  f?.querySelector('input:not([type=hidden]):not(:disabled), select')?.focus({ preventScroll: true });
+  f?.scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+}
+function stopEdit() {
+  const id = state.editing;
+  state.editing = null;
+  render();
+  document.querySelector(`[data-action="edit"][data-form="${id}"]`)?.focus({ preventScroll: true });
+}
 
 // ───────── event ─────────
 function setPage(page) {
   state.page = page;
+  state.editing = null;
   render();
   $('#page-content').focus({ preventScroll: true });
   window.scrollTo({ top: 0, behavior: 'instant' });
@@ -832,6 +1152,8 @@ document.addEventListener('click', e => {
   const t = e.target;
   // ปิดเมนูบัญชีเมื่อคลิกที่อื่น (หรือหลังเลือกเมนู)
   if (!$('#account-menu').hidden && !t.closest('.account-head') && !t.closest('#avatar')) toggleAccountMenu(false);
+  const ac = t.closest('[data-accent-pick]');
+  if (ac) { setAccent(ac.dataset.accentPick); return; }
   const hr = t.closest('[data-home-room]');
   if (hr) {
     state.homeRoom = hr.dataset.homeRoom; render();
@@ -848,11 +1170,13 @@ document.addEventListener('click', e => {
     if (nav.dataset.reading) state.selectedReading = Number(nav.dataset.reading);
     if (nav.dataset.room) state.selectedRoom = nav.dataset.room;
     setPage(nav.dataset.page);
+    if (nav.dataset.edit) startEdit(nav.dataset.edit);   // เช่น "ตั้งชื่อหอ" → เปิดฟอร์มหอพักในโหมดแก้ทันที
     return;
   }
   const rd = t.closest('[data-reading]');
   if (rd) {
     state.selectedReading = Number(rd.dataset.reading);
+    state.editing = null;
     render();
     // จอแคบ: รายละเอียดอยู่ใต้คิว → เลื่อนลงให้เห็นทันที
     if (rd.closest('.queue-list') && matchMedia('(max-width: 1000px)').matches) $('.review-detail')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -860,7 +1184,7 @@ document.addEventListener('click', e => {
   }
   const room = t.closest('[data-room]');
   if (room) {
-    state.selectedRoom = room.dataset.room; render();
+    state.selectedRoom = room.dataset.room; state.editing = null; render();
     if (room.classList.contains('rm-item') && matchMedia('(max-width: 1000px)').matches) $('.rm-detail')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     return;
   }
@@ -871,9 +1195,22 @@ document.addEventListener('click', e => {
   const a = t.closest('[data-action]');
   if (!a) return;
   const act = a.dataset.action;
+  document.querySelectorAll('.is-busy').forEach(x => x.classList.remove('is-busy'));
+  if (a.tagName === 'BUTTON') a.classList.add('is-busy');
   if (act === 'close-modal') { if (t === a || a.tagName === 'BUTTON') closeModal(); return; }
-  if (act === 'reject') rejectReading();
+  if (act === 'edit') startEdit(a.dataset.form);
+  else if (act === 'edit-cancel') stopEdit();
+  else if (act === 'reject') rejectReading();
+  else if (act === 'reopen') reopenReading();
+  else if (act === 'manual-read') showManualForm(a.dataset.meter);
   else if (act === 'export') exportRegistry();
+  else if (act === 'approve') approveBills([a.dataset.billRoom]);
+  else if (act === 'revise') approveBills([a.dataset.billRoom], true);
+  else if (act === 'send-one') sendBills([a.dataset.billRoom], !!ctx().bills.find(b => b.room.room_id === a.dataset.billRoom)?.sent);
+  else if (act === 'send-all') sendBills(ctx().bills.filter(b => b.inv && b.inv.recipient_email && b.sent !== 'sent').map(b => b.room.room_id));
+  else if (act === 'void-pay') voidPayment(Number(a.dataset.payId));
+  else if (act === 'mail-test') mailTest(a);
+  else if (act === 'approve-all') approveBills(ctx().bills.filter(b => b.view === 'ready').map(b => b.room.room_id));
   else if (act === 'retire') retireMeter(a.dataset.meter);
   else if (act === 'move-out') moveOut(Number(a.dataset.id));
   else if (act === 'reload') location.reload();
@@ -881,17 +1218,19 @@ document.addEventListener('click', e => {
   else if (act === 'sign-out') signOut('local');
   else if (act === 'sign-out-all') signOut('global');
   else if (act === 'sign-in') startSignIn(a);
+  else if (act === 'guest') startGuest(a);
 });
 
 const SUBMITS = {
   'confirm-form': submitConfirm, 'assign-form': submitAssign, 'room-add': addRoom,
   'tenancy-edit': f => saveTenancy(f, false), 'tenancy-add': f => saveTenancy(f, true), 'meter-add': addMeter,
-  'settings-form': saveSettings, 'rate-form': addRate, 'cycle-form': saveCycle,
+  'settings-form': saveSettings, 'rate-form': addRate, 'cycle-form': saveCycle, 'pay-form': addPayment, 'payout-form': savePayout, 'manual-form': submitManual,
 };
 document.addEventListener('submit', e => {
   const fn = SUBMITS[e.target.id];
   if (!fn) return;
   e.preventDefault();
+  e.submitter?.classList.add('is-busy');   // หมุนเฉพาะปุ่มที่กด (CSS body.busy .is-busy)
   fn(e.target);
 });
 
@@ -915,7 +1254,7 @@ document.addEventListener('input', e => {
 });
 
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { closeModal(); if (!$('#account-menu').hidden) { toggleAccountMenu(false); $('#avatar').focus(); } }
+  if (e.key === 'Escape') { if (state.editing && !$('.modal-backdrop:not(.closing)')) stopEdit(); closeModal(); if (!$('#account-menu').hidden) { toggleAccountMenu(false); $('#avatar').focus(); } }
   if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('tr[data-room]')) { e.preventDefault(); e.target.click(); }
 });
 
@@ -936,7 +1275,9 @@ function showGate(title, text, actions, note = '') {
 }
 
 const G_LOGO = '<svg class="g-logo" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>';
-const SIGN_IN_BTN = `<button class="gate-google" data-action="sign-in"><span class="g-mark">${G_LOGO}</span><span class="g-label">Continue with Google</span><span class="g-arrow" aria-hidden="true">→</span></button>`;
+const GUEST_BTN = `<button class="gate-guest" data-action="guest" title="ดูได้อย่างเดียว · แก้ไขไม่ได้"><span class="g-mark guest-mark" aria-hidden="true">${icon('user')}</span>Guest</button>`;
+const SIGN_IN_BTN_ONLY = `<button class="gate-google" data-action="sign-in"><span class="g-mark">${G_LOGO}</span><span class="g-label">Continue with Google</span><span class="g-arrow" aria-hidden="true">→</span></button>`;
+const SIGN_IN_BTN = SIGN_IN_BTN_ONLY + GUEST_BTN;
 const GATE_NOTES = {
   'signed-out': { text: 'Signed out', tone: 'good' },
   'signed-out-all': { text: 'Signed out on all devices', tone: 'good' },
@@ -950,8 +1291,19 @@ async function startSignIn(btn) {
   btn.innerHTML = '<span class="g-mark"><span class="spinner" aria-hidden="true"></span></span><span class="g-label">Redirecting…</span>';
   try { await api.signIn(); } catch (e) {
     btn.disabled = false;
-    btn.outerHTML = SIGN_IN_BTN;
+    btn.outerHTML = SIGN_IN_BTN_ONLY;
     const n = $('#gate-note'); n.textContent = 'Sign-in failed — try again'; n.className = 'gate-note bad'; n.hidden = false;
+  }
+}
+
+async function startGuest(btn) {
+  btn.disabled = true;
+  btn.lastChild.textContent = 'Opening…';
+  try { await api.signInGuest(); sessionStorage.setItem('aria.fly', '1'); location.reload(); } catch (e) {
+    btn.disabled = false; btn.outerHTML = GUEST_BTN;
+    const n = $('#gate-note');
+    n.textContent = /disabled/i.test(e.message) ? 'Guest access is turned off' : 'Guest sign-in failed — try again';
+    n.className = 'gate-note bad'; n.hidden = false;
   }
 }
 
@@ -967,13 +1319,14 @@ function takeAuthError() {
 }
 
 async function boot() {
+  applyAccentAssets();
   document.querySelectorAll('[data-icon]').forEach(n => { n.innerHTML = icon(n.dataset.icon); });
   const local = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
   if (local && new URLSearchParams(location.search).has('mock')) {
-    api = (await import('./mock.js?v=w31')).createMockApi();
+    api = (await import('./mock.js?v=w45')).createMockApi();
   } else {
     if (!window.supabase) return showGate('Failed to load', '', '<button class="gate-google plain" data-action="reload"><span>Reload</span></button>');
-    api = (await import('./api.js?v=w13')).createApi();
+    api = (await import('./api.js?v=w45')).createApi();
   }
   const urlError = takeAuthError();
   const flag = sessionStorage.getItem('aria.gate');
@@ -992,8 +1345,10 @@ async function boot() {
     return showGate('Welcome to ARIA', '', SIGN_IN_BTN, note);
   }
   state.user = session.user;
-  // ล็อกอินได้ไม่พอ ต้องอยู่ใน owners (RLS บังคับอีกชั้น — ถึงข้ามหน้านี้ไปก็ไม่เห็นข้อมูล)
-  if (!(await api.isOwner().catch(() => false))) {
+  state.guest = session.user.is_anonymous === true;
+  document.body.classList.toggle('guest', state.guest);
+  // ล็อกอินได้ไม่พอ ต้องอยู่ใน owners (RLS บังคับอีกชั้น — ถึงข้ามหน้านี้ไปก็ไม่เห็นข้อมูล) · ผู้ชมข้ามได้ RLS ให้อ่านอย่างเดียว
+  if (!state.guest && !(await api.isOwner().catch(() => false))) {
     return showGate('No access', session.user.email || '',
       '<button class="gate-google plain" data-action="sign-out"><span>Use another account</span></button>');
   }

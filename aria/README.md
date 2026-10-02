@@ -11,17 +11,22 @@
 | `supabase/migrations/20260929000100_demo_readings.sql` | apply แล้ว — ค่าที่หุ่นอ่านตัวอย่าง 19 แถวจากอุปกรณ์ `DEMO-01` · **ลบแล้ว 30 ก.ย. 2569** · ค่าจริงของ ARIA-001 3 แถวเก็บไว้ (ผูกกลับเองเมื่อสร้างมิเตอร์รหัสเดิม) |
 | `web/` | **เว็บหลังบ้าน** (vanilla JS) · **ออนไลน์ที่ https://aria-th.netlify.app** (Netlify Free · base `aria/web`) · ล็อกอิน Google ใช้ได้ 29 ก.ย. — ขั้นตอนตั้งค่าใน [`web/README.md`](web/README.md) |
 | `supabase/functions/ingest/index.ts` | deploy แล้ว (verify_jwt = false · ยืนยันตัวด้วย `x-device-token`) |
+| `supabase/migrations/20261002000100_guest_read_only.sql` | apply แล้ว — ผู้ชม (ปุ่ม Guest = anonymous sign-in) อ่านได้อย่างเดียว · ต้องเปิด Auth › Allow anonymous sign-ins (เปิดแล้ว 3 ต.ค.) |
+| `supabase/migrations/20261003000100_invoices.sql` | apply แล้ว — บิลที่อนุมัติ (ตรึงยอด · แก้ = ฉบับใหม่) · `approve_invoices()` · ยอดคำนวณในฐานข้อมูล (ไฟล์ 08/20 §20.10) |
+| `supabase/migrations/20261003000200_delivery_payments.sql` | apply แล้ว — ผลการส่งอีเมล · รับเงิน (ยกเลิกได้ ลบไม่ได้) · `payout_settings` เลขพร้อมเพย์ (เจ้าของอ่านเท่านั้น) · + index FK (`billing_fk_indexes`) |
+| `supabase/migrations/20261003000400_manual_reading_reopen.sql` | apply แล้ว 3 ต.ค. — `add_manual_reading()` กรอกเลขเอง (ไม่มีรูป · ต้องมีเหตุผล · ยืนยันทันที · อุปกรณ์เสมือน `MANUAL` ที่ revoke แล้ว) · event `reopened` ยกเลิกการยืนยัน/ปฏิเสธ → กลับเป็นรอยืนยัน · ทดสอบใน transaction ที่ย้อนกลับแล้ว |
+| `supabase/migrations/20261003000500_crop_purge.sql` + `functions/purge-crops/` | apply + deploy แล้ว 3 ต.ค. (ผู้ใช้อนุมัติ) — ลบรูป crop เมื่อรับเงินครบ + 30 วัน หรืออายุ > 12 เดือน (แบบ ข · ไฟล์ 08/20 §20.11) · ตัวเลขไม่ลบ · pg_cron `purge-crops-daily` 03:30 เวลาไทย · ดูผล: `select * from net._http_response order by id desc limit 5` |
+| `supabase/functions/send-invoices/` | deploy แล้ว (verify_jwt = true · เจ้าของเท่านั้น) — Gmail SMTP 465 · MIME/SMTP เขียนเอง (`mime.ts`, `smtp.ts`) · ใบแจ้งหนี้ `template.ts` · QR พร้อมเพย์ `promptpay.ts` (ตรงกับไลบรารี promptpay-qr) · **secrets: `GMAIL_USER`, `GMAIL_APP_PASSWORD`** (ตั้งแล้ว 3 ต.ค.) · ฟรีเพลนรัน ≤ 150 s → เว็บส่งทีละ 8 ฉบับ |
 
 อุปกรณ์ที่ลงทะเบียน: `ARIA-001` (หุ่นจริง · เดิมชื่อ `MRC-001` เปลี่ยนเฉพาะชื่อที่แสดงเมื่อ 29 ก.ย. — โค้ดบน Pi ยังใช้ MRC-001 ภายใน) · `TEST-01` (ทดสอบจาก Mac) — token จริงอยู่ที่ `~/.config/mrc/aria_device_token_*` บน Mac ของผู้ใช้ (สิทธิ์ 600) · คลาวด์เก็บแค่ SHA-256
 
 ## Auth (ตั้ง 29 ก.ย.)
 - Provider เหลือ **Google อย่างเดียว** (Email ปิด · sign-up เปิดไว้ให้ Google สร้าง user ครั้งแรก) · Google OAuth client แยกเฉพาะ ARIA (อยู่ในโปรเจกต์ Google Cloud เดิมของผู้ใช้ · consent screen สถานะ Testing → ต้องเพิ่ม test user ก่อนเพิ่มเจ้าของคนใหม่)
 - `owners`: `daiyazwhm@gmail.com` · เพิ่มคน: `insert into public.owners(email) values ('…');` + เพิ่มเป็น test user ใน Google
-- Site URL / Redirect `https://aria-th.netlify.app/**`
+- Site URL `https://aria-th.netlify.app` · Redirect URLs `http://localhost:8766/**` (ทดสอบบนเครื่องก่อน deploy · เพิ่ม 3 ต.ค.)
 
 ## ยังไม่ได้ทำ
-- บิล/อีเมล (`invoices`, `invoice_delivery_attempts`) — ขั้น 4–5
-- งานลบ crop อายุ 12 เดือน (F8) — ครั้งแรกที่ต้องใช้คือ ก.ย. 2027
+- ทดสอบอนุมัติ → ส่งบิล → รับเงิน กับค่าจริง (รอหุ่นถ่าย A101–A103 รอบ ต.ค. ครบและยืนยันแล้ว)
 - มีรูปทดสอบค้างใน bucket `crops/TEST-01/` 4 ไฟล์ (≈ 30 kB) — ลบได้จาก Dashboard › Storage (ลบผ่าน SQL ไม่ได้)
 
 ## Deploy ลง Pi (ทำตอน Pi ว่าง · branch `aria-pipeline`)

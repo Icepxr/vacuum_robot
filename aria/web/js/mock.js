@@ -5,7 +5,7 @@ import { readingMeterId, meterIndex } from './logic.js?v=w13';
 export function createMockApi() {
   const prev = { '101': [1231, 3502], '102': [987, 2140], '103': [1518, 2901], '104': [1192, 3271], '105': [1402, 5012], '106': [802, 1320], '107': [1105, 4521], '108': [1351, 3204], '109': [890, 2750], '110': [1120, 2876] };
   const names = { '101': ['วราภรณ์ ใจดี', 'waraporn@example.com', 3500], '102': ['ศักดิ์ชัย แสนสุข', 'sakchai@example.com', 3700], '103': ['ธนพร พรมมา', 'thanaporn@example.com', 3600], '104': ['นิภาพร สุขใจ', 'nipaporn@example.com', 3400], '105': ['กิตติพงษ์ รัตนวงศ์', 'kittipong@example.com', 3800], '107': ['พิมพ์ชนก วงศ์ดี', 'pimchanok@example.com', 3500], '108': ['นรินทร์ คำมา', 'narin@example.com', 3900], '109': ['รัชนี แก้วตา', 'ratchanee@example.com', 3500], '110': ['สุรเชษฐ์ จันทร์ดี', null, 3300] };
-  const d = { rooms: [], meters: [], tenancies: [], readings: [], events: [], rates: [], cycles: [], settings: { id: true, dorm_name: null, timezone: 'Asia/Bangkok', sender_email: null, default_cutoff_day: null }, devices: [], lastExport: null };
+  const d = { rooms: [], meters: [], tenancies: [], readings: [], events: [], rates: [], cycles: [], settings: { id: true, dorm_name: null, timezone: 'Asia/Bangkok', sender_email: null, default_cutoff_day: null }, devices: [], lastExport: null, invoices: [], deliveries: [], payments: [], payout: { promptpay_id: null } };
   let tid = 0, rid = 0, eid = 0, ver = 0;
   for (const room of Object.keys(prev)) {
     d.rooms.push({ room_id: room, floor: room[0], note: null, is_demo: true });
@@ -47,6 +47,10 @@ export function createMockApi() {
       Object.assign(r, { status: 'confirmed', confirmed_value: ev.confirmed_value });
     } else if (ev.event === 'rejected') Object.assign(r, { status: 'rejected', confirmed_value: null });
     else if (ev.event === 'assigned') Object.assign(r, { assigned_meter_id: ev.meter_id, status: 'ocr', confirmed_value: null });
+    else if (ev.event === 'reopened') {
+      if (r.status === 'ocr') throw new Error(`ค่านี้ยังรอยืนยันอยู่แล้ว (reading ${r.id})`);
+      Object.assign(r, { status: 'ocr', confirmed_value: null });
+    }
     d.events.push({ id: ++eid, reason: null, meter_id: null, confirmed_value: null, ...ev, at: new Date().toISOString() });
   }
   const clone = x => structuredClone(x);
@@ -54,13 +58,30 @@ export function createMockApi() {
   return {
     mock: true,
     // จำลองสถานะล็อกอินด้วย sessionStorage ให้ลองหน้าเข้า/ออกระบบบน localhost ได้
-    async session() { return sessionStorage.getItem('mock.out') ? null : { user: { id: USER, email: 'owner@example.com' } }; },
+    async session() {
+      if (sessionStorage.getItem('mock.out')) return null;
+      return sessionStorage.getItem('mock.guest') ? { user: { id: 'guest', email: null, is_anonymous: true } } : { user: { id: USER, email: 'owner@example.com' } };
+    },
+    async signInGuest() { sessionStorage.removeItem('mock.out'); sessionStorage.setItem('mock.guest', '1'); },
     onAuthChange() {},
-    async signIn() { sessionStorage.removeItem('mock.out'); setTimeout(() => location.reload(), 300); },
-    async signOut() { sessionStorage.setItem('mock.out', '1'); },
+    async signIn() { sessionStorage.removeItem('mock.out'); sessionStorage.removeItem('mock.guest'); setTimeout(() => location.reload(), 300); },
+    async signOut() { sessionStorage.setItem('mock.out', '1'); sessionStorage.removeItem('mock.guest'); },
     async isOwner() { return true; },
     async loadAll() { return clone(d); },
     async addEvent(ev) { apply({ ...ev, actor: USER }); },
+    // จำลอง add_manual_reading(): แถวใหม่ไม่มีรูป + ยืนยันทันที · ยืนยันไม่ผ่าน = ไม่มีแถวค้าง (ธุรกรรมเดียว)
+    async addManualReading(meterId, value, at, reason) {
+      const m = d.meters.find(x => x.meter_id === meterId);
+      if (!m) throw new Error(`ไม่พบมิเตอร์ ${meterId}`);
+      if (!String(reason || '').trim()) throw new Error('ต้องใส่เหตุผลที่กรอกเอง (ไม่มีรูปเป็นหลักฐาน)');
+      if (new Date(at) > new Date(Date.now() + 300000)) throw new Error('เวลาที่อ่านต้องไม่อยู่ในอนาคต');
+      const r = { run_id: null, registry_version: null, image_path: null, id: ++rid, local_id: rid.toString(16).padStart(12, '0'), device_id: 'MANUAL', captured_at: at, decided_at: new Date().toISOString(), received_at: new Date().toISOString(), clock_synced: true,
+        room_id: m.room_id, meter_type: m.type, meter_id: m.meter_id, raw_text: null, value, confidence: null, ocr_engine: null, source: 'manual', air: null, crop_path: null, crop_expired_at: null, status: 'ocr', confirmed_value: null, assigned_meter_id: null, is_demo: false };
+      d.readings.push(r);
+      try { apply({ reading_id: r.id, event: 'confirmed', confirmed_value: value, reason: reason.trim(), actor: USER }); }
+      catch (e) { d.readings.pop(); throw e; }
+      return r.id;
+    },
     async cropUrl() { throw new Error('ข้อมูลจำลองไม่มีรูป'); },
     async addRoom(row) { if (d.rooms.some(r => r.room_id === row.room_id)) throw new Error('duplicate key'); d.rooms.push({ floor: null, note: null, is_demo: false, ...row }); },
     async updateRoom(id, patch) { Object.assign(d.rooms.find(r => r.room_id === id), patch); },
@@ -71,6 +92,44 @@ export function createMockApi() {
     async addRate(row) { if (d.rates.some(r => r.type === row.type && r.effective_from === row.effective_from)) throw new Error('duplicate key value violates unique constraint "rates_type_effective_from_key"'); d.rates.push({ id: d.rates.length + 1, ...row }); },
     async updateSettings(patch) { Object.assign(d.settings, patch); },
     async upsertCycle(row) { const c = d.cycles.find(x => x.cycle === row.cycle); if (c) Object.assign(c, row); else d.cycles.push({ state: 'open', include_rent: false, ...row }); },
+    // จำลอง rpc approve_invoices (ยอด = round(หน่วย×อัตรา, 2) ต่อชนิด + ค่าเช่า เหมือนคอลัมน์ generated)
+    async approveInvoices(cycle, cutoff, items) {
+      const r2 = x => Math.round(x * 100 + 1e-9) / 100;
+      if (!d.cycles.some(c => c.cycle === cycle)) d.cycles.push({ cycle, cutoff_date: cutoff, state: 'open', include_rent: false });
+      const out = [];
+      for (const it of items) {
+        const cur = d.invoices.find(v => v.cycle === cycle && v.room_id === it.room_id && v.state === 'approved');
+        if (cur && !it.revise) throw new Error(`ห้อง ${it.room_id} อนุมัติแล้ว`);
+        if (cur) Object.assign(cur, { state: 'superseded', superseded_at: new Date().toISOString() });
+        const rev = Math.max(0, ...d.invoices.filter(v => v.cycle === cycle && v.room_id === it.room_id).map(v => v.revision)) + 1;
+        const { revise, ...row } = it;
+        const v = { id: d.invoices.length + 1, cycle, revision: rev, state: 'approved', rent_baht: 0, ...row,
+          water_amount: r2(it.water_units * it.water_rate), electric_amount: r2(it.electric_units * it.electric_rate),
+          approved_by: 'owner@example.com', approved_at: new Date().toISOString(), superseded_at: null };
+        v.total_baht = r2(v.water_amount + v.electric_amount + Number(v.rent_baht || 0));
+        d.invoices.push(v); out.push(clone(v));
+      }
+      return out;
+    },
+    async mailStatus() { return { configured: !!sessionStorage.getItem('mock.mail'), sender: sessionStorage.getItem('mock.mail') ? 'dorm@gmail.com' : null }; },
+    async sendTestMail() { if (!sessionStorage.getItem('mock.mail')) throw new Error('ยังไม่ได้ตั้ง GMAIL_USER / GMAIL_APP_PASSWORD ใน Edge Function secrets'); return { test: true, to: 'owner@example.com', qr: !!d.payout.promptpay_id }; },
+    async sendInvoices(ids, resend) {
+      if (!sessionStorage.getItem('mock.mail')) throw new Error('ยังไม่ได้ตั้ง GMAIL_USER / GMAIL_APP_PASSWORD ใน Edge Function secrets');
+      const results = [];
+      for (const id of ids) {
+        const v = d.invoices.find(x => x.id === id);
+        if (!v || v.state !== 'approved') { results.push({ id, skipped: 'ไม่ใช่ฉบับปัจจุบัน' }); continue; }
+        if (!v.recipient_email) { results.push({ id, skipped: 'ไม่มีอีเมล' }); continue; }
+        if (!resend && d.deliveries.some(a => a.invoice_id === id && a.result === 'sent')) { results.push({ id, skipped: 'ส่งแล้ว' }); continue; }
+        const fail = v.recipient_email.includes('fail');
+        d.deliveries.push({ id: d.deliveries.length + 1, invoice_id: id, to_email: v.recipient_email, attempted_at: new Date().toISOString(), result: fail ? 'failed' : 'sent', error: fail ? '550 mailbox unavailable' : null, requested_by: 'owner@example.com' });
+        results.push({ id, result: fail ? 'failed' : 'sent' });
+      }
+      return { results };
+    },
+    async addPayment(row) { d.payments.push({ id: d.payments.length + 1, recorded_by: 'owner@example.com', recorded_at: new Date().toISOString(), voided_at: null, void_reason: null, note: null, ...row }); },
+    async voidPayment(id, reason) { const p = d.payments.find(x => x.id === id); if (p.voided_at) throw new Error('รายการนี้ยกเลิกไปแล้ว'); Object.assign(p, { voided_at: new Date().toISOString(), void_reason: reason }); },
+    async setPromptpay(id) { d.payout.promptpay_id = id; },
     async newExport() { d.lastExport = { version: ++ver, exported_at: new Date().toISOString() }; return clone(d.lastExport); },
   };
 }

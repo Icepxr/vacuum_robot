@@ -11,10 +11,11 @@
   <link rel="icon" type="image/png" sizes="64x64" href="img/icon-light.png" media="(prefers-color-scheme: light)">
   <link rel="icon" type="image/png" sizes="64x64" href="img/icon-dark.png" media="(prefers-color-scheme: dark)">
   <link rel="apple-touch-icon" href="img/apple-touch-icon.png">
-  <link rel="stylesheet" href="css/styles.css?v=w1">
-  <link rel="stylesheet" href="css/theme.css?v=w1">
-  <link rel="stylesheet" href="css/app.css?v=w12">
-  <link rel="stylesheet" href="css/glass.css?v=g22">
+  <link rel="stylesheet" data-css href="css/styles.css?v=w1">
+  <link rel="stylesheet" data-css href="css/theme.css?v=w1">
+  <link rel="stylesheet" data-css href="css/app.css?v=w12">
+  <link rel="stylesheet" data-css href="css/glass.css?v=g38">
+  <script src="js/accent.js?v=a2"></script>
 </head>
 <body>
   <a class="skip-link" href="#page-content">ข้ามไปเนื้อหา</a>
@@ -56,6 +57,7 @@
         <div class="top-right">
           <span class="cycle-nav"><button type="button" class="cycle-btn" data-cycle-step="-1" aria-label="รอบก่อน">‹</button><span class="cycle-tag"><span data-icon="calendar" aria-hidden="true"></span> <span id="cycle-name">—</span></span><button type="button" class="cycle-btn" data-cycle-step="1" aria-label="รอบถัดไป">›</button></span>
           <span class="demo-badge" id="demo-badge" hidden>มีข้อมูลตัวอย่าง</span>
+          <span class="guest-badge" id="guest-badge" hidden title="ผู้ชม · ดูได้อย่างเดียว แก้ไขไม่ได้">ผู้ชม · ดูอย่างเดียว</span>
           <div class="account">
             <button type="button" class="avatar" id="avatar" data-action="account-menu" aria-haspopup="menu" aria-expanded="false" aria-controls="account-menu" aria-label="บัญชี">?</button>
             <div class="account-menu" id="account-menu" role="menu" hidden>
@@ -73,6 +75,6 @@
   <div id="modal-root"></div>
   <div id="toast" role="status" aria-live="polite"></div>
   <script src="vendor/supabase-2.117.2.js"></script>
-  <script type="module" src="js/app.js?v=w32"></script>
+  <script type="module" src="js/app.js?v=w46"></script>
 </body>
 </html>
