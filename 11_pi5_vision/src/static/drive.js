@@ -238,7 +238,8 @@
         camFromTele(ev);
         if (ev.spinup_hold && !$("spin").matches(":not([hidden])")) beep("warn");
         $("spin").hidden = !ev.spinup_hold;
-        if (ev.comm_lost) toast("ESP32 หยุดเอง: ไม่ได้คำสั่งใน 300 ms", "warn"); break;
+        if (ev.comm_lost) toast("ESP32 หยุดเอง: ไม่ได้คำสั่งใน 300 ms", "warn");
+        syncCleanFromTele(ev); break;
       case "limits":                                                             // Pi ยืนยันเพดาน (อาจถูก clamp ที่ฮาร์ดแวร์)
         if (ev.v_max !== cfg.vMax || ev.w_max !== cfg.wMax) { cfg.vMax = ev.v_max; cfg.wMax = ev.w_max; save(); applyCfg(); }
         logEv(`เพดาน ${ev.v_max} mm/s · หมุน ${ev.w_max} mrad/s`, ""); break;
@@ -408,9 +409,20 @@
   $("capture").onclick = capture;
   const BRUSH_ON_PCT = 100;
   let suction = 0, brush = 0, idleT;
-  function sendClean() { send({ t: "clean", suction, brush }); paintTog(); }
+  let cleanSentAt = 0, cleanFlagsSeen = false;
+  function sendClean() { cleanSentAt = Date.now(); send({ t: "clean", suction, brush }); paintTog(); }
+  // C57: ปุ่มต้องตรงกับสถานะจริงบน ESP32 (เฟิร์มแวร์อาจปิดเอง: ลิงก์เงียบ > 5 s · E-STOP · รีบูต)
+  //   รอ 2 s หลังกดให้คำสั่งไปถึงก่อน · ซิงก์เฉพาะเมื่อเคยเห็นบิต 0x08/0x10 (เฟิร์มแวร์เก่าไม่ส่ง → ไม่แตะปุ่ม)
+  function syncCleanFromTele(ev) {
+    if (ev.suction_on || ev.brush_on) cleanFlagsSeen = true;
+    if (!cleanFlagsSeen || Date.now() - cleanSentAt < 2000) return;
+    const off = [];
+    if (suction && !ev.suction_on) { suction = 0; off.push("ดูด"); }
+    if (brush && !ev.brush_on) { brush = 0; off.push("แปรง"); }
+    if (off.length) { paintTog(); toast(`ESP32 ปิด${off.join("และ")}เอง — กดเปิดใหม่ได้`, "warn"); logEv(`ESP32 ปิด${off.join("/")}เอง`, "warn"); }
+  }
   function toggleSuction() { if (stopLatch.active) return; suction = suction ? 0 : cfg.suctionPct; sendClean(); }
-  function toggleBrush() { if (stopLatch.active) return; brush = brush ? 0 : BRUSH_ON_PCT; sendClean(); }   // แปรง = เปิด/ปิดเหมือนดูด (ผู้ใช้ 21 ก.ย.) · 100 % ของราง 5 V = 5 V ≤ พิกัด 6 V (C30)
+  function toggleBrush() { if (stopLatch.active) return; brush = brush ? 0 : BRUSH_ON_PCT; sendClean(); }   // แปรง = เปิด/ปิดเหมือนดูด (ผู้ใช้ 21 ก.ย.) · 100 % ของราง 6 V = พิกัดมอเตอร์ 6 V (C56)
   $("suction").onclick = toggleSuction; $("brush").onclick = toggleBrush;
   function paintTog() { $("suction").classList.toggle("on", !!suction); $("suction").querySelector("b").textContent = suction ? "เปิด" : "ปิด";
     $("brush").classList.toggle("on", !!brush); $("brush").querySelector("b").textContent = brush ? "เปิด" : "ปิด"; }

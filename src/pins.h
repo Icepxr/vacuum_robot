@@ -28,7 +28,7 @@ constexpr int PIN_ENC_R_B = 14;
 
 // ── ทำความสะอาด (MOSFET · R 100 Ω + pull-down 10 kΩ + SS34 · ไฟล์ 16)              [ใช้จริง] src/blower_test/
 constexpr int PIN_SUCTION_EN = 21;  // เกต blower 12 V · GPIO ธรรมดา เปิด/ปิด (PWM ได้แค่ 10–50 Hz — ห้าม 20 kHz §3.5)
-constexpr int PIN_BRUSH_PWM  = 16;  // เกตแปรงข้าง ราง 5 V · LEDC ch5 T1 20 kHz 10-bit · มอเตอร์ 6 V 200 rpm (C30)
+constexpr int PIN_BRUSH_PWM  = 16;  // เกตแปรง ราง 6 V (C56) · LEDC ch5 T1 20 kHz 10-bit · JGB37-520 6 V 200 rpm
 
 // ── เซอร์โว MG996R ×2 (LEDC T2 50 Hz 14-bit · pull-down 10 kΩ ที่ขาสัญญาณ)
 constexpr int PIN_SERVO_MAST = 17;  // SERVO_A · เสา scissor (ตัวเดียว ไฟล์ 12)                [ใช้จริง] src/servo_test/main.cpp

@@ -17,7 +17,7 @@ mrc::Mission    mission;
 mrc::MissionCfg cfg;                  // ค่าตั้งต้นใน mission_core.h · ปรับได้ด้วย `mis set`
 int  mastUpUs   = -1;                 // [ยังไม่ตัดสินใจ] — ตั้งด้วย mis set up
 int  mastDownUs = -1;                 // [ยังไม่ตัดสินใจ] — ตั้งด้วย mis set down
-int  brushPct   = 24;                 // 60 % ของเพดาน 40 % (BRUSH_DUTY_MAX_PCT · G7) เท่าคำสั่ง `both` ของ M3
+int  brushPct   = 100;                // C57: เปิดเต็มเหมือนขับมือ (C38 แปรงเปิด/ปิด) · เดิม 24 % จากยุคราง 12 V = 1.4 V บนราง 6 V
 mrc::MState lastState = mrc::MState::IDLE;
 
 void ioSuction(bool on) { blowerCommand(on ? "on" : "off"); }
@@ -95,7 +95,7 @@ void missionCommand(const String& sub) {
     else if (key == "drive"  && v >= 0 && v <= 600)    cfg.drive_permille = v;   // เพดาน 600‰ กันเผลอ (G14 ยังไม่มี PID)
     else if (key == "ms"     && v >= 500 && v <= 20000) cfg.drive_ms = v;        // MAX_RUN_MS ของโมดูลล้อ = 20 s
     else if (key == "settle" && v >= 0 && v <= 10000)  cfg.settle_ms = v;
-    else if (key == "brush"  && v >= 0 && v <= 40)     brushPct = v;             // G7 เพดาน 40 %
+    else if (key == "brush"  && v >= 0 && v <= 100)    brushPct = v;             // เพดานจริงอยู่ที่ BRUSH_DUTY_MAX_PCT (C57 · เดิม 40 % ยุคราง 12 V)
     else { Serial.println("[mis] key/ค่าไม่ถูก — ดู ? mis"); return; }
     printStatus();
     return;

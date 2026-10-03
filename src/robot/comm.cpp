@@ -145,6 +145,7 @@ void handleLine(char* line, size_t len) {
 // ── #T telemetry 10 Hz — ฟิลด์ตาม §7.2 · ที่ยังไม่มีส่ง 0 ──
 //  #T,<ms>,<state>,<v_mm_s>,<w_mrad_s>,<dutyL‰>,<dutyR‰>,<us_mast>,<us_x>,<vbat_mV=0>,<servo_i_mA=0>,<mast>,<flags>
 //  state: 0 IDLE · 1 MANUAL · 2 MISSION · mast: 0 ปล่อย PWM · 2 จับสัญญาณ · flags 0x02 = comm-lost (deadman) · 0x04 = R2 spin-up hold
+//         0x08 = ดูดเปิดอยู่ · 0x10 = แปรงหมุนอยู่ (C57 — ให้เว็บเห็นสถานะจริง ไม่ใช่สถานะที่กดไว้)
 //  ⚠ ช่อง enc_l/enc_r ของ §7.2 ส่ง duty ‰ ไปก่อน (ยังไม่มี PCNT ในเฟิร์มแวร์รวม) — Pi ต้องรู้ (C27)
 constexpr uint32_t TELE_PERIOD_MS = 100;
 uint32_t lastTeleMs = 0;
@@ -164,6 +165,7 @@ void sendTelemetry() {
 }  // namespace
 
 bool commLinkAlive() { return lastRxMs && millis() - lastRxMs < 1500; }   // Pi ส่ง $V/$P/$D อย่างน้อยทุก 1 s เมื่อเว็บรัน
+uint32_t commRxAgeMs() { return lastRxMs ? millis() - lastRxMs : UINT32_MAX; }   // C57: ใช้เฝ้าดูด/แปรง (เผื่อ $D ช้ากว่า 1 s ตอน Pi ทำงานหนัก)
 
 void commSetup() {
   Serial0.begin(BAUD, SERIAL_8N1, PIN_U0_RX, PIN_U0_TX);
@@ -200,6 +202,8 @@ void commTick() {
   }
   if (manualTripped()) flags |= 0x02; else flags &= ~0x02;
   if (manualSpinupHold()) flags |= 0x04; else flags &= ~0x04;
+  if (blowerOnNow()) flags |= 0x08; else flags &= ~0x08;
+  if (brushOnNow())  flags |= 0x10; else flags &= ~0x10;
   if (millis() - lastTeleMs >= TELE_PERIOD_MS) { lastTeleMs = millis(); sendTelemetry(); }
   if (state == CaptureState::WAITING && millis() - sentMs >= CAPTURE_TIMEOUT_MS) {
     state = CaptureState::TIMEOUT; ++statTimeout;

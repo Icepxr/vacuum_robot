@@ -1,0 +1,8 @@
+{
+  "autodeskProduct": "Fusion",
+  "type": "script",
+  "author": "",
+  "description": {"": "Export assembly bodies to STL in world coordinates"},
+  "supportedOS": "windows|mac",
+  "editEnabled": true
+}

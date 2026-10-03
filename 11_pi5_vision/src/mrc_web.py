@@ -481,7 +481,7 @@ async def ws_endpoint(ws: WebSocket):
                 hub.drive_v = hub.drive_w = 0; hub.drive_last_mono = None
                 d.send_estop()
                 hub.on_event({"t": "log", "level": "bad", "msg": "E-STOP จากหน้าเว็บ → $E"})
-            elif t == "clean" and d is not None:     # {"t":"clean","suction":0-100,"brush":0-100} (C30: แปรง 6 V บนราง 5 V ไม่ต้องจำกัด)
+            elif t == "clean" and d is not None:     # {"t":"clean","suction":0-100,"brush":0-100} (C56: แปรง 6 V บนราง 6 V = พิกัดพอดี ไม่ต้องจำกัด)
                 suc = int(cmd.get("suction", hub.cleaning["suction"])); br = int(cmd.get("brush", hub.cleaning["brush"]))
                 hub.cleaning = {"suction": max(0, min(100, suc)), "brush": max(0, min(100, br))}
                 d.send_clean(hub.cleaning["suction"], hub.cleaning["brush"])

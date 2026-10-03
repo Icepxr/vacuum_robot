@@ -64,3 +64,13 @@ def test_cmd_display_strings():
     assert fr.fields == ["D", "4", "", "", "", "", "", "", "", "", "", "", ""]
     fr = P.decode(P.cmd_display(5, "", "", None, evt="CAPFAIL", arg="no,frame*x" + "y" * 20))   # arg ห้ามพังเฟรม: ตัด , * และยาวสุด 15
     assert fr is not None and fr.fields[12] == "noframexyyyyyyy" and len(fr.fields[12]) == 15
+
+
+def test_parse_tele_cleaning_flags_c57():
+    """C57: บิต 0x08 = ดูดเปิด · 0x10 = แปรงหมุน (สถานะจริงบน ESP32)"""
+    fr = P.decode(P.encode("#", "T", 1000, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 24))   # 24 = 0x18
+    t = P.parse_tele(fr)
+    assert t["suction_on"] and t["brush_on"] and not t["spinup_hold"]
+    fr = P.decode(P.encode("#", "T", 1000, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4))
+    t = P.parse_tele(fr)
+    assert not t["suction_on"] and not t["brush_on"] and t["spinup_hold"]

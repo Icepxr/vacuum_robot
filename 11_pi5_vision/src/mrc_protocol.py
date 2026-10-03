@@ -101,6 +101,8 @@ def parse_tele(fr: Frame):
     d["state_name"] = STATE_NAMES.get(d["state"], str(d["state"]))
     d["comm_lost"] = bool(d["flags"] & 0x02)
     d["spinup_hold"] = bool(d["flags"] & 0x04)   # R2: รอ blower ไต่รอบ ล้อยังไม่ออกตัว
+    d["suction_on"] = bool(d["flags"] & 0x08)    # C57: สถานะจริงบน ESP32 (เฟิร์มแวร์ก่อน C57 ไม่ส่งบิตนี้ = False เสมอ)
+    d["brush_on"] = bool(d["flags"] & 0x10)
     return d
 
 

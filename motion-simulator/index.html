@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>MRC Motion Lab — Drive, Airflow &amp; Power</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
+  <link rel="stylesheet" href="./styles.css?v=20261003b">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">MRC engineering tool · model-based</p>
+      <h1>Motion Lab</h1>
+      <p class="subtitle" id="page-subtitle">จำลองการเคลื่อนที่แบบ differential drive จากมิติจริงและ encoder</p>
+    </div>
+    <div class="status-stack">
+      <span class="pill measured">ค่าที่ผู้ใช้วัด</span>
+      <span class="pill calculated">ผลคำนวณ</span>
+      <span class="pill model">แบบจำลองไม่รวมการลื่น</span>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="เลือกเครื่องมือ">
+    <button role="tab" id="tab-btn-motion" aria-controls="tab-motion" aria-selected="true" data-tab="motion">การเคลื่อนที่</button>
+    <button role="tab" id="tab-btn-air" aria-controls="tab-air" aria-selected="false" data-tab="air">ทางลม · แรงดูด</button>
+    <button role="tab" id="tab-btn-power" aria-controls="tab-power" aria-selected="false" data-tab="power">พลังงาน</button>
+  </nav>
+
+  <main class="layout" id="tab-motion" role="tabpanel" aria-labelledby="tab-btn-motion">
+    <aside class="panel controls-panel">
+      <div class="panel-heading">
+        <div><span class="section-no">01</span><h2>ค่าของหุ่น</h2></div>
+        <button class="text-button" id="reset-parameters" type="button">คืนค่าเริ่มต้น</button>
+      </div>
+
+      <div class="field-grid">
+        <label>เส้นผ่านศูนย์กลางล้อ <span class="source-tag">วัด</span>
+          <div class="input-unit"><input id="wheel-diameter" type="number" min="1" step="0.1" value="87"><span>mm</span></div>
+        </label>
+        <label>ความหนาล้อ <span class="source-tag">วัด</span>
+          <div class="input-unit"><input id="wheel-width" type="number" min="1" step="0.1" value="40"><span>mm</span></div>
+        </label>
+        <label>ระยะกึ่งกลางล้อ <span class="source-tag">วัด</span>
+          <div class="input-unit"><input id="track-width" type="number" min="1" step="0.1" value="260"><span>mm</span></div>
+        </label>
+        <label>Encoder ต่อรอบล้อ <span class="source-tag calc">อ้างอิง M1</span>
+          <div class="input-unit"><input id="counts-per-rev" type="number" min="1" step="1" value="2464"><span>count</span></div>
+        </label>
+        <label>ความเร็วรอบพิกัด <span class="source-tag calc">สเปกเดิม</span>
+          <div class="input-unit"><input id="rated-rpm" type="number" min="1" step="1" value="178"><span>rpm</span></div>
+        </label>
+        <label>เวลาที่ต้องการจำลอง
+          <div class="input-unit"><input id="duration" type="number" min="0.1" step="0.1" value="5"><span>s</span></div>
+        </label>
+      </div>
+
+      <div class="divider"></div>
+      <div class="panel-heading compact"><div><span class="section-no">02</span><h2>คำสั่งล้อ</h2></div></div>
+
+      <div class="preset-row" aria-label="คำสั่งตัวอย่าง">
+        <button type="button" data-preset="forward">เดินหน้า</button>
+        <button type="button" data-preset="left">โค้งซ้าย</button>
+        <button type="button" data-preset="spin">หมุนอยู่กับที่</button>
+        <button type="button" data-preset="reverse">ถอยหลัง</button>
+      </div>
+
+      <label class="slider-field">ล้อซ้าย <output id="left-rpm-output">100 rpm</output>
+        <input id="left-rpm" type="range" min="-178" max="178" step="1" value="100">
+      </label>
+      <label class="slider-field">ล้อขวา <output id="right-rpm-output">100 rpm</output>
+        <input id="right-rpm" type="range" min="-178" max="178" step="1" value="100">
+      </label>
+
+      <div class="transport">
+        <button class="primary" id="start" type="button"><span>▶</span> เริ่มจำลอง</button>
+        <button id="pause" type="button">หยุดชั่วคราว</button>
+        <button id="reset-simulation" type="button">เริ่มตำแหน่งใหม่</button>
+      </div>
+      <p class="validation" id="validation" role="status"></p>
+    </aside>
+
+    <section class="workspace">
+      <article class="panel geometry-panel">
+        <div class="panel-heading"><div><span class="section-no">03</span><h2>เรขาคณิตการเคลื่อนที่</h2></div><span class="pill calculated">Live kinematics</span></div>
+        <svg id="geometry-view" viewBox="0 0 1100 650" role="img" aria-label="แผนภาพล้อซ้ายขวาและจุดศูนย์กลางวงเลี้ยว">
+          <defs>
+            <marker id="geo-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 Z" fill="#6b9fff"/></marker>
+            <marker id="velocity-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M 0 0 L 10 5 L 0 10 Z" fill="#ef78d4"/></marker>
+          </defs>
+          <g id="geometry-drawing"></g>
+        </svg>
+        <div class="geometry-values"><span id="geo-mode">—</span><span id="geo-radii">—</span><span id="geo-icc">—</span></div>
+        <p class="geometry-note"><code>v = (vᵣ + vₗ)/2 · ω = (vᵣ − vₗ)/B · R = v/ω · ICC = (x − R sin θ, y + R cos θ)</code></p>
+        <p class="geometry-note">เส้นน้ำเงิน = ระยะและแนวแกน · ลูกศรชมพู = ความเร็วล้อ · R มีเครื่องหมาย (+ ทางซ้ายหุ่น) · ความยาวลูกศรความเร็วใช้สเกลแยกจากระยะ</p>
+      </article>
+      <article class="panel simulation-panel">
+        <div class="panel-heading">
+          <div><span class="section-no">03</span><h2>สนามจำลอง</h2></div>
+          <div class="sim-meta"><span id="sim-state">พร้อม</span><strong id="sim-time">0.00 s</strong></div>
+        </div>
+        <svg id="simulation" viewBox="0 0 1200 720" role="img" aria-label="เส้นทางเคลื่อนที่ของหุ่น">
+          <rect class="field-background" width="1200" height="720"></rect>
+          <g id="grid-lines"></g>
+          <g class="field-axes"><line x1="0" y1="360" x2="1200" y2="360"></line><line x1="600" y1="0" x2="600" y2="720"></line></g>
+          <polyline id="path-line" points="600,360"></polyline>
+          <g id="robot-g">
+            <rect id="robot-body" rx="22"></rect>
+            <rect id="wheel-left" class="robot-wheel"></rect>
+            <rect id="wheel-right" class="robot-wheel"></rect>
+            <path id="robot-arrow" d="M 54 0 L 20 -18 L 20 18 Z"></path>
+            <circle class="robot-center" r="5"></circle>
+          </g>
+        </svg>
+        <div class="canvas-legend">
+          <span><i class="dot cyan"></i> เส้นทางจุดกึ่งกลาง</span>
+          <span><i class="line amber"></i> แนวล้อ</span>
+          <span>1 ช่องใหญ่ = <b id="grid-scale">0.5 m</b></span>
+        </div>
+      </article>
+
+      <section class="result-grid" aria-label="ผลการคำนวณ">
+        <article class="metric"><span>ความเร็วหุ่น</span><strong id="linear-speed">0.000</strong><small>m/s</small></article>
+        <article class="metric"><span>อัตราหมุน</span><strong id="angular-speed">0.00</strong><small>deg/s</small></article>
+        <article class="metric"><span>รัศมีวงเลี้ยว</span><strong id="turn-radius">∞</strong><small>m</small></article>
+        <article class="metric"><span>ระยะสะสม</span><strong id="distance">0.000</strong><small>m</small></article>
+        <article class="metric"><span>ทิศปัจจุบัน</span><strong id="heading">0.00</strong><small>deg</small></article>
+        <article class="metric"><span>ตำแหน่ง (x, y)</span><strong id="position">0.00, 0.00</strong><small>m</small></article>
+      </section>
+
+      <div class="lower-grid">
+        <article class="panel formula-panel">
+          <div class="panel-heading compact"><div><span class="section-no">04</span><h2>สมการและผลลัพธ์</h2></div></div>
+          <dl class="formula-list">
+            <div><dt>ระยะต่อ count</dt><dd><code>πD / N</code><strong id="mm-per-count">—</strong></dd></div>
+            <div><dt>การหมุน 1°</dt><dd><code>(B/2)(π/180) / kₛ</code><strong id="counts-per-degree">—</strong></dd></div>
+            <div><dt>ความเร็วพิกัด</dt><dd><code>(rpm/60)πD</code><strong id="rated-speed">—</strong></dd></div>
+            <div><dt>PCNT ถึง 32,767</dt><dd><code>32767 / count·s⁻¹</code><strong id="overflow-time">—</strong></dd></div>
+            <div><dt>Count ล้อซ้าย</dt><dd><code>∫ rpm·N/60 dt</code><strong id="left-counts">0</strong></dd></div>
+            <div><dt>Count ล้อขวา</dt><dd><code>∫ rpm·N/60 dt</code><strong id="right-counts">0</strong></dd></div>
+          </dl>
+          <p class="assumption"><b>สมมติฐาน:</b> พื้นราบ ล้อไม่ลื่น ไม่ยุบ และคำสั่ง rpm เกิดขึ้นทันที จึงยังไม่รวม acceleration, motor lag, backlash และความคลาดเคลื่อนจากพื้นจริง</p>
+        </article>
+
+        <article class="panel cad-panel">
+          <div class="panel-heading compact">
+            <div><span class="section-no">05</span><h2>CAD reference</h2></div>
+            <span id="cad-status" class="cad-status">Assembly จาก Fusion</span>
+          </div>
+          <div class="cad-modes" aria-label="เลือกภาพอ้างอิง">
+            <button type="button" data-cad-mode="assembly" aria-pressed="true">CAD ประกอบ</button>
+            <button type="button" data-cad-mode="photos" aria-pressed="false">หุ่นจริง</button>
+            <button type="button" data-cad-mode="lower" aria-pressed="false">STL ฐานล่าง</button>
+            <button type="button" data-cad-mode="upper" aria-pressed="false">STL ชั้นบน</button>
+          </div>
+          <div id="cad-assembly">
+            <svg class="assembly-image" viewBox="350 105 450 350" role="img" aria-label="ภาพการประกอบจาก Asembly2.f3z ที่บันทึกโดย Fusion"><image href="./assets/fusion-assembly.png" width="1024" height="1024"/></svg>
+            <p>ภาพประกอบที่ Fusion บันทึกใน <code>Asembly2.f3z</code> · แสดงตำแหน่งตัวถังและล้อจาก assembly · เป็นภาพนิ่ง</p>
+          </div>
+          <div id="cad-photos" hidden>
+            <div class="assembly-photos"><a href="./assets/robot-assembled.jpg" target="_blank" rel="noopener"><img src="./assets/robot-assembled.jpg" alt="หุ่นที่ประกอบพร้อมกล้องและชุดเสายก"></a><a href="./assets/robot-layout.jpg" target="_blank" rel="noopener"><img src="./assets/robot-layout.jpg" alt="ตำแหน่งอุปกรณ์และล้อของหุ่นจริง"></a></div>
+            <p>ภาพจากผู้ใช้ · เห็นล้อสองข้างอยู่บริเวณส่วนโค้ง ชุด blower อยู่ในช่องวงกลม และ Pi อยู่ในช่องสี่เหลี่ยมข้างชุดยก · แบตเตอรี่ในภาพวางบนแผ่นนอกช่อง จึงยังไม่ถือเป็นตำแหน่งติดตั้งถาวร</p>
+          </div>
+          <div id="cad-part" hidden><canvas id="cad-view" width="640" height="420" aria-label="ดู STL ของชิ้นส่วนที่เลือก"></canvas><p id="cad-part-note">STL ชิ้นส่วนเดี่ยว · ลากเพื่อหมุนดู</p></div>
+          <p>มิติที่ใช้คำนวณล้อ: Ø87 × 40 mm · ระยะกึ่งกลางล้อ 260 mm จากข้อมูลผู้ใช้ ไม่ได้วัดจากรูปถ่าย</p>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <main class="layout" id="tab-air" role="tabpanel" aria-labelledby="tab-btn-air" hidden>
+    <aside class="panel controls-panel">
+      <div class="panel-heading">
+        <div><span class="section-no">01</span><h2>Blower</h2></div>
+        <button class="text-button" id="air-reset" type="button">คืนค่าเริ่มต้น</button>
+      </div>
+      <div class="field-grid">
+        <label>ΔP สูงสุด (ปิดปาก) <span class="source-tag calc">ประมาณการ</span>
+          <div class="input-unit"><input id="air-pmax" type="number" min="50" max="1500" step="1" value="423.5"><span>Pa</span></div>
+        </label>
+        <label>ลมไม่มีตัวต้าน <span class="source-tag">สเปกร้าน</span>
+          <div class="input-unit"><input id="air-qfree" type="number" min="1" step="0.01" value="38.68"><span>CFM</span></div>
+        </label>
+        <label class="span-2">รูปร่าง curve blower <span class="source-tag calc">ประมาณการ</span>
+          <select id="air-curve" class="select-field"><option value="lin">เส้นตรง (มองโลกร้าย)</option><option value="quad">โค้ง (มองโลกดี)</option></select>
+        </label>
+      </div>
+      <p class="hint">ΔP สูงสุด 423 Pa มาจาก Delta BFB1012VH (97×94×33 mm · 486 Pa @4500 rpm) ปรับเป็น 4200 rpm ด้วย ΔP ∝ n² · <b>ยังไม่ได้วัด BA10033B12U จริง</b></p>
+
+      <div class="divider"></div>
+      <div class="panel-heading compact"><div><span class="section-no">02</span><h2>ทางลม</h2></div></div>
+      <div class="field-grid">
+        <label>ขอบหน้า–พื้น <span class="source-tag calc">ประมาณการ</span>
+          <div class="input-unit"><input id="air-edge-front" type="number" min="0" step="0.1" value="8.2"><span>mm</span></div>
+        </label>
+        <label>ขอบหลัง–พื้น <span class="source-tag calc">ประมาณการ</span>
+          <div class="input-unit"><input id="air-edge-rear" type="number" min="0" step="0.1" value="27.2"><span>mm</span></div>
+        </label>
+        <label>ช่องตรง กว้าง <span class="source-tag">CAD</span>
+          <div class="input-unit"><input id="air-ch-w" type="number" min="5" step="0.5" value="25"><span>mm</span></div>
+        </label>
+        <label>ช่องตรง สูง <span class="source-tag">CAD</span>
+          <div class="input-unit"><input id="air-ch-h" type="number" min="5" step="0.5" value="50"><span>mm</span></div>
+        </label>
+        <label>ช่องตรง ยาว <span class="source-tag">CAD</span>
+          <div class="input-unit"><input id="air-ch-l" type="number" min="10" step="1" value="165"><span>mm</span></div>
+        </label>
+        <label>รูขึ้น blower <span class="source-tag">CAD</span>
+          <div class="input-unit"><input id="air-hole" type="number" min="10" step="0.1" value="79.9"><span>Ø mm</span></div>
+        </label>
+        <label class="span-2">ไส้กรองในถัง (ΔP ที่ 10 L/s) <span class="source-tag calc">ยังไม่ตัดสินใจ</span>
+          <div class="input-unit"><input id="air-filter" type="number" min="0" step="5" value="0"><span>Pa</span></div>
+        </label>
+      </div>
+      <div class="preset-row" aria-label="กรณีตัวอย่าง">
+        <button type="button" data-air-preset="r1">R1 ตาม CAD</button>
+        <button type="button" data-air-preset="r2">R2 ซีลขอบ 3 mm</button>
+        <button type="button" data-air-preset="filter">+ ไส้กรอง 100 Pa</button>
+      </div>
+
+      <div class="divider"></div>
+      <div class="panel-heading compact"><div><span class="section-no">03</span><h2>เศษ PLA</h2></div><button class="text-button" id="air-debris-reset" type="button">คืนค่าเศษ</button></div>
+      <div class="field-grid">
+        <label class="span-2">รูปทรง <span class="source-tag">ผู้ใช้: 5×5×5 mm</span>
+          <select id="air-shape" class="select-field"><option value="cube">ลูกบาศก์ a×a×a</option><option value="sphere">ทรงกลม Ø d</option><option value="rod">ท่อนเส้นใย Ø d × ยาว L (ขวางลม)</option></select>
+        </label>
+        <label><span id="air-size-label">ด้าน a</span>
+          <div class="input-unit"><input id="air-size" type="number" min="0.5" max="30" step="0.5" value="5"><span>mm</span></div>
+        </label>
+        <label id="air-len-wrap" hidden>ยาว L
+          <div class="input-unit"><input id="air-len" type="number" min="0.5" max="50" step="0.5" value="5"><span>mm</span></div>
+        </label>
+        <label>C<sub>d</sub> <span class="source-tag calc">ประมาณการ</span>
+          <div class="input-unit"><input id="air-cd" type="number" min="0.1" max="2" step="0.01" value="0.8"><span>–</span></div>
+        </label>
+        <label>แรงเสียดทาน μ <span class="source-tag calc">ประมาณการ</span>
+          <div class="input-unit"><input id="air-mu" type="number" min="0.05" max="1" step="0.05" value="0.35"><span>–</span></div>
+        </label>
+        <label>รอบแปรงลูกกลิ้ง <span class="source-tag">สเปก ไร้โหลด</span>
+          <div class="input-unit"><input id="air-brush-rpm" type="number" min="0" max="3000" step="1" value="200"><span>rpm</span></div>
+        </label>
+        <label>Ø แปรง <span class="source-tag">CAD</span>
+          <div class="input-unit"><input id="air-brush-d" type="number" min="5" step="0.5" value="41"><span>mm</span></div>
+        </label>
+        <label>ขั้นเข้าช่องตรง <span class="source-tag">CAD</span>
+          <div class="input-unit"><input id="air-step" type="number" min="0" step="0.5" value="15"><span>mm</span></div>
+        </label>
+        <label>มุมทางลาด <span class="source-tag">CAD</span>
+          <div class="input-unit"><input id="air-ramp" type="number" min="0" max="80" step="1" value="20"><span>°</span></div>
+        </label>
+      </div>
+      <p class="hint">C<sub>d</sub> ลูกบาศก์ที่กลิ้งอยู่ในช่วง 0.8–1.05 · ค่าเริ่มต้น 0.8 เป็นฝั่งร้าย (v<sub>t</sub> สูงสุด) · แปรงลูกกลิ้ง = JGB37-520 6 V 200 rpm บน buck 6 V (ผู้ใช้ยืนยัน 3 ต.ค.) → 200 rpm ไร้โหลด = เพดานของมอเตอร์นี้ · รอบจริงตอนกวาดจะต่ำกว่า · <b>วัดด้วย encoder ของมอเตอร์ได้</b></p>
+      <p class="validation" id="air-validation" role="status"></p>
+    </aside>
+
+    <section class="workspace">
+      <article class="panel air-sim-panel">
+        <div class="panel-heading">
+          <div><span class="section-no">04</span><h2>จำลองทางเดินฝุ่น</h2></div>
+          <div class="cad-modes" aria-label="มุมมอง">
+            <button type="button" data-air-view="side" aria-pressed="true">มุมข้าง (y = −62)</button>
+            <button type="button" data-air-view="top" aria-pressed="false">มุมบน (z = 20)</button>
+            <button type="button" id="air-play" aria-pressed="true">⏸ หยุด</button>
+          </div>
+        </div>
+        <svg id="air-view" viewBox="0 0 1100 520" role="img" aria-label="หน้าตัด CAD และอนุภาคเศษที่เคลื่อนตามความเร็วลมจากแบบจำลอง"></svg>
+        <div class="canvas-legend">
+          <span><i class="dot green"></i> ลมพาไปถึงถัง</span>
+          <span><i class="dot amber"></i> แปรงดีดข้ามขั้น (ลมยกไม่ไหว)</span>
+          <span><i class="dot red"></i> ค้างที่ทางเข้า (ข้ามขั้นไม่ได้)</span><span><i class="dot purple"></i> ค้างในช่องตรง (ลากไถลไม่ไหว)</span>
+          <span><i class="dot grey"></i> ฝุ่นละเอียด → ผ่านเข้า blower</span>
+          <span>ภาพช้าลง <b>40 เท่า</b></span>
+        </div>
+        <p class="geometry-note">หน้าตัดจาก <code>05_CAD/export_Newassembly/_all.stl</code> · อนุภาคเคลื่อนด้วย<b>ความเร็วเฉลี่ยของแต่ละช่วงจากแบบจำลอง 1 มิติ</b> ไม่ใช่ CFD (ไม่มีวังวน ไม่มีการกระจายความเร็วในหน้าตัด) · แปรงและพื้นวางตาม Asembly2 โดยประมาณ</p>
+      </article>
+
+      <section class="result-grid air-metrics" aria-label="ผลการคำนวณ">
+        <article class="metric"><span>ลมรวม Q</span><strong id="air-q">—</strong><small>L/s</small></article>
+        <article class="metric"><span>ΔP blower ที่จุดทำงาน</span><strong id="air-dp">—</strong><small>Pa</small></article>
+        <article class="metric"><span>v ช่องตรง</span><strong id="air-vch">—</strong><small>m/s</small></article>
+        <article class="metric"><span>v ขึ้นในช่องใต้พื้น</span><strong id="air-vslot">—</strong><small>m/s</small></article>
+        <article class="metric"><span>v ในถังขยะ</span><strong id="air-vbay">—</strong><small>m/s</small></article>
+        <article class="metric"><span>v<sub>t</sub> เศษที่เลือก</span><strong id="air-vt">—</strong><small>m/s</small></article>
+        <article class="metric"><span>แปรงดีดได้สูง / ต้องข้าม</span><strong id="air-throw">—</strong><small>mm</small></article>
+        <article class="metric"><span>ชะตากรรมเศษ</span><strong id="air-fate">—</strong><small></small></article>
+      </section>
+
+      <div class="lower-grid">
+        <article class="panel chart-panel">
+          <div class="panel-heading compact"><div><span class="section-no">05</span><h2>จุดทำงาน P–Q</h2></div><span class="pill calculated">คำนวณ</span></div>
+          <svg id="air-chart" viewBox="0 0 640 400" role="img" aria-label="กราฟ curve blower ตัดกับ curve ความต้านของระบบ"></svg>
+          <p class="geometry-note">เส้นดำ = blower · เส้นฟ้า = ความต้านระบบ · แถบเทา = ΔP สูงสุด 300–486 Pa · จุด = จุดทำงาน</p>
+          <div class="panel-heading compact" style="margin-top:16px"><div><h2>ΔP ไปเสียที่ไหน</h2></div></div>
+          <div id="air-breakdown" class="breakdown"></div>
+        </article>
+
+        <article class="panel formula-panel">
+          <div class="panel-heading compact"><div><span class="section-no">06</span><h2>การคำนวณทีละขั้น</h2></div></div>
+          <ol id="air-steps" class="calc-steps"></ol>
+        </article>
+      </div>
+
+      <article class="panel conclusion-panel">
+        <div class="panel-heading compact"><div><span class="section-no">07</span><h2>ข้อสรุป (อัปเดตตามค่าที่ตั้ง)</h2></div><span class="pill model">ยังไม่มีค่าวัดจริง</span></div>
+        <ul id="air-conclusions" class="conclusions"></ul>
+        <p class="assumption"><b>ที่มา:</b> <code>08_การคำนวณ/22_ทางเดินลมและแรงดูด_1มิติ.md</code> §22.10 · สคริปต์ <code>scripts_22/airflow_1d_v2.py</code> (เว็บนี้พอร์ตมาและเทสให้ตรงกัน) · ต้องวัด A1 ΔP สูงสุด · A3 ระยะขอบ–พื้น · A4 anemometer ที่ปากช่องตรง</p>
+      </article>
+    </section>
+  </main>
+
+  <main class="layout" id="tab-power" role="tabpanel" aria-labelledby="tab-btn-power" hidden>
+    <aside class="panel controls-panel">
+      <div class="panel-heading">
+        <div><span class="section-no">01</span><h2>แบตเตอรี่</h2></div>
+        <button class="text-button" id="pw-reset" type="button">คืนค่าเริ่มต้น</button>
+      </div>
+      <div class="field-grid">
+        <label>ความจุ <span class="source-tag">สเปก</span>
+          <div class="input-unit"><input id="pw-cap" type="number" min="1" step="0.01" value="32.56"><span>Wh</span></div>
+        </label>
+        <label>ตัวคูณใช้ได้จริง f <span class="source-tag calc">ประมาณการ</span>
+          <div class="input-unit"><input id="pw-f" type="number" min="0.1" max="1" step="0.01" value="0.723"><span>–</span></div>
+        </label>
+        <label>แรงดันเต็ม <span class="source-tag">สเปก</span>
+          <div class="input-unit"><input id="pw-vfull" type="number" min="1" step="0.1" value="16.8"><span>V</span></div>
+        </label>
+        <label>จุดตัด FAULT <span class="source-tag calc">ตั้งไว้</span>
+          <div class="input-unit"><input id="pw-vcut" type="number" min="1" step="0.1" value="14.0"><span>V</span></div>
+        </label>
+        <label>LOW_BATTERY <span class="source-tag calc">ตั้งไว้</span>
+          <div class="input-unit"><input id="pw-vlow" type="number" min="1" step="0.1" value="15.2"><span>V</span></div>
+        </label>
+        <label>ฟิวส์หลัก <span class="source-tag calc">ตั้งไว้</span>
+          <div class="input-unit"><input id="pw-fuse" type="number" min="1" step="1" value="15"><span>A</span></div>
+        </label>
+      </div>
+      <p class="hint">GNB22004S100A 4S1P 2,200 mAh · f = 0.82 × 0.98 × 0.90 (ไฟล์ 02 §2.4) · แรงดันระหว่างใช้งานประมาณเป็นเส้นตรงจากเต็มถึงจุดตัด</p>
+
+      <div class="divider"></div>
+      <div class="panel-heading compact"><div><span class="section-no">02</span><h2>Buck 4 ตัว</h2></div></div>
+      <div class="pw-table" id="pw-rails"></div>
+      <p class="hint">พิกัด buck 5 A ทั้ง 3 ตัว + 12 V 8 A ตามที่ผู้ใช้แจ้ง · η ทุกตัวเป็นประมาณการ (ไฟล์ 02: 12 V 92 % · ราง 5 V 85 %)</p>
+
+      <div class="divider"></div>
+      <div class="panel-heading compact"><div><span class="section-no">03</span><h2>โหลด (กระแสที่แรงดันราง)</h2></div></div>
+      <div class="pw-table" id="pw-loads"></div>
+      <p class="validation" id="pw-validation" role="status"></p>
+    </aside>
+
+    <section class="workspace">
+      <article class="panel pw-flow-panel">
+        <div class="panel-heading">
+          <div><span class="section-no">04</span><h2>ผังไฟ · จำลองการใช้งาน</h2></div>
+          <div class="sim-meta"><span id="pw-mode-now">—</span><strong id="pw-time">0:00</strong></div>
+        </div>
+        <div class="pw-scen" role="group" aria-label="เลือกสถานการณ์" id="pw-scenarios"></div>
+        <div class="pw-timeline" id="pw-timeline" aria-label="ไทม์ไลน์หนึ่งรอบ"></div>
+        <svg id="pw-flow" viewBox="0 0 1100 470" role="img" aria-label="ผังจ่ายไฟจากแบตผ่าน buck ไปยังโหลด พร้อมกระแสขณะนั้น"></svg>
+        <div class="transport pw-transport">
+          <button class="primary" id="pw-play" type="button">▶ เล่น</button>
+          <button id="pw-restart" type="button">เริ่มใหม่ (แบตเต็ม)</button>
+          <label class="pw-speed">ความเร็ว <select id="pw-speed" class="select-field"><option value="10">×10</option><option value="30" selected>×30</option><option value="120">×120</option><option value="600">×600</option></select></label>
+        </div>
+        <p class="geometry-note">เส้นประวิ่งเร็วตามกระแส · แถบใต้ buck = กระแสเทียบพิกัด · เวลาจำลองเดินเร็วกว่าจริงตามที่เลือก · แบตลดตามพลังงานที่ดึงจริงทีละวินาที</p>
+      </article>
+
+      <section class="result-grid pw-metrics" aria-label="ค่าขณะนี้">
+        <article class="metric"><span>ดึงจากแบตตอนนี้</span><strong id="pw-p">—</strong><small>W</small></article>
+        <article class="metric"><span>กระแสแบต</span><strong id="pw-i">—</strong><small>A</small></article>
+        <article class="metric"><span>แรงดันแพ็ค (ประมาณ)</span><strong id="pw-v">—</strong><small>V</small></article>
+        <article class="metric"><span>พลังงานคงเหลือ</span><strong id="pw-soc">—</strong><small>%</small></article>
+        <article class="metric"><span>พลังงานต่อรอบสถานการณ์</span><strong id="pw-ecyc">—</strong><small>Wh</small></article>
+        <article class="metric"><span>รอบต่อการชาร์จ</span><strong id="pw-cycles">—</strong><small>รอบ</small></article>
+        <article class="metric"><span>เวลาใช้งานต่อเนื่อง</span><strong id="pw-runtime">—</strong><small>นาที</small></article>
+        <article class="metric"><span>ถึง LOW_BATTERY</span><strong id="pw-low">—</strong><small>นาที</small></article>
+      </section>
+
+      <div class="lower-grid">
+        <article class="panel chart-panel">
+          <div class="panel-heading compact"><div><span class="section-no">05</span><h2>แบตลดลงตามเวลา</h2></div><span class="pill calculated">คำนวณ</span></div>
+          <svg id="pw-chart" viewBox="0 0 640 360" role="img" aria-label="กราฟพลังงานคงเหลือและกำลังที่ดึงจากแบตตามเวลา"></svg>
+          <p class="geometry-note">เส้นฟ้า = พลังงานคงเหลือ (% ของที่ใช้ได้) · เส้นส้ม = กำลังที่ดึงจากแบต · เส้นประแดง = LOW_BATTERY</p>
+          <div class="panel-heading compact" style="margin-top:16px"><div><h2>พลังงานหนึ่งรอบไปที่ไหน</h2></div></div>
+          <div id="pw-breakdown" class="breakdown"></div>
+        </article>
+        <article class="panel formula-panel">
+          <div class="panel-heading compact"><div><span class="section-no">06</span><h2>เทียบพิกัด (กรณีพีคพร้อมกัน)</h2></div></div>
+          <div id="pw-peak"></div>
+          <div class="panel-heading compact" style="margin-top:16px"><div><h2>โหลดในแต่ละโหมด (A)</h2></div></div>
+          <div id="pw-matrix" class="pw-matrix-wrap"></div>
+        </article>
+      </div>
+
+      <article class="panel formula-panel">
+        <div class="panel-heading compact"><div><span class="section-no">07</span><h2>การคำนวณทีละขั้น</h2></div></div>
+        <ol id="pw-steps" class="calc-steps"></ol>
+      </article>
+
+      <article class="panel conclusion-panel">
+        <div class="panel-heading compact"><div><span class="section-no">08</span><h2>ข้อสรุป</h2></div><span class="pill model">ยังไม่มีค่าวัดจริง</span></div>
+        <ul id="pw-conclusions" class="conclusions"></ul>
+        <p class="assumption"><b>ที่มา:</b> <code>08_การคำนวณ/23_งบพลังงาน_ผัง4buck.md</code> · ค่าโหลดจากไฟล์ 02 §2.1, datasheet MG996R, ไฟล์ 21 · ยังไม่มีการวัดกระแสจริงแม้แต่โหมดเดียว</p>
+      </article>
+    </section>
+  </main>
+
+  <script type="module" src="./js/app.mjs?v=20261003b"></script>
+  <script type="module" src="./js/airflow-app.mjs?v=20261003b"></script>
+  <script type="module" src="./js/power-app.mjs?v=20261003b"></script>
+</body>
+</html>

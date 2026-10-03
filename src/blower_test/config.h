@@ -63,8 +63,8 @@ constexpr int      PWM_MAX             = (1 << PWM_RES_BITS) - 1;   // 8191
 //
 // ตั้งรางไว้เป็นค่าคงที่ตัวเดียว แล้วให้ทุกอย่างคำนวณจากมัน
 // **ถ้าวันประกอบจริงต่อแปรงเข้าราง 12 V ต้องแก้บรรทัดนี้ก่อนแฟลช ไม่งั้นมอเตอร์ไหม้**
-constexpr float BRUSH_RAIL_V   = 5.0f;    // แรงดันรางที่ MOSFET ของแปรงสวิตช์อยู่
-constexpr float BRUSH_V_MAX    = 6.0f;    // พิกัดแรงดันสูงสุดของมอเตอร์ใหม่ (6 V 200 rpm · 19 ก.ย.) — ราง 5 V ต่ำกว่านี้อยู่แล้ว
+constexpr float BRUSH_RAIL_V   = 6.0f;    // แรงดันรางที่ MOSFET ของแปรงสวิตช์อยู่ — ผู้ใช้ยืนยัน 3 ต.ค. 2026: buck 6 V / 5 A (เดิม 5.0 · C56)
+constexpr float BRUSH_V_MAX    = 6.0f;    // พิกัด JGB37-520 6 V 200 rpm — ราง 6 V = พิกัดพอดี → เพดาน duty 100 %
 constexpr float BRUSH_V_MIN    = 0.0f;    // มอเตอร์ใหม่: แรงดันออกตัวยังไม่วัด → ไม่ตั้งขั้นต่ำ ให้ผู้ใช้เลือกเอง
 
 constexpr uint32_t BRUSH_FREQ_HZ = 20000;  // PIN_BRUSH_PWM (16) อยู่ใน pins.h · LEDC ch5 T1  // §3.5 T1 · div = 1,000 ตั้งได้จริง
@@ -72,6 +72,7 @@ constexpr uint8_t  BRUSH_RES_BITS = 10;    // §3.5 T1
 constexpr int      BRUSH_MAX = (1 << BRUSH_RES_BITS) - 1;   // 1023
 
 // เพดาน duty คำนวณจากราง ไม่ใช่เลขที่ hardcode
+//   บนราง 6 V  → เพดาน 100 % (= 6.00 V พอดีพิกัด JGB37-520 6 V) ← ใช้อยู่ (3 ต.ค. 2026)
 //   บนราง 5 V  → เพดาน 100 % (= 5.00 V พอดีพิกัดบน) · duty 60 % = 3.00 V พิกัดล่าง
 //   บนราง 12 V → เพดาน  41 % (= 4.92 V)             · duty 25 % = 3.00 V
 constexpr int BRUSH_DUTY_MAX_PCT =

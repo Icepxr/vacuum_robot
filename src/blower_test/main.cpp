@@ -415,7 +415,7 @@ void blowerSetup() {
   Serial.println("  3. ไดโอด SS34 คร่อมโหลด ขั้วถูกด้าน");
   Serial.println("  4. GND ของ ESP32 · MOSFET · แหล่งจ่าย 12 V ต่อถึงกันหมด");
   Serial.println("  5. ตั้ง current limit ของแหล่งจ่ายที่ 4.0 A (สูงกว่าเกณฑ์ 2.76 A เผื่อ inrush)");
-  Serial.printf ("  6. 🔴 เฟิร์มแวร์สมมติว่าแปรงอยู่บนราง %.1f V ตาม §4.0 ผังราง\n", BRUSH_RAIL_V);
+  Serial.printf ("  6. 🔴 เฟิร์มแวร์สมมติว่าแปรงอยู่บนราง %.1f V (buck 6 V · C56)\n", BRUSH_RAIL_V);
   Serial.println("     ถ้าวันประกอบจริงต่อเข้าราง 12 V ต้องแก้ BRUSH_RAIL_V ใน config.h ก่อนแฟลช");
   Serial.println("     ไม่งั้นเพดาน duty จะสูงเกินไป 2.4 เท่า และมอเตอร์จะไหม้");
   printHelp();
@@ -452,6 +452,14 @@ void blowerStatus()                   { printStatus(); }
 bool blowerOnNow()                    { return blowerOn; }
 bool brushOnNow()                     { return brushDuty > 0; }
 uint32_t brushOnSinceMsNow()          { return brushOnSinceMs; }   // ให้ comm.cpp เช็คช่วง inrush แปรง (R1 · C30)
+// C57 (3 ต.ค. 2026): ตัวตัด 60 s (DEADMAN_MS) / 2 นาที (MAX_ON_MS) ของชุดทดสอบ M3 ตัดดูด+แปรงเองระหว่างขับมือ
+// เพราะเว็บส่ง $C แค่ตอนกดปุ่ม → เฟิร์มแวร์รวมเรียกฟังก์ชันนี้ตราบที่ลิงก์ Pi ยังอยู่ (main.cpp) แทนการต่อเวลาด้วยคำสั่งใหม่
+void blowerKeepAlive() {
+  const uint32_t now = millis();
+  lastCommandMs = now;
+  if (blowerOn) onSinceMs = now;
+  if (brushDuty > 0) brushOnSinceMs = now;
+}
 
 #ifndef ROBOT_MERGED
 void setup() { blowerSetup(); }

@@ -29,7 +29,8 @@ void motorStop(const char*);  void motorHelp();  bool motorRunning();
 
 void blowerSetup(); void blowerTick(); void blowerCommand(const String&);
 void blowerStop(const char*); void blowerHelp(); void blowerStatus();
-bool blowerOnNow(); bool brushOnNow();
+bool blowerOnNow(); bool brushOnNow(); void blowerKeepAlive();
+uint32_t commRxAgeMs();
 
 void servoSetup();  void servoTick();  void servoCommand(const String&);
 void servoStop(const char*);  void servoHelp();  bool servoAttachedNow();
@@ -46,6 +47,7 @@ constexpr int GATE_SERVO   = PIN_SERVO_MAST;
 
 // ── ค่าเวลาของ interlock (ไฟล์ 18 §18.3 — ทั้งคู่เป็น [ประมาณการ]) ──
 constexpr uint32_t BLOWER_SPINUP_MS = 1000;  // เว้นหลังเปิด blower ก่อนสั่งล้อ (ราง 12 V)
+constexpr uint32_t CLEAN_LINK_MS    = 5000;  // C57: ลิงก์ Pi เงียบนานเท่านี้ → ปิดดูด/แปรง ($D มาทุก ~1 s · เผื่อช่วง Pi ทำงานหนัก)
 
 static uint32_t lastBlowerOnMs   = 0;
 
@@ -147,7 +149,7 @@ static void printMergedHelp() {
   Serial.println("║   cap           ส่ง CAPTURE_REQ ไป Pi 5 แล้วรอ $K (5 s) ║");
   Serial.println("║   cs            สถานะลิงก์ Pi 5                         ║");
   Serial.println("║   mis <คำสั่ง>  ภารกิจ 1 รอบแบบ script (? mis)          ║");
-  Serial.println("║   force <คำสั่ง>  ข้ามกติกา R4 เท่านั้น (R1/R2 ข้ามไม่ได้)║");
+  Serial.println("║   force <คำสั่ง>  ข้ามกติกา R4 เท่านั้น (R2 ข้ามไม่ได้)    ║");
   Serial.println("╚════════════════════════════════════════════════════════╝");
   Serial.println("ตัวอย่าง:  m t1   ·   sv v1   ·   bl on   ·   force m d 400");
 }
@@ -155,11 +157,12 @@ static void printMergedHelp() {
 static void printInterlock() {
   Serial.println();
   Serial.println("กติกาที่บังคับอยู่ (ที่มา: 08_การคำนวณ/18 §18.3)");
-  Serial.println("  R1 แปรง ↔ เซอร์โว : ห้ามซ้อนกัน · เว้น 300 ms  [ราง 5 V/6 A · เกิน 33% ถ้าซ้อน]");
+  Serial.println("  R1 แปรง ↔ เซอร์โว : ยกออกแล้ว (C50 · 29 ก.ย.) · ราง 6 V/5 A พีคพร้อมกัน 8 A (ไฟล์ 23)");
   Serial.println("  R2 blower ↔ ล้อ   : ห้ามออกตัวซ้อนกัน · เว้น 1000 ms  [ราง 12 V/8 A · เหลือ 7.5%]");
   Serial.println("  R4 วัด M1         : ห้ามเปิด blower/แปรงระหว่างวัด rpm  (ข้ามได้ด้วย force)");
   Serial.println("  R5 stop           : หยุดทุกระบบเสมอ");
   Serial.println("  R6 dead-man       : ของเดิมแต่ละชุดยังทำงานอยู่ (ล้อ 25 s · blower 60 s)");
+  Serial.println("  C57 ดูด/แปรง      : ต่อเวลาเองตราบที่ลิงก์ Pi อยู่ · ลิงก์เงียบ > 5 s → ปิด");
   Serial.printf ("สถานะตอนนี้: ล้อ %s · blower %s · แปรง %s · เซอร์โว %s\n",
                  motorRunning() ? "วิ่ง" : "หยุด", blowerOnNow() ? "เปิด" : "ปิด",
                  brushOnNow() ? "หมุน" : "หยุด", servoAttachedNow() ? "จับสัญญาณ" : "ปล่อย");
@@ -291,6 +294,18 @@ void loop() {
   commTick();
   missionTick();   // หลัง commTick เพื่อให้เห็น $K ในรอบเดียวกัน
   manualTick();    // เขียน duty ล้อทุก 10 ms ตาม setpoint จาก $V (หรือ 0 เมื่อ deadman)
+
+  // C57: ดูด/แปรงที่เปิดจากเว็บต้องอยู่ได้ตลอดการขับ — ตัวตัด 60 s/2 นาทีของ M3 ไม่รู้จักลิงก์ Pi
+  //   ลิงก์อยู่ → ต่อเวลาให้ · ลิงก์เคยอยู่แล้วเงียบ > CLEAN_LINK_MS → ปิด (ล้อหยุดเองแล้วที่ deadman 300 ms)
+  //   ใช้งานจากคอนโซลอย่างเดียว (ไม่มี Pi) ลิงก์ไม่เคยอยู่ → ตัวตัดเดิมของ M3 ทำงานเหมือนเดิม
+  {
+    static bool linkWas = false;
+    const bool link = commRxAgeMs() < CLEAN_LINK_MS;
+    const bool cleaning = blowerOnNow() || brushOnNow();
+    if (link && cleaning && !missionRunning()) blowerKeepAlive();
+    if (linkWas && !link && cleaning) blowerStop("ลิงก์ Pi เงียบเกิน 5 s (C57)");
+    linkWas = link;
+  }
 
   delay(10);
 }
