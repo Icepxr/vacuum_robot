@@ -37,7 +37,7 @@ constexpr int      PWM_MAX             = (1 << PWM_RES_BITS) - 1;
 constexpr int    ENC_PPR          = 11;     // pulse ต่อรอบ "มอเตอร์" (ก่อนเกียร์)
 constexpr int    GEAR_RATIO       = 56;     // [คำนวณ/อนุมาน] §1.1 — ยังไม่ยืนยัน
 constexpr int    COUNTS_PER_REV   = ENC_PPR * 4 * GEAR_RATIO;  // = 2464
-constexpr double WHEEL_DIAMETER_M = 0.065;
+constexpr double WHEEL_DIAMETER_M = 0.087;   // C61 (4 ต.ค.): ล้อจริง Ø87 [วัดจริง ผู้ใช้] · เดิม 0.065 (C24) → v ที่ T3 พิมพ์ต่ำไป 25 %
 constexpr double RPM_NOLOAD_SPEC  = 178.0;  // [สเปก] ที่ 12 V
 
 // PCNT เป็นตัวนับ 16 บิตมีเครื่องหมาย (ชนเพดาน 32,767)

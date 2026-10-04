@@ -3,20 +3,35 @@
 //
 // รับ setpoint (v mm/s, ω mrad/s) จาก Pi ผ่าน $V · แปลงเป็น duty ซ้าย/ขวาแบบ open-loop (ยังไม่มี PID/odometry)
 // · เพดานความเร็ว "ผู้ใช้ตั้งเอง" ผ่าน setLimits (C28: G14 ไม่ใช่การห้ามอีกต่อไป · ค่าเริ่มต้น 150 mm/s)
-//   เพดานฮาร์ดแวร์ v_hw_max = 716 mm/s (152 rpm วัดจริง × π × Ø90 · ไฟล์ 19 §19.7) — เกินนี้มอเตอร์ทำไม่ได้อยู่แล้ว
+//   เพดานฮาร์ดแวร์ v_hw_max = 810 mm/s (178 rpm × π × Ø87 · C61) — เกินนี้มอเตอร์ทำไม่ได้อยู่แล้ว
 // · ไล่ duty ทีละขั้นกันกระชาก · deadman G8: ไม่ได้ $V ใหม่ใน 300 ms → หยุด
-// ที่มาตัวเลข: ไฟล์ 19 §19.7.1 (210 ‰ ≈ 150 mm/s ไร้โหลด ล้อ Ø90) · system_architecture §3.6 track 180 mm [ยังไม่ยืนยันของจริง]
+// ที่มาตัวเลข: C61 (4 ต.ค. 2026) ไฟล์ 01 §1.16 — เดิม Ø90 / track 180 / 1400 ‰ ต่อ m/s (ไฟล์ 19 §19.7.1) = superseded
 #include <stdint.h>
 
 namespace mrc {
 
+// ── ค่าทางกลของหุ่นจริง (C61) · ทุกค่าข้างล่างคำนวณจาก 3 ตัวนี้ ────────────
+constexpr int WHEEL_D_MM    = 87;    // [วัดจริง ผู้ใช้ 1 ต.ค.] เดิม Ø90 (C24)
+constexpr int TRACK_MM      = 260;   // ระยะกึ่งกลางล้อซ้าย–ขวา [วัดจริง ผู้ใช้ 4 ต.ค.] เดิม 180 [ไม่เคยยืนยัน]
+constexpr int RPM_FULL_DUTY = 178;   // rpm เพลาออกที่ duty 100 % ไร้โหลด 12 V [สเปก JGB37-520] — สอดคล้องผลวัด M1:
+                                     //   152 rpm ที่มอเตอร์ได้ 10.29 V (L298N ตก 1.71 V) × 12/10.29 = 177.3 · DRV8871 ตก ~0.15 V → ~175 [ประมาณการ]
+                                     // ⚠ ยังไม่วัดบน DRV8871 → วัดด้วย `m t3` แล้วแทนค่าที่นี่ที่เดียว (ไฟล์ 01 §1.16)
+// v ที่ duty 100 % = rpm × πD / 60 → 178 × π × 87 / 60 = 810.8 → 810 mm/s
+constexpr int V_HW_MAX_MM_S   = (int)(RPM_FULL_DUTY * 3.14159265358979 * WHEEL_D_MM / 60.0);
+// หมุนอยู่กับที่เต็ม: ω = v / (track/2) = 810 / 130 = 6.2308 → ปัดขึ้น 6231 mrad/s (ให้หมุนเต็ม = duty เต็มพอดี)
+constexpr int W_HW_MAX_MRAD_S = (V_HW_MAX_MM_S * 2000 + TRACK_MM - 1) / TRACK_MM;
+// ‰ ต่อ m/s แบบเส้นตรงผ่านศูนย์: 1000 ‰ ↔ v_hw_max → 10⁶ / 810 = 1234.6 → ปัดขึ้น 1235 (810 mm/s = 1000 ‰ พอดี)
+constexpr int PERMILLE_PER_MPS = (1000000 + V_HW_MAX_MM_S - 1) / V_HW_MAX_MM_S;
+static_assert(V_HW_MAX_MM_S == 810 && W_HW_MAX_MRAD_S == 6231 && PERMILLE_PER_MPS == 1235,
+              "เปลี่ยนค่าทางกลแล้ว → แก้ V_HW/W_HW ใน mrc_web.py + drive.js + drive.html และ test ให้ตรง แล้วแก้ assert นี้");
+
 struct ManualCfg {
   int      v_max_mm_s      = 150;    // ค่าเริ่มต้น (เดิม G14) · ผู้ใช้เปลี่ยนได้ด้วย $L ไม่เกิน v_hw_max
-  int      v_hw_max_mm_s   = 716;    // เพดานฮาร์ดแวร์ [คำนวณจาก 152 rpm วัดจริง] — $L ขอเกินถูก clamp ที่นี่
+  int      v_hw_max_mm_s   = V_HW_MAX_MM_S;    // 810 เพดานฮาร์ดแวร์ [คำนวณ] — $L ขอเกินถูก clamp ที่นี่ (เดิม 716 · Ø90)
   int      w_max_mrad_s    = 3000;   // ≈ 172 °/s (เดิม 1500 — C31: หมุนไม่ไป) · ปรับได้ด้วย $L
-  int      w_hw_max_mrad_s = 7950;   // v_hw_max / (track/2) = 716 / 90 mm ≈ 7.96 rad/s [คำนวณ]
-  int      track_mm        = 180;    // ระยะล้อซ้าย–ขวา [ยังไม่ยืนยันของจริง]
-  int      permille_per_mps = 1400;  // 210 ‰ / 0.15 m/s  [คำนวณจากค่าวัดจริงไร้โหลด]
+  int      w_hw_max_mrad_s = W_HW_MAX_MRAD_S;  // 6231 [คำนวณ] (เดิม 7950 = 716/90 · track 180)
+  int      track_mm        = TRACK_MM;         // 260 [วัดจริง] (เดิม 180)
+  int      permille_per_mps = PERMILLE_PER_MPS; // 1235 [คำนวณ: 178 rpm สเปก × Ø87 — DRV8871 ยังไม่วัด] (เดิม 1400)
   int      permille_max    = 262;    // เพดาน duty = 1.25 × (v_max→‰) เผื่อโหลด/หมุน · คำนวณใหม่ทุกครั้งที่ setLimits · ไม่เกิน 1000
   int      slew_permille_per_tick = 15;   // ต่อ tick 10 ms → 0→210 ใน ~140 ms (rampTo เดิม 300 ms แต่ blocking)
   uint32_t deadman_ms      = 300;    // G8

@@ -162,11 +162,11 @@ def test_drive_repeats_V_at_10hz_then_deadman_sends_S(web):
 def test_drive_clamped_to_user_limits_default(web):
     c, master, backend, hub = web
     hub.drive(999, -9999)
-    assert (hub.drive_v, hub.drive_w) == (716, -7950)          # C43: เพดานเริ่มต้น = ฮาร์ดแวร์
+    assert (hub.drive_v, hub.drive_w) == (810, -6231)          # C43: เพดานเริ่มต้น = ฮาร์ดแวร์
 
 
 def test_user_limits_raise_cap_and_send_L_clamped_at_hw(web):
-    """C28: ผู้ใช้ตั้งเพดานเอง → Pi clamp ที่ฮาร์ดแวร์ 716/7950 · ส่ง $L · broadcast limits · drive ใช้เพดานใหม่"""
+    """C28: ผู้ใช้ตั้งเพดานเอง → Pi clamp ที่ฮาร์ดแวร์ 810/6231 (C61) · ส่ง $L · broadcast limits · drive ใช้เพดานใหม่"""
     c, master, backend, hub = web
     with c.websocket_connect("/ws") as ws:
         ws.receive_json(); ws.receive_json()
@@ -174,16 +174,16 @@ def test_user_limits_raise_cap_and_send_L_clamped_at_hw(web):
         fr = P.decode(read_line(master))
         assert fr.type == "L" and fr.fields[2:] == ["300", "2000"]
         ev = _drain_until(ws, "limits")
-        assert ev["v_max"] == 300 and ev["w_max"] == 2000 and ev["v_hw_max"] == 716
+        assert ev["v_max"] == 300 and ev["w_max"] == 2000 and ev["v_hw_max"] == 810
         hub.drive(999, -9999)
         assert (hub.drive_v, hub.drive_w) == (300, -2000)
         ws.send_json({"t": "limits", "v_max": 5000, "w_max": 99999})     # เกินฮาร์ดแวร์ → clamp
         fr = P.decode(read_line(master))
-        assert fr.fields[2:] == ["716", "7950"]
-        assert _drain_until(ws, "limits")["v_max"] == 716
+        assert fr.fields[2:] == ["810", "6231"]
+        assert _drain_until(ws, "limits")["v_max"] == 810
         s = c.get("/api/status").json()
-        assert s["limits"]["v_max"] == 716 and "$L" in s["esp32_supports"]
-        assert json.loads(W.LIMITS_PATH.read_text())["v_max"] == 716          # บันทึกไว้ที่ Pi
+        assert s["limits"]["v_max"] == 810 and "$L" in s["esp32_supports"]
+        assert json.loads(W.LIMITS_PATH.read_text())["v_max"] == 810          # บันทึกไว้ที่ Pi
 
 
 def test_estop_and_clean_frames(web):

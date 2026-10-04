@@ -3,9 +3,9 @@
 // Pi ถือค่าล่าสุดแล้วส่ง $V ซ้ำเอง · เงียบ 300 ms = Pi ส่ง $S · ESP32 มี deadman ของตัวเองอีกชั้น
 (() => {
   const $ = (id) => document.getElementById(id);
-  // C28: เพดานความเร็วเป็นของผู้ใช้ (cfg.vMax/wMax → {t:"limits"} → Pi → $L) · ESP32 clamp แค่ที่ฮาร์ดแวร์ 716 mm/s
+  // C28: เพดานความเร็วเป็นของผู้ใช้ (cfg.vMax/wMax → {t:"limits"} → Pi → $L) · ESP32 clamp แค่ที่ฮาร์ดแวร์ 810 mm/s (C61)
   let V_MAX = 150;                                     // = cfg.vMax หลัง applyCfg
-  const V_HW_MAX = 716, W_HW_MAX = 7950;
+  const V_HW_MAX = 810, W_HW_MAX = 6231;              // C61: ล้อ Ø87 · track 260 (เดิม 716/7950) — ต้องตรงกับ manual_core.h
   // C47: เสาไปได้ถึง 189° (= 400 µs เพราะกลับทิศ) · ESP32 รับ $M ต่ำสุด 400 µs (pins.h MAST_US_MIN) · มุมกล้องยัง 0–180
   // C48/C49: เสานับ "องศาแขน" จากจุด 0° ที่ผู้ใช้ตั้ง — เก็บเป็น µs (liftZeroUs) ไม่ใช่องศาดิบ
   //   ไม่งั้นติ๊ก "กลับทิศเสา" แล้วจุด 0° กระโดดไปที่อื่น (บั๊ก C48 เจอจริง 28 ก.ย.) · 1° = 2000/180 = 11.1 µs · กลับทิศ = + ไปทางพัลส์สั้น
@@ -15,7 +15,7 @@
   const liftZeroUs = () => +cfg.liftZeroUs || (cfg.liftInv ? 2500 : 500);          // ยังไม่ตั้ง 0° = ปลายพัลส์ฝั่งที่เป็น 0° ของสเกลเดิม
   const degLo = (k) => k !== "lift" ? 0 : Math.ceil(Math.min((MAST_US[0] - liftZeroUs()) / US_PER_DEG * liftSign(), (MAST_US[1] - liftZeroUs()) / US_PER_DEG * liftSign()));
   const degHi = (k) => k !== "lift" ? 180 : Math.floor(Math.max((MAST_US[0] - liftZeroUs()) / US_PER_DEG * liftSign(), (MAST_US[1] - liftZeroUs()) / US_PER_DEG * liftSign()));
-  const DEFAULTS = { vMax: 716, wMax: 7950, maxPct: 50, turnGain: 7950, spinMinPct: 70, tiltMinDeg: 0, tiltMaxDeg: 180, tiltInv: false, liftMinDeg: 45, liftMaxDeg: 135, liftInv: true, liftZeroUs: 0, calVer: 6, camPad: true, rampMs: 0, deadzone: 0.12, turnScale: true, invY: false, invX: false,
+  const DEFAULTS = { vMax: 810, wMax: 6231, maxPct: 50, turnGain: 6231, spinMinPct: 70, tiltMinDeg: 0, tiltMaxDeg: 180, tiltInv: false, liftMinDeg: 45, liftMaxDeg: 135, liftInv: true, liftZeroUs: 0, calVer: 6, camPad: true, rampMs: 0, deadzone: 0.12, turnScale: true, invY: false, invX: false,
     joySide: "left", joySize: "m", autoSuction: false, driveUi: "pad", curveTurn: 50, joySnap: true, fps: 10, camQ: "high", gridOn: false, roiOn: true, mirror: false,
     suctionPct: 100, suctionIdleOff: 0, sound: true, vibrate: true, toastSec: 3, staleSec: 2,
     accent: "mint", density: "comfortable", bigButtons: false, wakeLock: true };
@@ -32,7 +32,7 @@
   // C43 (26 ก.ย.): ความแรง 50/75/100 % ของกำลังเต็ม + หมุนแรงขึ้น — ค่าเดิมในเครื่อง (turnGain 2000 · สปีด 25 %) ทำให้หมุนได้แค่ ~3–4 V
   if (cfg.calVer < 3) { cfg.spinMinPct = 70; if (![50, 75, 100].includes(cfg.maxPct)) cfg.maxPct = 50; }
   // C44 (26 ก.ย. วัดสดตอนผู้ใช้กดหมุน: w สูงสุด ~2780 → ล้อ ±350 ‰): migration C43 ตั้ง turnGain 7950 แล้ว applyCfg ตัดทิ้งเหลือ wMax เก่า 3000 → ตั้งซ้ำ
-  if (cfg.calVer < 4) { cfg.turnGain = 7950; cfg.calVer = 4; }
+  if (cfg.calVer < 4) { cfg.turnGain = W_HW_MAX; cfg.calVer = 4; }   // C61: = หมุนเต็ม (เดิมเขียนตาย 7950)
   // C49: จุด 0° จาก C48 เก็บเป็นองศาดิบ (สเกลกลับทิศ) → แปลงเป็น µs ครั้งเดียว
   if (cfg.calVer < 5) { if (cfg.liftZero) cfg.liftZeroUs = Math.round(500 + (180 - cfg.liftZero) / 180 * 2000); delete cfg.liftZero; cfg.calVer = 5; }
   // C51 (29 ก.ย.): เฟิร์มแวร์ไล่ duty เอง (slew 15 ‰/10 ms) — ramp ฝั่งเว็บซ้อนอีกชั้นทำให้ช่วงท้ายของการเร่งช้าลง (ไฟล์ 19 §19.9) → ปิด

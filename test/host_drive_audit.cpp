@@ -5,7 +5,7 @@
 #include <algorithm>
 #include "manual_core.h"
 // จำลองโซ่จริง: drive.js pump() (สูตรเดียวกับไฟล์) → Pi clamp → manual_core (โค้ดจริง)
-const int VMAX=716, WMAX=7950, TURNGAIN=7950;
+const int VMAX=mrc::V_HW_MAX_MM_S, WMAX=mrc::W_HW_MAX_MRAD_S, TURNGAIN=mrc::W_HW_MAX_MRAD_S;   // C61: 810/6231 (เดิม 716/7950)
 struct VW{int v,w;};
 VW client(double x,double y,int pct,bool step,bool turnScale=true,int curve=50,int spinMin=70){
   double tv=y*VMAX*pct/100.0, turnW=std::min(TURNGAIN,WMAX);
@@ -18,9 +18,9 @@ mrc::WheelCmd steady(VW c){ mrc::Manual m; m.configure(mrc::ManualCfg{}); m.setL
 int main(){
   printf("== A. เดินตรงด้วยจอย/สไลเดอร์ (y=1) ==\n");
   for(int pct: {10,15,20,25,30,50,75,100}){ VW c=client(0,1,pct,false); auto o=steady(c);
-    printf("  %3d%%  v=%4d mm/s  → ล้อ %4d/%4d ‰  (ถ้าไม่มีพื้น 250 ‰ จะได้ %d ‰)\n",pct,c.v,o.l,o.r,(int)(c.v*1.4)); }
+    printf("  %3d%%  v=%4d mm/s  → ล้อ %4d/%4d ‰  (ถ้าไม่มีพื้น 250 ‰ จะได้ %d ‰)\n",pct,c.v,o.l,o.r,(int)(c.v*mrc::PERMILLE_PER_MPS/1000)); }
   printf("== B. เดินตรงจอยครึ่งทาง (y=0.3) ที่ปุ่ม 50%% ==\n");
-  { VW c=client(0,0.3,50,false); auto o=steady(c); printf("  v=%d → ล้อ %d/%d ‰ (ควรเป็น %d)\n",c.v,o.l,o.r,(int)(c.v*1.4)); }
+  { VW c=client(0,0.3,50,false); auto o=steady(c); printf("  v=%d → ล้อ %d/%d ‰ (ควรเป็น %d)\n",c.v,o.l,o.r,(int)(c.v*mrc::PERMILLE_PER_MPS/1000)); }
   printf("== C. แก้ทิศเล็กน้อยระหว่างเดิน (จอย x=0.15,y=1) ==\n");
   for(int pct:{50,100}){ VW c=client(0.15,1,pct,false); auto o=steady(c); printf("  %3d%%: v=%d w=%d → ซ้าย %d ขวา %d ‰\n",pct,c.v,c.w,o.l,o.r);}
   printf("== D. เลี้ยวโค้งด้วยจอย (x=0.5,y=1) ==\n");

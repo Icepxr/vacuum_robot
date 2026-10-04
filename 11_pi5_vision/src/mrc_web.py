@@ -49,10 +49,10 @@ DISPLAY_HOLD_S = {"CAP": 4.0, "SAVED": 4.0, "READ": 8.0, "NOREAD": 6.0, "CAPFAIL
 CPU_HOT_C   = 80.0        # Pi 5 throttle ที่ 80 °C (ค่าจาก vcgencmd get_throttled ของ RPi — เตือนก่อนถึง)
 DISK_LOW_MB = 200         # ภาพ ~150 kB/รูป → 200 MB ≈ 1300 รูป ยังพอ 1 วันแต่ต้องรู้แล้ว
 DRIVE_REPEAT_S = 0.10               # ส่ง $V ซ้ำ 10 Hz ให้ G8 (300 ms) ผ่านด้วย margin 3×
-V_MAX_MM_S = 716                    # C43 26 ก.ย.: เพดาน = ฮาร์ดแวร์ (duty 100 %) · ความแรงเลือกจากปุ่ม 50/75/100 % บนหน้าขับ (ผู้ใช้) · ระยะหยุดที่ 716 ~585–815 mm (ไฟล์ 19 §19.8) · เดิม 300 (C31)
-W_MAX_MRAD_S = 7950                 # C43: หมุนอยู่กับที่เต็ม = duty 100 % ต่อล้อ (ผู้ใช้วัดตอนหมุนได้แค่ 4/6 V → ไม่เลี้ยว) · เดิม 3000 (C31) = 378 ‰
-V_HW_MAX_MM_S = 716                 # เพดานฮาร์ดแวร์: 152 rpm [วัดจริง M1] × π × Ø90 mm (ไฟล์ 19 §19.7) — ขอเกินก็ไม่ได้อยู่แล้ว
-W_HW_MAX_MRAD_S = 7950              # 716 / (180/2) mm ≈ 7.96 rad/s [คำนวณ] ต้องตรงกับ manual_core.h
+V_MAX_MM_S = 810                    # C61 4 ต.ค.: = V_HW (ล้อ Ø87) · เดิม 716 · C43 26 ก.ย.: เพดาน = ฮาร์ดแวร์ (duty 100 %) · ความแรงเลือกจากปุ่ม 50/75/100 % บนหน้าขับ (ผู้ใช้) · ระยะหยุดที่ 716 ~585–815 mm (ไฟล์ 19 §19.8) · เดิม 300 (C31)
+W_MAX_MRAD_S = 6231                 # C61: = W_HW (track 260) · duty ล้อเท่าเดิม · เดิม 7950 · C43: หมุนอยู่กับที่เต็ม = duty 100 % ต่อล้อ (ผู้ใช้วัดตอนหมุนได้แค่ 4/6 V → ไม่เลี้ยว) · เดิม 3000 (C31) = 378 ‰
+V_HW_MAX_MM_S = 810                 # C61 เพดานฮาร์ดแวร์: 178 rpm [สเปก 12 V] × π × Ø87 mm (ไฟล์ 01 §1.16) — ต้องตรงกับ manual_core.h
+W_HW_MAX_MRAD_S = 6231              # C61: 810 / (260/2) mm = 6.23 rad/s ปัดขึ้น [คำนวณ] ต้องตรงกับ manual_core.h
 
 
 CAM_PATH = DATA_DIR / "camera.json"
@@ -169,7 +169,7 @@ class Hub:
         self.drive_last_mono = time.monotonic()
 
     def set_limits(self, v_max, w_max):
-        """เพดานที่ผู้ใช้ตั้ง — clamp ที่ฮาร์ดแวร์ (716 mm/s [คำนวณจาก 152 rpm วัดจริง] · ไฟล์ 19 §19.7) แล้วส่ง $L"""
+        """เพดานที่ผู้ใช้ตั้ง — clamp ที่ฮาร์ดแวร์ (810 mm/s [คำนวณจาก 178 rpm × Ø87] · ไฟล์ 01 §1.16) แล้วส่ง $L"""
         self.limits["v_max"] = max(0, min(V_HW_MAX_MM_S, int(v_max)))
         self.limits["w_max"] = max(0, min(W_HW_MAX_MRAD_S, int(w_max)))
         if self.daemon: self.daemon.send_limits(self.limits["v_max"], self.limits["w_max"])

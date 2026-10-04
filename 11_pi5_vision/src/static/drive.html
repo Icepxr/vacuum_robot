@@ -225,9 +225,9 @@
     <p class="settings-warning">ปรับเมื่อจำเป็นเท่านั้น ค่าที่นี่มีผลกับการเคลื่อนที่และกลไกของหุ่น</p>
     <details class="settings-group"><summary><span>ความเร็วและการเลี้ยว<small>เพดานมอเตอร์ การออกตัว และทิศทาง</small></span></summary><div class="group-body">
       <p class="fine">ไม่มีระบบกันชนอัตโนมัติ · เพิ่มเพดานความเร็วเฉพาะเมื่อทดสอบกับหุ่นจริงแล้ว</p>
-      <label class="row"><span>เพดานความเร็ว <small>mm/s · ค่าเริ่มต้น 716 = กำลังเต็ม · ปุ่ม 50/75/100 % คิดจากค่านี้</small></span><input data-cfg="vMax" type="range" min="50" max="716" step="10"><output></output></label>
-      <label class="row"><span>เพดานการหมุน <small>mrad/s · ค่าเริ่มต้น 7950 (C43)</small></span><input data-cfg="wMax" type="range" min="500" max="7950" step="50"><output></output></label>
-      <label class="row"><span>ความไวการหมุน <small>จำกัดด้วยเพดานการหมุนตอนใช้งาน</small></span><input data-cfg="turnGain" type="range" min="400" max="7950" step="50"><output></output></label>
+      <label class="row"><span>เพดานความเร็ว <small>mm/s · ค่าเริ่มต้น 810 = กำลังเต็ม · ปุ่ม 50/75/100 % คิดจากค่านี้</small></span><input data-cfg="vMax" type="range" min="50" max="810" step="10"><output></output></label>
+      <label class="row"><span>เพดานการหมุน <small>mrad/s · ค่าเริ่มต้น 6231 = หมุนเต็ม (C61)</small></span><input data-cfg="wMax" type="range" min="500" max="6231" step="1"><output></output></label>
+      <label class="row"><span>ความไวการหมุน <small>จำกัดด้วยเพดานการหมุนตอนใช้งาน</small></span><input data-cfg="turnGain" type="range" min="400" max="6231" step="1"><output></output></label>
       <label class="row"><span>ความแรงหมุนขั้นต่ำ <small>ปุ่ม ◀▶ ใช้ค่าที่มากกว่าระหว่างค่านี้กับความแรงที่เลือก</small></span><input data-cfg="spinMinPct" type="range" min="30" max="100" step="5"><output></output></label>
       <label class="row"><span>ความแรงเลี้ยวโค้ง <small>สำหรับปุ่มมุม · น้อย = โค้งกว้าง</small></span><input data-cfg="curveTurn" type="range" min="20" max="100" step="5"><output></output></label>
       <label class="row"><span>ความนุ่มตอนออกตัว</span><input data-cfg="rampMs" type="range" min="0" max="800" step="50"><output></output></label>
@@ -307,7 +307,7 @@
   <div class="emergency-bottomline">หยุดตรวจสอบก่อนใช้งานต่อ · NO AUTOMATIC RESUME</div>
 </section>
 <script src="/static/drive-state.js?v=20260927"></script>
-<script src="/static/drive.js?v=c51-f10"></script>
+<script src="/static/drive.js?v=c61b"></script>
 <script src="/static/review.js?v=f10-roomsel"></script>
 </body>
 </html>
