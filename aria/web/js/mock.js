@@ -1,6 +1,6 @@
 // ข้อมูลจำลองในหน่วยความจำ · เปิดได้เฉพาะ localhost ด้วย ?mock (ดู app.js) · ไม่แตะเครือข่าย
 // ชุดเดียวกับ migrations 0300_demo_seed + 20260929000100_demo_readings เพื่อให้พรีวิวหน้าตาตรงกับของจริง
-import { readingMeterId, meterIndex } from './logic.js?v=w13';
+import { readingMeterId, meterIndex, shiftCycle } from './logic.js?v=w14';
 
 export function createMockApi() {
   const prev = { '101': [1231, 3502], '102': [987, 2140], '103': [1518, 2901], '104': [1192, 3271], '105': [1402, 5012], '106': [802, 1320], '107': [1105, 4521], '108': [1351, 3204], '109': [890, 2750], '110': [1120, 2876] };
@@ -91,7 +91,9 @@ export function createMockApi() {
     async updateMeter(id, patch) { Object.assign(d.meters.find(m => m.meter_id === id), patch); },
     async addRate(row) { if (d.rates.some(r => r.type === row.type && r.effective_from === row.effective_from)) throw new Error('duplicate key value violates unique constraint "rates_type_effective_from_key"'); d.rates.push({ id: d.rates.length + 1, ...row }); },
     async updateSettings(patch) { Object.assign(d.settings, patch); },
-    async upsertCycle(row) { const c = d.cycles.find(x => x.cycle === row.cycle); if (c) Object.assign(c, row); else d.cycles.push({ state: 'open', include_rent: false, ...row }); },
+    async upsertCycle(row) {
+      const old = d.cycles.find(x => x.cycle === row.cycle), next = shiftCycle(row.cycle, 1);
+      if (old && old.cutoff_date !== row.cutoff_date && d.invoices.some(v => v.state === 'approved' && (v.cycle === row.cycle || v.cycle === next))) throw new Error('cutoff_locked'); const c = d.cycles.find(x => x.cycle === row.cycle); if (c) Object.assign(c, row); else d.cycles.push({ state: 'open', include_rent: false, ...row }); },
     // จำลอง rpc approve_invoices (ยอด = round(หน่วย×อัตรา, 2) ต่อชนิด + ค่าเช่า เหมือนคอลัมน์ generated)
     async approveInvoices(cycle, cutoff, items) {
       const r2 = x => Math.round(x * 100 + 1e-9) / 100;
@@ -127,7 +129,7 @@ export function createMockApi() {
       }
       return { results };
     },
-    async addPayment(row) { d.payments.push({ id: d.payments.length + 1, recorded_by: 'owner@example.com', recorded_at: new Date().toISOString(), voided_at: null, void_reason: null, note: null, ...row }); },
+    async addPayment(row) { if (row.client_key && d.payments.some(p => p.client_key === row.client_key)) throw new Error('duplicate key value violates unique constraint "invoice_payments_client_key_key"'); d.payments.push({ id: d.payments.length + 1, recorded_by: 'owner@example.com', recorded_at: new Date().toISOString(), voided_at: null, void_reason: null, note: null, ...row }); },
     async voidPayment(id, reason) { const p = d.payments.find(x => x.id === id); if (p.voided_at) throw new Error('รายการนี้ยกเลิกไปแล้ว'); Object.assign(p, { voided_at: new Date().toISOString(), void_reason: reason }); },
     async setPromptpay(id) { d.payout.promptpay_id = id; },
     async newExport() { d.lastExport = { version: ++ver, exported_at: new Date().toISOString() }; return clone(d.lastExport); },

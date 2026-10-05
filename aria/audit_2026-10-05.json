@@ -1,0 +1,2242 @@
+{
+ "audit_summary": {
+  "overall_status": "CONDITIONAL_PASS",
+  "launch_ready": false,
+  "total_issues": 55,
+  "critical": 0,
+  "high": 16,
+  "medium": 27,
+  "low": 10,
+  "info": 2,
+  "p0_count": 5,
+  "p1_count": 22,
+  "p2_count": 22,
+  "p3_count": 6,
+  "summary": "ARIA's core owner path (review → confirm → approve → record payment) works and the surface is polished, but it is not launch-ready as-is. Five P0 blockers, all XS–M effort: (1) live production still shows the wrong zero-start-value bills (A102 ฿33,235, A103 ฿39,035 with a recorded payment) and the w47/g39 repair tooling is not deployed; (2) a retired meter's end_value is ignored when it also has an in-cycle reading, silently under-billing meter swaps; (3) the next cycle's base is recomputed live and cutoffs stay editable after approval, allowing double-billing; (4) write() reports failure when a payment/email succeeded but the refresh failed, inviting duplicate payments; (5) the Guest top bar overflows on 320–375px phones — the judges' entry point. Beyond these, money-flow UX is the main risk: mid-cycle move-outs go unbilled, emails/QR ignore partial payments, date defaults ignore the selected cycle, pre-cutoff approval and stale recipients are not warned, and no usage anomaly flag exists. Guest PII exposure is accepted for test data but must be closed before real tenants. Design/mobile issues are mostly polish (native dialogs, tiny Thai text, modal and breakpoint handling). Verdict: CONDITIONAL_PASS — launch after the five P0 fixes plus a deploy from main; schedule P1 money items next.",
+  "top_risks": [
+   "Wrong approved bills and a ฿39,035 payment visible to judges in live Guest view until w47 is deployed and data corrected (WEB-001)",
+   "Silent billing errors on meter swaps and after post-approval data/cutoff changes (WEB-002, WEB-003, WEB-009)",
+   "Duplicate payments/emails when a write succeeds but the refresh fails (WEB-004)",
+   "Lost revenue on mid-cycle move-outs; tenants asked to pay full total after partial payment (WEB-007, WEB-008)",
+   "Tenant PII readable by anonymous Guest once real data is entered (WEB-006)",
+   "Judge-facing Guest view broken on common phone widths (WEB-005)"
+  ]
+ },
+ "issues": [
+  {
+   "id": "WEB-001",
+   "title": "Live production shows wrong approved bills (zero start_value) and the fix-start/zero-base safeguards (w47/g39) are not deployed",
+   "category": "launch",
+   "severity": "HIGH",
+   "priority": "P0",
+   "launch_blocker": true,
+   "confidence": "high",
+   "found_by": [
+    "launch",
+    "state"
+   ],
+   "page": "Bills, Rooms (meter tile), Guest view",
+   "route": "/ (page=bills, page=rooms)",
+   "component": "approveBills, showBill, addMeter, fixStart; live Supabase data",
+   "viewport": "all",
+   "user_journey": "Judge opens Guest view → Bills for October → sees A102 ฿33,235 and A103 ฿39,035 (paid) for a 3-room dorm",
+   "description": "All 6 live meters were registered with start_value 0, so the October bills for A102/A103 charged the whole dial count (1,234 water units × ฿20). Both were approved on 2 Oct and emailed (to owner-controlled addresses), and a ฿39,035 PromptPay payment is recorded for A103. The tooling to repair this — zero-base warning on approve and in the bill modal, zero-start confirm on add-meter, the \"แก้ค่าเริ่ม\" action, and the no-op correction guard — exists only in uncommitted w47/g39 changes. The checkout is on branch c57-airflow-power-firmware with many unrelated uncommitted files.",
+   "user_impact": "Judges (Guest view shows real data by design) see implausible approved bills and a paid ฿39k water bill, undermining the core billing claim. The owner cannot correct meter start values from the UI until w47 ships.",
+   "actual_behavior": "Live = HEAD 2336bdf (app.js w46). No zero-base warning; no way to edit start_value; A102/A103 approved invoices and A103 payment stand.",
+   "expected_behavior": "w47/g39 deployed from main; meter start values corrected; A103 payment voided with reason; revisions issued for A102/A103 (or the history clearly labelled as test data).",
+   "steps_to_reproduce": [
+    "Open https://aria-th.netlify.app and click Guest",
+    "Go to บิล, cycle ตุลาคม 2569",
+    "Open A102 and A103: totals ฿33,235 / ฿39,035, water 1,234 units, base = ค่าตอนติดตั้ง 0",
+    "Open ห้องและมิเตอร์ → A102 water meter: no \"แก้ค่าเริ่ม\" link on live"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "Launch: invoices 7 (A102) and 8 (A103), cycle 2026-10, approved 2026-10-02, detail.segments baseSource 'start'; readings 37/38 confirmed 1234; recip_is_owner=true for both emails. Pending diff: app.js +27/-3 (submitConfirm guard :561, approveBills zeroNote :667-669, showBill zeroBase :726-727/:751, add-meter placeholder :936, addMeter confirm :974, fixStart :979-988, dispatch :1235), glass.css/glass.teal.css +2, index.html cache-bust w46→w47, g38→g39. node --check OK, logic tests 12/12. The 'onboarding edit shortcut' Launch reported missing from the diff is NOT missing: data-edit=\"settings-form\" (app.js:381) and nav.dataset.edit→startEdit (app.js:1193) are already committed in HEAD (HEAD:1173) and therefore already live. Line numbers refer to the working tree (pending w47); in deployed HEAD 2336bdf lines after app.js:558 sit ~1-22 lines earlier."
+   },
+   "root_cause": "Add-meter form defaulted start_value to 0 with no warning; no UI to edit start_value; deployment lagging fixes.",
+   "recommended_fix": "1) git switch main; stage only aria/web/css/glass.css, glass.teal.css, index.html, js/app.js; commit and push. 2) After deploy, curl index.html for app.js?v=w47 / glass.css?v=g39 and check the zero-base warning on A102. 3) Use แก้ค่าเริ่ม to set real dial values, void the A103 payment with reason, issue revisions for A102/A103 (or annotate as test history in the History book). 4) Confirm fix-start is hidden/locked for Guest.",
+   "acceptance_criteria": [
+    "Live index.html references app.js?v=w47 and glass.css?v=g39",
+    "A102/A103 bill modal shows the zero-base warning until start values are fixed",
+    "After correction, current A102/A103 revisions show plausible units; A103 has no un-voided ฿39,035 payment",
+    "Guest cannot trigger fix-start",
+    "Unrelated c57 files are not part of the deploy commit"
+   ],
+   "engineering_effort": "S"
+  },
+  {
+   "id": "WEB-002",
+   "title": "Retired meter's end_value is ignored when the meter also has a confirmed reading in the same cycle → units silently lost",
+   "category": "state",
+   "severity": "HIGH",
+   "priority": "P0",
+   "launch_blocker": true,
+   "confidence": "high",
+   "found_by": [
+    "state"
+   ],
+   "page": "Bills",
+   "route": "/ (page=bills)",
+   "component": "logic.js typeUsage()",
+   "viewport": "all",
+   "user_journey": "Owner replaces a meter mid-cycle (ปลด old with end value, add new same day) → approves the cycle's bill",
+   "description": "typeUsage takes curr from the last confirmed in-cycle reading and only falls back to the retired meter's end_value when there is no in-cycle reading. If the robot read the old meter earlier in the cycle, the units between that reading and the removal reading are never billed, and the next cycle excludes the retired meter entirely.",
+   "user_impact": "Silent under-billing on every mid-cycle meter swap that had an earlier in-cycle reading; the bill looks complete, so the owner has no cue. Meter replacement is a documented flow (\"เปลี่ยนมิเตอร์ = ปลดตัวเก่าแล้วเพิ่มตัวใหม่วันเดียวกัน\").",
+   "actual_behavior": "W-101-01 confirmed 900 (29 Sep) and 1000 (10 Oct), retired 20 Oct end_value 1050; W-101-02 start 0 reads 30 → October water = 100 + 30 = 130; 1000→1050 (50 units) never billed.",
+   "expected_behavior": "October water = 150 + 30 = 180; end_value lower than the last confirmed reading is rejected at retire time.",
+   "steps_to_reproduce": [
+    "In ?mock, confirm W-101-01 readings 900 (29 Sep) and 1000 (10 Oct)",
+    "Rooms → 101 → ปลด W-101-01 with date 20 Oct and end value 1050",
+    "Add W-101-02 installed 20 Oct start 0, confirm a reading of 30",
+    "Bills → October → room 101: water units = 130 instead of 180"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "logic.js:137-139 — curr = inCycle ? confirmed_value : null; end_value used only if curr == null. State agent verified by script. Next cycle: meterOverlaps excludes the meter retired before range.from."
+   },
+   "root_cause": "end_value treated as a fallback rather than as the latest reading of a retired meter.",
+   "recommended_fix": "In typeUsage: if m.retired_at && m.retired_at <= range.to && m.end_value != null, curr = max(inCycle?.confirmed_value ?? -Inf, end_value). In retireMeter (and ideally a DB check), reject end_value < last confirmed value. Add a logic.test.mjs case for the swap scenario.",
+   "acceptance_criteria": [
+    "Unit test: swap scenario above yields 180 units",
+    "Retire with end_value below last confirmed value is refused with a Thai message",
+    "Existing 12 logic tests still pass"
+   ],
+   "engineering_effort": "XS"
+  },
+  {
+   "id": "WEB-003",
+   "title": "Next cycle's base is recomputed live instead of pinned to the approved invoice; cutoff can be changed after approval → double- or under-billing",
+   "category": "state",
+   "severity": "HIGH",
+   "priority": "P0",
+   "launch_blocker": true,
+   "confidence": "high",
+   "found_by": [
+    "state"
+   ],
+   "page": "Settings (รอบบิล), Bills",
+   "route": "/ (page=settings, page=bills)",
+   "component": "logic.js typeUsage(); app.js saveCycle()",
+   "viewport": "all",
+   "user_journey": "Owner approves October, later edits October's cutoff (or confirms/corrects a late October reading) → November preview",
+   "description": "The base for cycle N+1 is 'last confirmed reading ≤ range.from' computed from current data, not the curr stored on cycle N's approved invoice. saveCycle has no guard against cycles that already have approved invoices, and approve_invoices only inserts the cutoff if no row exists.",
+   "user_impact": "Units can be billed twice (or skipped) across two invoices with no warning; both invoices look internally consistent.",
+   "actual_behavior": "Approve Oct with cutoff 31 Oct billed to 200; set Oct cutoff to 25 Oct → Nov preview 150 units instead of 100 (50 double-billed). Same when a late cycle-N reading is confirmed/corrected after N is approved.",
+   "expected_behavior": "Changing a cutoff for a cycle with approved invoices (N or N+1) is refused or explicitly warned; N+1 base = approved invoice segment curr, and a mismatch is flagged.",
+   "steps_to_reproduce": [
+    "In ?mock, approve October for a room with readings 100 (≤ 30 Sep), 150 (25 Oct), 200 (31 Oct)",
+    "Settings → รอบบิล → set October cutoff to 25 Oct and save (accepted)",
+    "Bills → November preview for that room: base 150, units counted from 150 although October already billed to 200"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "logic.js:135 base = lastConfirmed(d <= range.from); app.js:1094-1102 saveCycle only checks ordering vs adjacent cutoffs; migrations/20261003000100_invoices.sql:64 'on conflict (cycle) do nothing'. State agent verified by script."
+   },
+   "root_cause": "Approved invoices are not treated as the source of truth for the following cycle's base; cycle cutoffs are mutable after approval.",
+   "recommended_fix": "1) saveCycle: refuse (or require explicit confirm + reason) when cycle N or N+1 has approved invoices. 2) typeUsage: when the previous cycle has an approved invoice for the room, use its detail.segments[type][].curr as base and add a reason/flag if it differs from the live base. 3) Optionally enforce in a DB trigger on billing_cycles.",
+   "acceptance_criteria": [
+    "Editing cutoff of an approved cycle is blocked or warned with the affected rooms listed",
+    "Nov preview base equals October invoice curr even after Oct data changes",
+    "Mismatch between live base and approved curr is shown as a bill reason",
+    "Unit tests cover both scenarios"
+   ],
+   "engineering_effort": "M"
+  },
+  {
+   "id": "WEB-004",
+   "title": "write() reports failure when the write succeeded but the refresh failed → duplicate payments / duplicate emails",
+   "category": "reliability",
+   "severity": "HIGH",
+   "priority": "P0",
+   "launch_blocker": true,
+   "confidence": "high",
+   "found_by": [
+    "state"
+   ],
+   "page": "Bill modal (payments), Bills (send email), all write actions",
+   "route": "/ (bill modal)",
+   "component": "app.js write()",
+   "viewport": "all",
+   "user_journey": "Owner on a flaky mobile connection records a ฿500 payment → toast says it failed → saves again",
+   "description": "write() wraps both fn() and reload() in one try. If the insert succeeds but loadAll throws, the user sees \"บันทึกไม่สำเร็จ: …\" and the bill modal still shows the old balance, so re-submitting records a second payment. Payments have no idempotency key; the same applies to sending emails (resend duplicates to tenants).",
+   "user_impact": "Money records overstated (two ฿500 rows, status ชำระแล้ว) and tenants can receive duplicate bill emails; the error message actively misleads.",
+   "actual_behavior": "Row inserted; toast \"บันทึกไม่สำเร็จ: ต่อเน็ตไม่ได้\"; modal still \"ค้าง ฿997\"; second save inserts a duplicate.",
+   "expected_behavior": "\"บันทึกแล้ว แต่รีเฟรชไม่สำเร็จ — กดรีเฟรชก่อนทำต่อ\"; duplicate submit rejected server-side.",
+   "steps_to_reproduce": [
+    "In ?mock, make api.loadAll throw once (devtools override)",
+    "Open an approved bill → บันทึกรับเงิน ฿500 → confirm",
+    "Observe failure toast and unchanged balance",
+    "Submit again → two ฿500 payments listed"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "app.js:83-95 try { await fn(); state.editing=null; await reload(); … } catch { toast('บันทึกไม่สำเร็จ…') }. State agent verified in browser (mock)."
+   },
+   "root_cause": "Write outcome and refresh outcome are conflated; no idempotency for payments/email sends.",
+   "recommended_fix": "Split write(): after fn() resolves, mark success; wrap reload() separately and on failure toast 'บันทึกแล้ว · โหลดข้อมูลใหม่ไม่สำเร็จ' with a reload action, return true. Add a client-generated idempotency key (uuid) column with a unique index on payments; disable the submit button until the modal is refreshed.",
+   "acceptance_criteria": [
+    "Forced reload failure after a successful payment shows a success+refresh-failed message",
+    "Re-submitting the same payment form is rejected (unique idempotency key)",
+    "Bill modal reflects the new balance after a manual refresh"
+   ],
+   "engineering_effort": "S"
+  },
+  {
+   "id": "WEB-005",
+   "title": "Guest top bar overflows on phones: avatar off-screen at 375px, bottom nav pushed out of view at 320px",
+   "category": "mobile",
+   "severity": "HIGH",
+   "priority": "P0",
+   "launch_blocker": true,
+   "confidence": "high",
+   "found_by": [
+    "mobile"
+   ],
+   "page": "All pages (Guest)",
+   "route": "/ (guest session)",
+   "component": "top bar: .guest-badge + cycle-nav (.top-right)",
+   "viewport": "320–413px wide (Guest only)",
+   "user_journey": "Judge taps Guest on an iPhone/Android phone",
+   "description": "The 107px .guest-badge sits beside the 177px cycle nav; app.css only hides .demo-badge ≤540px. The page becomes horizontally scrollable; at 320px the layout widens so the fixed bottom nav sits below the visible viewport.",
+   "user_impact": "The judges' primary entry point (Guest) looks broken on common phone widths; at 320px navigation is effectively unreachable.",
+   "actual_behavior": "scrollWidth 405 @375 (avatar at x366–398 partially off-screen), 398 @320 with innerHeight 796 and bottom nav at y716 below the 640 visible area; OK at 414.",
+   "expected_behavior": "No horizontal overflow from 320px up in Guest mode; bottom nav always visible.",
+   "steps_to_reproduce": [
+    "Open ?mock, set sessionStorage mock.guest=1, reload",
+    "Set viewport 375×812: page scrolls horizontally, avatar clipped",
+    "Set viewport 320×640: bottom nav not visible"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "glass.css:529 .guest-badge padding 6px 11px, font 11px; app.css:68 '@media (max-width:540px){.demo-badge{display:none}}' does not cover .guest-badge. Measurements from Mobile agent (browser)."
+   },
+   "root_cause": "Guest badge was added without a narrow-screen rule; .top-right lacks min-width:0/overflow handling.",
+   "recommended_fix": "≤540px: render the guest badge icon-only (or move 'ผู้ชม · ดูอย่างเดียว' into a slim banner under the top bar); add .top-right{min-width:0} and ensure the topbar never exceeds 100vw. Add a 320px guest check to the pre-push checklist.",
+   "acceptance_criteria": [
+    "document.documentElement.scrollWidth === innerWidth at 320, 360, 375, 390, 414 in Guest",
+    "Bottom nav visible at 320×640",
+    "Guest read-only indication still visible on phones"
+   ],
+   "engineering_effort": "XS"
+  },
+  {
+   "id": "WEB-006",
+   "title": "Guest (anonymous) sign-in exposes tenant names, emails, rent, payments and owner email",
+   "category": "security",
+   "severity": "HIGH",
+   "priority": "P1",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "launch",
+    "real_user",
+    "state"
+   ],
+   "page": "All pages (Guest)",
+   "route": "/ (guest session)",
+   "component": "Supabase RLS guest_read policies; Guest UI",
+   "viewport": "all",
+   "user_journey": "Anyone clicks Guest (no captcha) → Rooms/Bills show tenant identity and billing details",
+   "description": "guest_read policies grant anonymous users SELECT on tenancies (incl. email, rent), invoices (tenant_name, recipient_email), payments, and expose owner emails via approved_by/recorded_by. Anonymous sign-in has no captcha; 9 anonymous users in 7 days. Owner deliberately chose real-data guest view on 2 Oct and current data is test data, so this is not a blocker today.",
+   "user_impact": "Becomes a PDPA exposure the moment real tenants are entered; anyone with the URL can harvest names/emails.",
+   "actual_behavior": "Guest sees tenant names, emails, rent and payment records unmasked.",
+   "expected_behavior": "Guest sees masked identity (\"ผู้เช่า ห้อง 101\", \"w•••@example.com\"), or Guest is disabled/captcha-gated before real tenant data is entered.",
+   "steps_to_reproduce": [
+    "Open https://aria-th.netlify.app → Guest",
+    "Rooms → any room: tenant name, email, rent visible",
+    "Bills → open bill: recipient email and 'อนุมัติโดย <owner email>' visible"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "migrations/20261002000100_guest_read_only.sql:11-20 guest_read on rooms, meters, tenancies, meter_readings, reading_events, rates, billing_cycles, settings, devices, meter_registry_exports (+ invoices/payments per Launch DB check). Launch: 9 anonymous users in 7 days. Escalate to P0 before any real tenant data."
+   },
+   "root_cause": "Guest RLS reuses full-row SELECT; no masked views.",
+   "recommended_fix": "Create guest views (or column-limited policies) masking tenant_name/email/recipient_email/approved_by/recorded_by; enable Supabase captcha on anonymous sign-in; mask in UI as defense in depth; add a gate in the owner checklist: 'before real tenants: Guest uses masked data'.",
+   "acceptance_criteria": [
+    "Anonymous JWT SELECT on tenancies.email / invoices.recipient_email returns masked or no data",
+    "Guest UI shows masked names/emails",
+    "Anonymous sign-in requires captcha"
+   ],
+   "engineering_effort": "M"
+  },
+  {
+   "id": "WEB-007",
+   "title": "Tenant who moves out mid-cycle gets no bill for that cycle",
+   "category": "state",
+   "severity": "HIGH",
+   "priority": "P1",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "state",
+    "real_user"
+   ],
+   "page": "Bills",
+   "route": "/ (page=bills)",
+   "component": "logic.js billPreview() tenancyOn(range.to)",
+   "viewport": "all",
+   "user_journey": "Owner records ย้ายออก on 20 Oct → October bills",
+   "description": "billPreview looks up the tenancy on range.to only, so a tenancy ending inside the cycle resolves to null and the room is treated as vacant. A mid-cycle move-in is billed for the whole cycle.",
+   "user_impact": "The departing tenant's final utilities (the bill most likely to go uncollected later) are dropped; the move-in tenant may be overcharged for the previous occupant's usage.",
+   "actual_behavior": "end_date 20 Oct with 30 water / 80 electric units → \"ห้องว่าง · ไม่คิดบิลรอบนี้\".",
+   "expected_behavior": "Bill the tenancy overlapping the cycle; if two tenancies overlap, flag for a split (or require a move-out reading per WEB-016).",
+   "steps_to_reproduce": [
+    "In ?mock, Rooms → 101 → edit tenant → ย้ายออก with date 20 Oct",
+    "Confirm October readings for 101",
+    "Bills → October → 101 shows ห้องว่าง and no bill"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "logic.js:114-115 tenancyOn(date); logic.js:151 tenancy = tenancyOn(..., range.to); :171 state 'vacant' when null. State agent verified by script."
+   },
+   "root_cause": "Tenancy resolved at a single instant instead of by overlap with the billing range.",
+   "recommended_fix": "Find tenancies overlapping (range.from, range.to]; if exactly one, bill it; if several, mark 'blocked' with reason 'มีผู้เช่าย้ายเข้า/ออกกลางรอบ · ต้องแยกบิล' and offer a split based on move-out readings.",
+   "acceptance_criteria": [
+    "Move-out on 20 Oct yields an October bill for the departing tenant",
+    "Move-out + move-in in one cycle is flagged, not silently assigned",
+    "Unit tests added"
+   ],
+   "engineering_effort": "M"
+  },
+  {
+   "id": "WEB-008",
+   "title": "Emailed total and PromptPay QR ignore partial payments",
+   "category": "state",
+   "severity": "HIGH",
+   "priority": "P1",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "state"
+   ],
+   "page": "Bills → send/resend email",
+   "route": "/ (page=bills)",
+   "component": "supabase/functions/send-invoices (index.ts, template.ts)",
+   "viewport": "all",
+   "user_journey": "Tenant pays ฿500 of ฿997 → owner resends the bill (or issues a revision)",
+   "description": "send-invoices builds the QR from inv.total_baht and the template prints the full total; non-voided payments are not subtracted.",
+   "user_impact": "Tenant is asked (and the QR pre-fills) the full amount again → overpayment and disputes.",
+   "actual_behavior": "Approve ฿997, record ฿500, resend → email and QR request ฿997.",
+   "expected_behavior": "Email shows total, paid, and balance ฿497; QR encodes ฿497 (or no QR when fully paid).",
+   "steps_to_reproduce": [
+    "Approve a ฿997 bill",
+    "Record a ฿500 payment",
+    "Click ส่งซ้ำ for that room",
+    "Inspect the email: total and QR = ฿997"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "send-invoices/index.ts:44 promptpayPayload(promptpay, Number(inv.total_baht)); payments not queried."
+   },
+   "root_cause": "Email pipeline unaware of payments table.",
+   "recommended_fix": "In send-invoices, sum non-voided payments for the invoice (and prior revisions of the same cycle/room), render total/paid/balance, and build the QR for the balance; skip QR when balance ≤ 0.",
+   "acceptance_criteria": [
+    "Resend after partial payment shows balance and QR for the balance",
+    "Fully paid bill email has no payable QR"
+   ],
+   "engineering_effort": "S"
+  },
+  {
+   "id": "WEB-009",
+   "title": "Editing or reopening a reading after its bill is approved gives weak or no warning; the next cycle is never checked",
+   "category": "user_journey",
+   "severity": "HIGH",
+   "priority": "P1",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "real_user",
+    "state"
+   ],
+   "page": "Review (ยืนยันค่ามิเตอร์)",
+   "route": "/ (page=review)",
+   "component": "submitConfirm (edit path), reopenReading",
+   "viewport": "all",
+   "user_journey": "Owner corrects 101 water to 1,250 after October was approved",
+   "description": "The edit path only toasts \"แก้และยืนยัน 1,250 แล้ว\". reopenReading warns only about the reading's own cycle, but reopening/correcting cycle N's last reading also changes N+1's base (see WEB-003). Bills only show a small \"ข้อมูลเปลี่ยน\" chip.",
+   "user_impact": "Owner can leave a stale approved bill in place or shift the next cycle's base without realising; money errors carry across cycles.",
+   "actual_behavior": "Toast only; no prompt to issue a revision; no N+1 check.",
+   "expected_behavior": "After the save: \"บิลห้อง 101 รอบตุลาคม อนุมัติแล้ว · ไปออกฉบับแก้ไข\" with a link; Bills banner/filter \"ต้องออกฉบับแก้ไข\"; revision confirm shows old→new (฿997 → ฿1,105, +฿108); reopen also checks N+1 approved invoice.",
+   "steps_to_reproduce": [
+    "In ?mock approve room 101 for October",
+    "Review → open 101 water confirmed reading → แก้ค่า → 1,250 + reason → save",
+    "Only a toast appears; Bills shows a small chip",
+    "Reopen the last confirmed September reading of a room whose October bill is approved: no warning"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "app.js:563-564 submitConfirm toast only; app.js:581-583 reopen checks inv for cyc of the reading only."
+   },
+   "root_cause": "No shared 'affected approved invoices' check for post-approval data changes.",
+   "recommended_fix": "Add L.affectedInvoices(reading) returning approved invoices for the reading's cycle and the next cycle; use it in submitConfirm (decided path), reopen, assign, fixStart and retire to show a warning + link to revise; add a 'ต้องออกฉบับแก้ไข' bills filter and show old→new delta in the revision confirm.",
+   "acceptance_criteria": [
+    "Correcting an approved-cycle reading shows a warning with a link to the bill",
+    "Reopen warns when N or N+1 has an approved invoice",
+    "Revision confirm displays old total, new total and delta"
+   ],
+   "engineering_effort": "S"
+  },
+  {
+   "id": "WEB-010",
+   "title": "Date fields default to today instead of the selected cycle (manual reading time, rate effective date)",
+   "category": "user_journey",
+   "severity": "HIGH",
+   "priority": "P1",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "real_user"
+   ],
+   "page": "Rooms → กรอกเอง modal; Settings → เพิ่มอัตราใหม่",
+   "route": "/ (page=rooms, page=settings)",
+   "component": "showManualForm, rate form",
+   "viewport": "all",
+   "user_journey": "On 5 Oct, owner catches up September: enters a manual reading for 105 and adds the missing rate from the Sept 'ยังไม่ตั้งอัตรา' chip",
+   "description": "The manual reading's datetime defaults to now, so a September catch-up reading lands in October. The rate form defaults effective_from to today, and rateOn uses range.to, so a rate dated 5 Oct never applies to September; rates are append-only so the mistake is permanent (only overridable by another rate).",
+   "user_impact": "Wrong-cycle readings and permanently mis-dated rates; September bills remain blocked with no obvious reason.",
+   "actual_behavior": "Manual reading for 105 counted in October; Sept bill still \"ยังไม่ยืนยันค่าน้ำ\". Rate dated 5 Oct; Sept still \"ยังไม่ตั้งอัตรา\".",
+   "expected_behavior": "Defaults follow the selected cycle (manual time ≤ that cycle's cutoff; rate effective = first day of the selected cycle), with a live hint \"จะเข้ารอบ: กันยายน 2569\" / \"ใช้กับบิลรอบ …\".",
+   "steps_to_reproduce": [
+    "In ?mock select cycle กันยายน 2569",
+    "Rooms → 105 → กรอกเอง → enter value + reason, keep default time → save",
+    "Bills September: 105 still missing water; reading appears in October",
+    "Settings → เพิ่มอัตราใหม่ with default date → September still has no rate"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "app.js:597 datetime-local value=${nowBkk}; app.js:1048 effective_from value=${today}; logic.js:110-112 rateOn(…, range.to); app.js:1090 confirm says append-only."
+   },
+   "root_cause": "Forms use wall-clock today instead of state.cycle context.",
+   "recommended_fix": "Derive defaults from state.cycle (cycle range) and show a computed 'จะเข้ารอบ …' / 'ใช้กับบิลรอบ …' line that updates on input; rate confirm states the first cycle it affects.",
+   "acceptance_criteria": [
+    "With September selected, manual form defaults inside September's range",
+    "Rate form defaults to the selected cycle start and shows which cycle it affects",
+    "Hint updates as the date changes"
+   ],
+   "engineering_effort": "S"
+  },
+  {
+   "id": "WEB-011",
+   "title": "Bills can be approved and emailed before the cycle's cutoff date without any warning (happened in production)",
+   "category": "user_journey",
+   "severity": "HIGH",
+   "priority": "P1",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "launch"
+   ],
+   "page": "Bills",
+   "route": "/ (page=bills)",
+   "component": "approveBills; approve_invoices RPC",
+   "viewport": "all",
+   "user_journey": "Owner approves October on 2 Oct (cutoff 31 Oct) and emails it",
+   "description": "Neither approveBills nor approve_invoices compares today with the cycle's range.to. Live invoices 7 (A102) and 8 (A103) were approved on 2 Oct for a cycle ending 31 Oct and emailed.",
+   "user_impact": "Bills sent on partial-month data; later readings make them stale and require revisions and re-sends to tenants.",
+   "actual_behavior": "Approve-all accepted on 2 Oct; emails sent.",
+   "expected_behavior": "Confirm \"รอบตุลาคมยังไม่ถึงวันตัด (31 ต.ค.) · อนุมัติก่อนกำหนด?\"; optionally server rejects when current_date < p_cutoff unless an override flag is set.",
+   "steps_to_reproduce": [
+    "Select the current cycle before its cutoff",
+    "Bills → อนุมัติทั้งหมด → confirm",
+    "Approval succeeds with no pre-cutoff warning"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "Launch DB check: invoices 7/8 cycle 2026-10 approved 2026-10-02, cutoff 2026-10-31. migrations/20261003000100_invoices.sql:59-80 has no date check."
+   },
+   "root_cause": "No cycle-closed check on approval.",
+   "recommended_fix": "In approveBills, if todayBkk < range.to add an explicit pre-cutoff warning line; in approve_invoices accept p_early boolean and raise unless set when current_date < p_cutoff.",
+   "acceptance_criteria": [
+    "Approving before cutoff requires an explicit early-approval confirmation",
+    "RPC rejects early approval without the flag"
+   ],
+   "engineering_effort": "S"
+  },
+  {
+   "id": "WEB-012",
+   "title": "Tenant email changed after approval: bill email still goes to the old recipient",
+   "category": "user_journey",
+   "severity": "HIGH",
+   "priority": "P1",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "real_user"
+   ],
+   "page": "Rooms (tenant edit) → Bills (send email)",
+   "route": "/ (page=rooms, page=bills)",
+   "component": "invoice recipient_email snapshot; sendBills",
+   "viewport": "all",
+   "user_journey": "Owner fixes a typo in 102's email after approving → clicks ส่งอีเมล",
+   "description": "recipient_email is frozen at approval (append-only by design). After editing the tenant email, \"ส่งอีเมล 5 ฉบับ\" still sends to the old address; the only signal is a small \"ข้อมูลเปลี่ยน\" chip.",
+   "user_impact": "Bills (with tenant name, amounts, PromptPay QR) are sent to a wrong/old address — both a collection failure and a privacy leak.",
+   "actual_behavior": "Email sent to sakchai@example.com (old) after changing it.",
+   "expected_behavior": "Before sending: \"1 ห้องข้อมูลเปลี่ยน (อีเมลผู้รับ) · ออกฉบับแก้ไขก่อนส่ง?\" and block sending to the stale address unless confirmed.",
+   "steps_to_reproduce": [
+    "In ?mock approve room 102",
+    "Rooms → 102 → edit tenant email → save",
+    "Bills → ส่งอีเมล → email goes to the previous address"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "Real-user agent (mock, emails stubbed). Invoice columns recipient_email set in approve_invoices (migrations/20261003000100_invoices.sql:74)."
+   },
+   "root_cause": "Recipient is part of the frozen invoice snapshot, and the send flow doesn't compare it with the current tenancy email.",
+   "recommended_fix": "In the send confirm, list rooms whose current tenancy email ≠ invoice recipient_email and offer 'ออกฉบับแก้ไขแล้วส่ง' (recommended) or 'ส่งตามที่อนุมัติ'; never silently send to the stale address.",
+   "acceptance_criteria": [
+    "Send flow detects recipient mismatch and requires a choice",
+    "Choosing revise-then-send emails the new address"
+   ],
+   "engineering_effort": "M"
+  },
+  {
+   "id": "WEB-013",
+   "title": "No anomaly warning for implausible usage before approval",
+   "category": "user_journey",
+   "severity": "HIGH",
+   "priority": "P1",
+   "launch_blocker": false,
+   "confidence": "medium",
+   "found_by": [
+    "real_user"
+   ],
+   "page": "Review, Bills",
+   "route": "/ (page=review, page=bills)",
+   "component": "L.readingFlags, billPreview",
+   "viewport": "all",
+   "user_journey": "Owner binds an unbound reading to 106 → 377 water units (~฿6.8k) → approves",
+   "description": "Units far above the room's history (or a first bill from base 0) are not flagged. The live A102/A103 incident (1,234 units from start 0) is exactly this failure mode; w47 adds a zero-base-specific warning but not a general one.",
+   "user_impact": "Order-of-magnitude billing errors pass review and reach tenants.",
+   "actual_behavior": "377 units shown without any flag.",
+   "expected_behavior": "Flag \"ใช้มากผิดปกติ (377 หน่วย ปกติ ~12)\" on review and bill when units > 3× the room's recent average (or > absolute cap when no history).",
+   "steps_to_reproduce": [
+    "In ?mock, Review → pick an unbound reading → ผูก to a 106 meter → confirm",
+    "Bills → 106: 377 water units with no warning"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "Real-user agent (mock). No usage-ratio flag in logic.js readingFlags/billPreview."
+   },
+   "root_cause": "Flags only cover below-prev/low-confidence/unreadable/clock, not magnitude.",
+   "recommended_fix": "Add a 'high_usage' flag: compare units to the median of the room's last 3 approved invoices (fallback: per-type cap, e.g. 100 water / 500 electric units) and require a reason to confirm; surface it as a bill reason before approval.",
+   "acceptance_criteria": [
+    "Reading producing > 3× typical units shows a warning and requires a reason",
+    "Bill modal lists the anomaly before approval",
+    "Unit tests for flag thresholds"
+   ],
+   "engineering_effort": "S"
+  },
+  {
+   "id": "WEB-014",
+   "title": "Auto-advance after confirm jumps to the top of the queue and a double-click confirms the next reading unseen",
+   "category": "user_journey",
+   "severity": "HIGH",
+   "priority": "P1",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "design",
+    "real_user"
+   ],
+   "page": "Review",
+   "route": "/ (page=review)",
+   "component": "submitConfirm / rejectReading auto-advance",
+   "viewport": "all",
+   "user_journey": "Owner confirms readings quickly in sequence",
+   "description": "After confirming, selection moves to the first item of the re-sorted queue other than the current one (often an unbound \"ไม่ระบุห้อง\" item), not the next item. Because the next detail renders under the same pointer immediately, a double-click on ยืนยันค่า confirms ไฟ 104 right after น้ำ 104 without the owner seeing it.",
+   "user_impact": "Readings confirmed without review (money input); disorienting jumps slow down review.",
+   "actual_behavior": "Double-click on ยืนยันค่า (น้ำ 104) also confirms ไฟ 104; after a single confirm, selection often jumps to an unconfirmable item.",
+   "expected_behavior": "Advance to the item at the same queue index; ignore submit clicks for ~600 ms after an auto-advance and move focus to the new detail header.",
+   "steps_to_reproduce": [
+    "In ?mock, Review → select น้ำ 104",
+    "Double-click ยืนยันค่า",
+    "Both น้ำ 104 and ไฟ 104 are confirmed (toast twice)"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "app.js:563 next = reviewQueue(...).find(id => id !== r.id) — first in queue, not next; app.js:572 same for reject."
+   },
+   "root_cause": "Auto-advance picks queue head; no input guard after re-render.",
+   "recommended_fix": "Compute the current index before the write and select queue[min(idx, len-1)] afterwards; set a short 'justAdvanced' guard that disables the primary button for 600 ms and focus the new detail heading.",
+   "acceptance_criteria": [
+    "Double-click confirms exactly one reading",
+    "After confirm, the next item in list order is selected"
+   ],
+   "engineering_effort": "S"
+  },
+  {
+   "id": "WEB-015",
+   "title": "Critical flows use native prompt()/confirm() (14 call sites): ISO dates, text keyboards, no validation UI",
+   "category": "design",
+   "severity": "HIGH",
+   "priority": "P1",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "design",
+    "mobile",
+    "real_user"
+   ],
+   "page": "Review, Bills, Rooms, Settings",
+   "route": "/",
+   "component": "rejectReading, reopenReading, assign, approveBills, sendBills, addPayment, voidPayment, moveOut, addMeter, fixStart, retireMeter, addRate, signOut",
+   "viewport": "all (worst on mobile)",
+   "user_journey": "Owner rejects a reading, approves bills, voids a payment, moves a tenant out, retires a meter",
+   "description": "Consequential actions use browser prompt()/confirm(): dates must be typed as YYYY-MM-DD (UI elsewhere uses Buddhist-era dates), numbers use a text keyboard, there is no inline validation, Enter-Enter can complete a multi-step flow, and the approve-all confirm shows only \"อนุมัติบิล 5 ห้อง ฿3,926\" without listing rooms or which were skipped. Dialogs break the glass UI and look like browser/system prompts.",
+   "user_impact": "Typing \"31/10/2569\" fails with \"วันที่ไม่ถูกต้อง\"; irreversible actions completed by reflexive Enter; owner can't see what will be approved.",
+   "actual_behavior": "14 prompt/confirm calls in the working tree (12 in deployed HEAD).",
+   "expected_behavior": "A shared in-app modal (confirm / reason / date / number) with type=date, inputmode=decimal, inline errors, a clear danger confirm, and room lists for bulk actions.",
+   "steps_to_reproduce": [
+    "Rooms → tenant edit → ย้ายออก → type 31/10/2569 → error toast",
+    "Rooms → meter ปลด → press Enter twice → meter retired",
+    "Bills → อนุมัติทั้งหมด → confirm shows only count and sum"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "app.js prompt/confirm at :570, :584, :621, :669, :783, :803, :809, :962, :974, :982, :992, :995, :1090, :1158. moveOut regex check app.js:963."
+   },
+   "root_cause": "Dialogs implemented with browser primitives for speed.",
+   "recommended_fix": "Build openDialog({title, body, fields:[{type:'date'|'number'|'text', …}], danger, confirmText}) on top of openModal returning a Promise; migrate the 14 sites, starting with move-out, retire, void payment, approve (list rooms + skipped/blocked + no-email).",
+   "acceptance_criteria": [
+    "No prompt()/confirm() in app.js (except optional sign-out)",
+    "Date fields use a date picker; numbers use inputmode=decimal",
+    "Approve confirm lists rooms to approve and rooms skipped"
+   ],
+   "engineering_effort": "M"
+  },
+  {
+   "id": "WEB-016",
+   "title": "Move-out and meter retirement flows lack a final reading, final confirmation and undo",
+   "category": "user_journey",
+   "severity": "HIGH",
+   "priority": "P1",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "real_user",
+    "design"
+   ],
+   "page": "Rooms (tenant edit, meter tile)",
+   "route": "/ (page=rooms)",
+   "component": "moveOut, retireMeter, tenant edit form",
+   "viewport": "all",
+   "user_journey": "Tenant leaves / meter replaced",
+   "description": "ย้ายออก is hidden inside tenant edit mode next to ยกเลิก; it records only an end date — no final meter readings — and has no undo (tenant moves to \"ผู้เช่าก่อนหน้า\"). ปลด takes two prompts (date, end value) with no final confirm and no un-retire; a blank end value is accepted, which combined with WEB-002/WEB-007 decides how much is billed.",
+   "user_impact": "Final bills are under- or un-billed and mistakes cannot be reversed from the UI.",
+   "actual_behavior": "Two prompts complete an irreversible retire; move-out writes end_date only.",
+   "expected_behavior": "A 'ย้ายออก' / 'เปลี่ยน/ถอดมิเตอร์' lifecycle modal: date picker, final reading per active meter (required for billing), optional new-meter creation, explicit \"แก้กลับไม่ได้\" confirm, placed outside edit mode.",
+   "steps_to_reproduce": [
+    "In ?mock Rooms → 101 → edit tenant → ย้ายออก → accept default date",
+    "No meter reading requested; tenant moved to history; no undo",
+    "Meter tile → ปลด → Enter, Enter → retired with no end value"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "app.js:960-965 moveOut; app.js:990-1000 retireMeter prompts; design: ย้ายออก only in tenant edit mode."
+   },
+   "root_cause": "Lifecycle events modelled as single-field updates.",
+   "recommended_fix": "Implement lifecycle modals (depends on the dialog component from WEB-015): capture final readings as manual confirmed readings at the move-out/retire timestamp, require end value for retire, and add an owner-only 'undo within same day' for end_date/retired_at when no invoice references them.",
+   "acceptance_criteria": [
+    "Move-out requires final readings for each active meter",
+    "Retire requires end value ≥ last confirmed",
+    "Both flows have an explicit irreversible confirm and live outside edit mode"
+   ],
+   "engineering_effort": "M"
+  },
+  {
+   "id": "WEB-017",
+   "title": "Busy-state UI not reset: reject/reopen buttons stay disabled and stale spinners linger after writes",
+   "category": "state",
+   "severity": "MEDIUM",
+   "priority": "P1",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "state",
+    "real_user"
+   ],
+   "page": "Review, Settings",
+   "route": "/ (page=review)",
+   "component": "write(), render(), is-busy handling, toggleRent",
+   "viewport": "all",
+   "user_journey": "Owner confirms a reading then wants to undo it immediately",
+   "description": "write() calls reload()→render() while state.busy is still true, so buttons rendered with `${state.busy ? 'disabled' : ''}` (ปฏิเสธ, ยกเลิกการยืนยัน, ดึงกลับมาตรวจ) stay disabled until the next render. .is-busy is added on submit but not cleared on the submit path or after a cancelled confirm(), so later saves spin two buttons. toggleRent while busy desyncs the checkbox.",
+   "user_impact": "Undo looks unavailable right after a confirm; spinners on unrelated buttons suggest work in progress.",
+   "actual_behavior": "\"ยกเลิกการยืนยัน\" disabled after confirm until page change.",
+   "expected_behavior": "Buttons re-enable when the write finishes; only the clicked button spins.",
+   "steps_to_reproduce": [
+    "Review → confirm a reading (or assign one)",
+    "Stay on the detail: ยกเลิกการยืนยัน / ปฏิเสธ remain disabled"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "app.js:81 busy=true; :86 reload() renders; :96 busy=false without re-render; disabled templates :520, :522, :526; is-busy add :1219, :1254, clear only :1218."
+   },
+   "root_cause": "Render-time disabled state derived from a flag that is cleared after rendering.",
+   "recommended_fix": "Drop `state.busy ? 'disabled'` from templates and rely on body.busy CSS (pointer-events/opacity), or call render() in finally; clear .is-busy in write()'s finally and when confirm() is cancelled; ignore toggleRent while busy and restore the checkbox.",
+   "acceptance_criteria": [
+    "After any write, reopen/reject are enabled without navigation",
+    "No .is-busy elements remain after a write or cancelled dialog"
+   ],
+   "engineering_effort": "XS"
+  },
+  {
+   "id": "WEB-018",
+   "title": "Bill modal shows stale balance after a failed (or partially successful) write",
+   "category": "state",
+   "severity": "MEDIUM",
+   "priority": "P1",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "state"
+   ],
+   "page": "Bill modal",
+   "route": "/ (bill modal)",
+   "component": "write() catch path; keepTyped; showBill",
+   "viewport": "all",
+   "user_journey": "Payment save errors; owner looks at the modal to decide whether to retry",
+   "description": "On error, write() reloads and re-renders only #page-content; the open bill modal is not rebuilt, so it keeps showing the pre-write balance (\"ค้าง ฿997\") even when the row was inserted. This amplifies WEB-004.",
+   "user_impact": "Owner retries based on stale information.",
+   "actual_behavior": "Modal unchanged after failed-but-inserted payment.",
+   "expected_behavior": "Any reload re-renders the open bill modal from fresh data.",
+   "steps_to_reproduce": [
+    "Open a bill, record a payment while forcing reload failure (see WEB-004)",
+    "Modal still shows the old balance"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "app.js:91-93 catch → keepTyped(); reload(); typed(); no showBill re-run."
+   },
+   "root_cause": "Modal content is not part of render().",
+   "recommended_fix": "Track state.modal = {kind:'bill', room}; after every reload, re-run showBill(room) if that modal is open (preserving typed payment fields).",
+   "acceptance_criteria": [
+    "After any write (success or failure) the open bill modal reflects DB state"
+   ],
+   "engineering_effort": "S"
+  },
+  {
+   "id": "WEB-019",
+   "title": "Guest mode is a half-locked owner UI: write dialogs are reachable and fail at the end; disabled inputs have no explanation",
+   "category": "state",
+   "severity": "MEDIUM",
+   "priority": "P1",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "state",
+    "design"
+   ],
+   "page": "Review, Rooms, Settings (Guest)",
+   "route": "/ (guest session)",
+   "component": "lockForGuest()",
+   "viewport": "all",
+   "user_journey": "Judge explores Guest and taps ปลด / กรอกเอง / แก้ค่าเริ่ม",
+   "description": "lockForGuest disables only form controls inside #page-content. Action buttons (retire, fix-start, manual-read, edit) and modal forms stay enabled: \"ปลด\" walks through two prompts and then fails with the guest toast. The review page shows greyed-out selects/inputs with no read-only explanation.",
+   "user_impact": "Judges hit dead ends and broken-looking controls in the showcase path.",
+   "actual_behavior": "Guest can open write dialogs; failure only at write().",
+   "expected_behavior": "Write actions hidden (or visibly disabled with a 'ดูอย่างเดียว' tooltip) for Guest; review shows a read-only summary instead of disabled forms.",
+   "steps_to_reproduce": [
+    "Guest → Rooms → 101 → meter ปลด → two prompts → toast 'โหมดผู้ชม · ดูได้อย่างเดียว'",
+    "Guest → Review → disabled inputs with no explanation"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "app.js:238-240 lockForGuest scope '#page-content form …'; write() guest check app.js:79."
+   },
+   "root_cause": "Guest restriction applied post-render to forms only, not at the action layer.",
+   "recommended_fix": "Gate the click dispatcher: if state.guest and the action is in a WRITE_ACTIONS set, show the read-only toast before any prompt; render read-only views (no forms) for guests; add body.guest CSS hiding write buttons.",
+   "acceptance_criteria": [
+    "No prompt/modal opens for any write action in Guest",
+    "Review page in Guest shows values as text, not disabled inputs"
+   ],
+   "engineering_effort": "XS"
+  },
+  {
+   "id": "WEB-020",
+   "title": "Typed input is silently discarded (switching edit cards, backdrop tap/Esc on modals, page change)",
+   "category": "state",
+   "severity": "MEDIUM",
+   "priority": "P1",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "design",
+    "mobile",
+    "real_user"
+   ],
+   "page": "Settings, Rooms, manual-entry modal",
+   "route": "/ (page=settings, page=rooms)",
+   "component": "startEdit/stopEdit full re-render; modal backdrop close-modal; page navigation",
+   "viewport": "all",
+   "user_journey": "Owner types the dorm name, then clicks แก้ไข on PromptPay",
+   "description": "startEdit/stopEdit re-render the whole page, collapsing open <details> (e.g. เพิ่มอัตราใหม่) and dropping typed values with no warning. Tapping the modal backdrop or pressing Esc closes the manual-entry modal and loses the typed meter value. Changing page drops in-progress tenant edits.",
+   "user_impact": "Lost work and re-typing; risk of believing something was saved.",
+   "actual_behavior": "Dorm name typed then PromptPay แก้ไข → name lost; backdrop tap → manual value lost.",
+   "expected_behavior": "Dirty forms either preserved (keepTyped + <details open>) or a 'ทิ้งการแก้ไข?' confirm; backdrop/Esc ignored when the modal form is dirty.",
+   "steps_to_reproduce": [
+    "Settings → หอพัก แก้ไข → type a name",
+    "Click แก้ไข on the PromptPay card → name is gone",
+    "Rooms → กรอกเอง → type a value → tap outside the modal → modal closes, value lost"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "app.js:1122-1135 startEdit/stopEdit call render(); app.js:1109 backdrop data-action=close-modal; app.js:1220 close on backdrop click; keepTyped at app.js:102 only used in write() error path."
+   },
+   "root_cause": "Edit mode implemented as global re-render without dirty tracking.",
+   "recommended_fix": "Track dirty forms (input event sets form.dataset.dirty); in startEdit/page change, confirm discard or carry values via keepTyped and re-open <details>; in the close-modal handler skip backdrop/Esc close when the modal form is dirty.",
+   "acceptance_criteria": [
+    "Switching edit cards with unsaved text asks before discarding",
+    "Backdrop tap does not close a dirty modal",
+    "Open <details> stay open across re-render"
+   ],
+   "engineering_effort": "S"
+  },
+  {
+   "id": "WEB-021",
+   "title": "Mobile list→detail: detail header hidden under sticky top bar; nested scroll lists trap scrolling",
+   "category": "mobile",
+   "severity": "MEDIUM",
+   "priority": "P1",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "mobile"
+   ],
+   "page": "Review, Rooms",
+   "route": "/ (page=review, page=rooms)",
+   "component": ".review-detail, .rm-detail, .queue-list, .rm-items",
+   "viewport": "≤1000px",
+   "user_journey": "Owner on phone taps a queue item / room",
+   "description": "scrollIntoView({block:'start'}) lands the detail at top −6px under the 64px sticky top bar, hiding the room/meter ID (\"ห้อง 108\"). On phones .queue-list (250px for 6×91px items) and .rm-items (320px) are nested scroll areas that trap the page scroll.",
+   "user_impact": "Owner can't see which room/meter they are confirming without scrolling back; awkward scrolling.",
+   "actual_behavior": ".review-detail top −6px after tap; 2.7 queue items visible in a nested scroller.",
+   "expected_behavior": "Detail header fully visible below the top bar; lists flow in the page on mobile.",
+   "steps_to_reproduce": [
+    "Viewport 375×812, Review → tap a queue item → detail title hidden under the top bar",
+    "Rooms → tap a room → 'ห้อง 108' header hidden"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "app.js:1202 and :1208 scrollIntoView block:'start'; topbar 64px. Mobile agent measurements."
+   },
+   "root_cause": "No scroll-margin for sticky header; fixed max-heights reused on mobile.",
+   "recommended_fix": ".review-detail,.rm-detail,.map-detail{scroll-margin-top:76px}; @media (max-width:800px){.queue-list,.rm-items{max-height:none;overflow:visible}}.",
+   "acceptance_criteria": [
+    "After tapping an item at 375px the detail heading is fully visible",
+    "No nested scroll container in review/rooms at ≤800px"
+   ],
+   "engineering_effort": "XS"
+  },
+  {
+   "id": "WEB-022",
+   "title": "Breakpoints inconsistent: CSS 800px vs JS 1000px, no landscape-phone rule, safe areas inactive",
+   "category": "mobile",
+   "severity": "MEDIUM",
+   "priority": "P1",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "mobile"
+   ],
+   "page": "All pages; Review",
+   "route": "/",
+   "component": "theme.css / glass.css media queries; app.js matchMedia; viewport meta",
+   "viewport": "801–1000px; 812×375 landscape",
+   "user_journey": "Owner uses a tablet or turns the phone sideways",
+   "description": "Landscape phones (812×375) get the desktop sidebar (bottom bar only ≤800px): the sidebar scrolls internally and shows only \"หน้าหลัก\"; review overflows (scrollWidth 829 vs 812). At 801–1000px review stays two-column (3 comparison boxes ~70px, Thai wraps per word) while JS treats it as mobile and scrolls the page on each tap. env(safe-area-inset-*) is used but the viewport meta lacks viewport-fit=cover, so insets are 0 and landscape side insets are unhandled.",
+   "user_impact": "Navigation unreachable and cramped review on landscape phones/tablets.",
+   "actual_behavior": "Desktop sidebar at 812×375; two-column review at 860px.",
+   "expected_behavior": "Mobile shell for max-width:800px OR max-height:500px; review collapses ≤1000px; one shared breakpoint constant.",
+   "steps_to_reproduce": [
+    "Viewport 812×375 → sidebar shows only หน้าหลัก; Review scrolls horizontally",
+    "Viewport 860×1000 → Review is two narrow columns"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "theme.css:162 / glass.css:660 @media (max-width:800px); app.js:1182, :1202, :1208 matchMedia('(max-width: 1000px)'); app.js:1409 min-width:801px; index.html:5 viewport meta without viewport-fit=cover."
+   },
+   "root_cause": "No single breakpoint source; height not considered.",
+   "recommended_fix": "Define MOBILE_MQ = '(max-width:800px), (max-height:500px)' in JS and mirror in CSS; collapse .review-layout ≤1000px like .rm-layout/.map-layout; add viewport-fit=cover and left/right safe-area padding on .side-nav/topbar.",
+   "acceptance_criteria": [
+    "812×375 shows bottom nav and no horizontal overflow",
+    "860px review is single-column",
+    "JS and CSS breakpoints match"
+   ],
+   "engineering_effort": "S"
+  },
+  {
+   "id": "WEB-023",
+   "title": "Page scrolls behind open modals",
+   "category": "mobile",
+   "severity": "MEDIUM",
+   "priority": "P1",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "mobile"
+   ],
+   "page": "Any modal (bill, manual entry)",
+   "route": "/",
+   "component": "openModal / closeModal",
+   "viewport": "all (iOS worst)",
+   "user_journey": "Owner scrolls inside the bill modal on a phone",
+   "description": "Body overflow stays visible while a modal is open; wheel/touch scroll moves the page (0→500 observed) and iOS URL-bar collapse shifts the modal.",
+   "user_impact": "Disorienting; modal jumps on iOS.",
+   "actual_behavior": "Background scrolls with modal open.",
+   "expected_behavior": "Background locked; modal scroll contained.",
+   "steps_to_reproduce": [
+    "Open a bill modal",
+    "Scroll with wheel/touch outside the modal content → page scrolls behind"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "app.js:1105-1111 openModal sets no scroll lock; Mobile agent observed page scrollY 0→500."
+   },
+   "root_cause": "No scroll lock on modal open.",
+   "recommended_fix": "openModal adds html.modal-open{overflow:hidden}; closeModal removes it; .modal{overscroll-behavior:contain}.",
+   "acceptance_criteria": [
+    "With a modal open, page scrollY does not change on wheel/touch"
+   ],
+   "engineering_effort": "XS"
+  },
+  {
+   "id": "WEB-024",
+   "title": "Modals on small/short screens: keyboard covers fields, header/actions scroll away, manual-entry modal lacks a Cancel and buries its consequence text",
+   "category": "mobile",
+   "severity": "MEDIUM",
+   "priority": "P1",
+   "launch_blocker": false,
+   "confidence": "medium",
+   "found_by": [
+    "mobile",
+    "design"
+   ],
+   "page": "Manual-entry modal, bill modal",
+   "route": "/",
+   "component": ".modal, .modal-head, .modal-actions, showManualForm",
+   "viewport": "≤540px; landscape ≤500px height",
+   "user_journey": "Owner enters a meter value manually on a phone",
+   "description": "The centered modal at 375px spans y195–617 with save at y507; the autofocused value input opens a ~300px keyboard covering the reason field and save. In landscape the bill modal (scrollHeight 559 vs 336) scrolls its close button and actions out of view (max-height 90vh, static header). The manual modal has only × (no ยกเลิก), a small primary button, inline style, and the hint \"ค่าที่กรอกถูกยืนยันทันที\" sits below the button.",
+   "user_impact": "Hard to complete or cancel modal tasks on phones; consequence read after the click.",
+   "actual_behavior": "Reason/save covered by keyboard (estimated); close button at y−149 after scroll in landscape.",
+   "expected_behavior": "≤540px bottom-sheet/top-aligned modal with max-height 100dvh, sticky header and actions; manual form shows the consequence above normal-size ยกเลิก + บันทึกและยืนยัน.",
+   "steps_to_reproduce": [
+    "Viewport 375×812 → Rooms → กรอกเอง → keyboard opens over lower fields",
+    "Viewport 812×375 → open a bill → scroll → close button and actions off-screen"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "styles.css .modal max-height 90vh; app.js:594-600 manual modal markup (inline style font-size:12px, hint after the form). Keyboard overlap estimated (no real iOS device)."
+   },
+   "root_cause": "Desktop-centric modal layout.",
+   "recommended_fix": "@media (max-width:540px),(max-height:500px): align modal to top/bottom sheet, max-height:100dvh, position:sticky on .modal-head and .modal-actions; use visualViewport resize to keep the focused field visible; restructure manual form (hint first, ยกเลิก + primary).",
+   "acceptance_criteria": [
+    "At 375×812 with keyboard open, the focused field and save button are visible",
+    "At 812×375, close and actions remain visible while scrolling",
+    "Manual modal has an explicit ยกเลิก button"
+   ],
+   "engineering_effort": "S"
+  },
+  {
+   "id": "WEB-025",
+   "title": "Thai text rendered at 6–10px (status chips, eyebrows, kicker, progress caption, badges)",
+   "category": "accessibility",
+   "severity": "MEDIUM",
+   "priority": "P1",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "design",
+    "mobile"
+   ],
+   "page": "All pages",
+   "route": "/",
+   "component": ".status, .eyebrow, .hero-kicker, .progress-caption, .demo-badge, nav count",
+   "viewport": "all (worst on phones)",
+   "user_journey": "Owner scans statuses on a phone",
+   "description": ".status chips 10px, .eyebrow 9px, .hero-kicker 7–8px, .progress-caption 6–7px, demo badge 7–9px, nav count 8px. Thai tone marks and vowels above/below become illegible at these sizes.",
+   "user_impact": "Status information (the main thing the owner scans) is hard to read; fails readability expectations.",
+   "actual_behavior": "Chips at 10px; captions down to 6px.",
+   "expected_behavior": "≥12px for chips/body-small, ≥11px for caps/eyebrows.",
+   "steps_to_reproduce": [
+    "Open Home and Bills at 375px",
+    "Inspect .status / .progress-caption computed font-size"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "theme.css:120 .status 10px; theme.css:75 + ≤540 block .hero-kicker; theme.css:99 .progress-caption."
+   },
+   "root_cause": "No minimum type size token.",
+   "recommended_fix": "Introduce --fs-xs:12px/--fs-caps:11px and replace sub-11px sizes; let chips grow in height rather than shrink text.",
+   "acceptance_criteria": [
+    "No computed font-size < 11px on any page at 320–1440px"
+   ],
+   "engineering_effort": "XS"
+  },
+  {
+   "id": "WEB-026",
+   "title": "Returning to the app after month change hides that the previous cycle is still unbilled",
+   "category": "user_journey",
+   "severity": "MEDIUM",
+   "priority": "P1",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "real_user"
+   ],
+   "page": "Home",
+   "route": "/ (page=home)",
+   "component": "initial state.cycle selection; home attention list",
+   "viewport": "all",
+   "user_journey": "Owner opens ARIA on 5 Oct to bill September",
+   "description": "state.cycle defaults to the cycle containing today, so on 5 Oct the home shows October \"0 จาก 10\" with no mention that September bills are not issued; September is reachable only via the ‹ arrow.",
+   "user_impact": "Previous month's bills can be forgotten or issued late.",
+   "actual_behavior": "Lands on October; no cross-cycle prompt.",
+   "expected_behavior": "Banner \"รอบกันยายนยังออกบิลไม่ครบ 6 ห้อง → ไปรอบกันยายน\" (or default to the oldest open cycle).",
+   "steps_to_reproduce": [
+    "In ?mock with September unbilled, open the app in October",
+    "Home shows October only"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "app.js:73 state.cycle = cycleOfDate(todayBkk) at boot."
+   },
+   "root_cause": "No 'open previous cycle' detection.",
+   "recommended_fix": "On load, compute the previous cycle's bill states; if any ready/blocked rooms lack approved invoices, show a top banner linking to it.",
+   "acceptance_criteria": [
+    "Unbilled previous cycle produces a home banner with a working link"
+   ],
+   "engineering_effort": "S"
+  },
+  {
+   "id": "WEB-027",
+   "title": "Supabase free-tier operations: no backups and possible auto-pause after inactivity",
+   "category": "reliability",
+   "severity": "MEDIUM",
+   "priority": "P1",
+   "launch_blocker": false,
+   "confidence": "medium",
+   "found_by": [
+    "launch"
+   ],
+   "page": "Backend",
+   "route": "",
+   "component": "Supabase project aria-mrc",
+   "viewport": "n/a",
+   "user_journey": "Judges open the site after a quiet week / DB incident",
+   "description": "Free tier has no downloadable backups or PITR (DB 13 MB) — invoices and payments are the only financial record. Free projects pause after ~7 days of inactivity; unclear whether the daily pg_net cron call to purge-crops counts as activity.",
+   "user_impact": "Paused project = app down during judging; data loss = lost billing history.",
+   "actual_behavior": "No backup routine; pause behavior unverified.",
+   "expected_behavior": "Weekly pg_dump/CSV export stored off-platform; verified keep-alive.",
+   "steps_to_reproduce": [
+    "Supabase dashboard → Database → Backups: none on free tier",
+    "Check project activity policy vs cron-only traffic"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "Launch: cron purge-crops-daily runs 20:30 UTC returning {\"purged\":0}; migrations/20261003000500_crop_purge.sql:46."
+   },
+   "root_cause": "Free-tier defaults.",
+   "recommended_fix": "Add a weekly pg_dump (or export of invoices/payments/readings) to the Pi or Drive; add a Pi daily heartbeat REST query; before judging, open the app to reset the inactivity timer.",
+   "acceptance_criteria": [
+    "A dated backup file exists from the last 7 days",
+    "Keep-alive verified (project not paused after 8 idle days)"
+   ],
+   "engineering_effort": "S"
+  },
+  {
+   "id": "WEB-028",
+   "title": "ปลด (retire, destructive) looks identical to and sits 10px from กรอกเอง on the meter tile",
+   "category": "design",
+   "severity": "MEDIUM",
+   "priority": "P2",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "design",
+    "mobile"
+   ],
+   "page": "Rooms → meter tile",
+   "route": "/ (page=rooms)",
+   "component": ".mt-retire buttons",
+   "viewport": "all (touch worst)",
+   "user_journey": "Owner taps กรอกเอง on a phone",
+   "description": "Both buttons share .mt-retire styling; only hover differs, which does nothing on touch; 10px gap.",
+   "user_impact": "Mis-tap starts an irreversible retire flow.",
+   "actual_behavior": "Identical neutral chips.",
+   "expected_behavior": "ปลด in danger tone at rest, separated or in an overflow menu.",
+   "steps_to_reproduce": [
+    "Rooms → any room → meter tile: กรอกเอง and ปลด look the same"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "app.js:903 both buttons class mt-retire; glass.css:489-491 hover-only difference."
+   },
+   "root_cause": "Shared class for routine and destructive actions.",
+   "recommended_fix": "Separate classes; ปลด → danger outline or '⋯' menu; ≥16px gap and ≥40px targets.",
+   "acceptance_criteria": [
+    "ปลด visually distinct at rest; not adjacent to กรอกเอง on touch"
+   ],
+   "engineering_effort": "XS"
+  },
+  {
+   "id": "WEB-029",
+   "title": "Contrast failures: white text on primary gradients and --faint text",
+   "category": "accessibility",
+   "severity": "MEDIUM",
+   "priority": "P2",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "design"
+   ],
+   "page": "All pages",
+   "route": "/",
+   "component": ".btn.primary gradient, --faint token, .queue-item focus ring",
+   "viewport": "all",
+   "user_journey": "Owner reads primary buttons/placeholders outdoors on a phone",
+   "description": "White 13–14px text on the primary gradient: purple 4.23:1 at #8b5cf6 → 3.46:1 at #d946ef; teal 4.24:1 → 3.46:1. --faint text ~3.8:1 (teal ~3.3:1). Also the .queue-item focus ring (outline-offset 2px) may be clipped by .queue-list overflow:auto.",
+   "user_impact": "Primary actions and empty values hard to read; WCAG AA fail.",
+   "actual_behavior": "Contrast 3.3–4.2:1 on small text.",
+   "expected_behavior": "≥4.5:1 for small text; visible focus ring.",
+   "steps_to_reproduce": [
+    "Measure .btn.primary text against gradient end stop",
+    "Tab through the review queue: ring partially clipped"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "glass.css:621 gradient; computed ratios from Design agent."
+   },
+   "root_cause": "Gradient end stops too light; faint token too dim.",
+   "recommended_fix": "Darken gradient end stops (both themes); --faint ≈ #b8acd8 and teal equivalent; .queue-item:focus-visible use inset outline.",
+   "acceptance_criteria": [
+    "All small text ≥ 4.5:1 in purple and teal themes",
+    "Queue item focus ring fully visible"
+   ],
+   "engineering_effort": "XS"
+  },
+  {
+   "id": "WEB-030",
+   "title": "Home page hierarchy: competing 'what next' signals, red 'todo' tones, room board buried on phones",
+   "category": "design",
+   "severity": "MEDIUM",
+   "priority": "P2",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "design",
+    "mobile"
+   ],
+   "page": "Home",
+   "route": "/ (page=home)",
+   "component": "hero, onboarding steps, cycle steps (.cs), attention list, floor plan",
+   "viewport": "all; ≤414px worst",
+   "user_journey": "Owner opens Home to see what to do",
+   "description": "Onboarding 1–5, cycle steps 1–4, a marketing hero CTA and ต้องดูก่อน all claim 'next'. Unstarted steps use error red (#fb7185), including \"ส่งบิล 0/0\"; step 2 gets todo+hot and .cs.todo wins (red icon, yellow number). At 375px the floor plan is at y2199 of 3181; at 320×640 the hero fills the first screen. The corridor label \"ทางเดิน\" uses vertical writing-mode, rotating Thai.",
+   "user_impact": "Unclear priority; neutral states read as errors; key board view needs long scrolling.",
+   "actual_behavior": "Four parallel progress systems; red for not-started.",
+   "expected_behavior": "One primary next step; neutral todo tone; board/attention near top on phones.",
+   "steps_to_reproduce": [
+    "Open Home at 375×812 on a fresh dataset",
+    "Observe red step icons and scroll distance to the floor plan"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "glass.css:282 .cs.todo; Mobile agent: floor plan y2199/3181 @375."
+   },
+   "root_cause": "Features added incrementally without a home information hierarchy.",
+   "recommended_fix": "Hide cycle steps while onboarding incomplete; neutral .todo, .hot overrides, 'off' when denominator 0; shrink hero on ≤540px and add a jump chip to the board; hide or replace the vertical corridor label on mobile.",
+   "acceptance_criteria": [
+    "Only one 'next' CTA visible at a time",
+    "No red tone for not-started states",
+    "Floor plan within 2 screens at 375px"
+   ],
+   "engineering_effort": "M"
+  },
+  {
+   "id": "WEB-031",
+   "title": "No URL/history state: refresh resets view, Back leaves the app, no way back to context",
+   "category": "state",
+   "severity": "MEDIUM",
+   "priority": "P2",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "state",
+    "real_user",
+    "design"
+   ],
+   "page": "All pages",
+   "route": "/",
+   "component": "router (none), signOut redirect",
+   "viewport": "all (Android Back worst)",
+   "user_journey": "Owner opens a confirmed reading from a room, then presses Back",
+   "description": "No pushState/popstate/hash: refresh loses page/cycle/selection/filter; browser/Android Back (even with a modal open) exits the app; opening a confirmed reading from Rooms has no back-to-room. signOut/expiry redirects to ?mock dropping ?mock=empty.",
+   "user_impact": "Lost context and accidental exits, especially on Android.",
+   "actual_behavior": "Back exits; refresh → Home.",
+   "expected_behavior": "Hash state (#page/cycle/sel); Back closes modal first, then returns to the previous view.",
+   "steps_to_reproduce": [
+    "Rooms → 101 → tap a reading chip → Review",
+    "Press Back → app exits instead of returning to room 101"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "No pushState/popstate in app.js; app.js:1168 and :1378 redirects."
+   },
+   "root_cause": "Single-page state held only in memory.",
+   "recommended_fix": "Encode {page, cycle, sel} in location.hash via history.pushState on navigation; popstate restores state and closes an open modal first; preserve query on sign-out redirect.",
+   "acceptance_criteria": [
+    "Refresh restores page, cycle and selection",
+    "Back with a modal open closes the modal",
+    "Back after room→reading returns to the room"
+   ],
+   "engineering_effort": "M"
+  },
+  {
+   "id": "WEB-032",
+   "title": "Stale data: no refresh on focus/other tabs; cycle fixed at boot",
+   "category": "state",
+   "severity": "MEDIUM",
+   "priority": "P2",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "state"
+   ],
+   "page": "All pages",
+   "route": "/",
+   "component": "reload() triggers; state.cycle init",
+   "viewport": "all",
+   "user_journey": "Owner leaves a tab open overnight across month end, then records a payment",
+   "description": "Data loads once; no visibilitychange/focus refresh, so approvals/payments from another device are invisible and the prefilled payment amount can be stale (overpay). state.cycle is set at boot, so a tab open across the month boundary stays on last month.",
+   "user_impact": "Decisions on stale balances; duplicate actions across devices.",
+   "actual_behavior": "No refresh until manual reload.",
+   "expected_behavior": "Reload on visibilitychange (throttled) and re-evaluate default cycle if the user hasn't changed it.",
+   "steps_to_reproduce": [
+    "Open the app in two tabs",
+    "Record a payment in tab A",
+    "Tab B still shows the old balance and prefilled amount"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "app.js:73 cycle set once; no visibilitychange handler."
+   },
+   "root_cause": "No refresh policy.",
+   "recommended_fix": "document.addEventListener('visibilitychange', …) → reload() if hidden > 60 s and not editing; optionally Supabase realtime on invoices/payments.",
+   "acceptance_criteria": [
+    "Returning to a tab after 60 s refreshes data without losing typed input"
+   ],
+   "engineering_effort": "S"
+  },
+  {
+   "id": "WEB-033",
+   "title": "Multi-meter invoices show a misleading single prev→curr (old meter prev, new meter curr)",
+   "category": "state",
+   "severity": "MEDIUM",
+   "priority": "P2",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "state"
+   ],
+   "page": "Bill modal, invoice email",
+   "route": "/ (bill modal)",
+   "component": "approveBills item mapping; email template",
+   "viewport": "all",
+   "user_journey": "Tenant reads the bill after a meter swap",
+   "description": "water_prev/water_curr take the first segment's base and the last segment's curr, e.g. \"5,000 → 30 = 80 units\" in the email.",
+   "user_impact": "Tenant sees arithmetic that doesn't add up → disputes.",
+   "actual_behavior": "\"5,000 → 30 = 80 หน่วย\".",
+   "expected_behavior": "Per-meter lines, or prev/curr null with segment list when >1 segment.",
+   "steps_to_reproduce": [
+    "Create a mid-cycle meter swap (see WEB-002)",
+    "Approve and preview the email"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "app.js:645 prev/curr mapping; template.ts single prev/curr line."
+   },
+   "root_cause": "Invoice columns model a single meter.",
+   "recommended_fix": "When segments > 1, set *_prev/*_curr null and render detail.segments lines in modal and email.",
+   "acceptance_criteria": [
+    "Swap invoice shows each meter's base→curr and units"
+   ],
+   "engineering_effort": "S"
+  },
+  {
+   "id": "WEB-034",
+   "title": "Developer jargon and English strings in owner/guest UI",
+   "category": "design",
+   "severity": "MEDIUM",
+   "priority": "P2",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "real_user",
+    "design"
+   ],
+   "page": "Review, Settings, Home, Login gate",
+   "route": "/",
+   "component": "copy",
+   "viewport": "all",
+   "user_journey": "Non-technical owner or judge reads the review page",
+   "description": "Review uses \"OCR (sevenseg)\", \"ข้อความดิบ\", \"หน่วยถ้ารับ OCR\", \"คนขับเลือก\", \"ผูก\", \"(ฐานข้อมูลบังคับ)\", \"รูปกำลังซิงก์จาก Pi\", \"SD ว่าง\", \"append-only\", \"ฐาน = ค่าตอนติดตั้ง\". English eyebrows (METER REVIEW, BILLING, PREFERENCES, REGISTRY, METER CAPTURE / THIS CYCLE); review subtitle exposes the sort algorithm; login/auth toasts in English (\"Welcome to ARIA\", \"Guest\", \"Signed in\", \"Signed out\"). \"รวมค่าเช่า\" off by default with cryptic \"ใช้เมื่อเปิดรวมค่าเช่า\".",
+   "user_impact": "Owner/judges must decode system internals; mixed-language chrome feels unfinished.",
+   "actual_behavior": "Internal terms and English labels visible.",
+   "expected_behavior": "Plain Thai: OCR → \"เลขที่หุ่นอ่านได้\"; หน่วยถ้ารับ OCR → \"หน่วยที่ใช้ (ถ้าใช้เลขนี้)\"; คนขับเลือก → \"ผู้ควบคุมหุ่นระบุ\"; ฐาน → \"เลขตั้งต้น\"; \"เข้าสู่ระบบด้วย Google\" / \"ดูตัวอย่าง (อ่านอย่างเดียว)\".",
+   "steps_to_reproduce": [
+    "Open Review and Settings; read labels",
+    "Open the login gate"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "app.js:509-512 comparison labels; :531 'คนขับกด “เก็บ”'; :529 '(ฐานข้อมูลบังคับ)'; :868 pageHead('REGISTRY', …)."
+   },
+   "root_cause": "Copy written by the developer for debugging.",
+   "recommended_fix": "One copy pass with a glossary; keep technical detail in a collapsed 'รายละเอียดทางเทคนิค'.",
+   "acceptance_criteria": [
+    "No English UI labels outside brand name",
+    "Glossary terms applied consistently"
+   ],
+   "engineering_effort": "S"
+  },
+  {
+   "id": "WEB-035",
+   "title": "Owner onboarding still needs developer steps (Gmail secrets, delete demo data via SQL, copy meters.json to the Pi)",
+   "category": "launch",
+   "severity": "MEDIUM",
+   "priority": "P2",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "real_user"
+   ],
+   "page": "Settings, Home banner, Rooms export",
+   "route": "/ (page=settings)",
+   "component": "Gmail guide, demo-data card, registry export",
+   "viewport": "all",
+   "user_journey": "A future non-technical owner sets up a dorm",
+   "description": "Accepted operator steps for this owner, but onboarding friction for others: Gmail requires Supabase Edge Function secrets; the home banner says demo data is \"ลบได้… ดูหน้าตั้งค่า\" but Settings shows only `select public.delete_demo_data();` (\"ตั้งใจไม่มีปุ่ม\") — a copy mismatch; export toast says \"นำไปวางที่ ~/mrc/data/ บน Pi\".",
+   "user_impact": "A non-technical owner cannot finish setup alone; the demo banner promise is misleading.",
+   "actual_behavior": "Three steps require Supabase/SSH access.",
+   "expected_behavior": "Either in-app actions or copy that says \"ให้ช่างตั้งให้ครั้งเดียว\" / \"ส่งไฟล์นี้ให้ผู้ดูแลหุ่น\".",
+   "steps_to_reproduce": [
+    "Home → demo banner → Settings: only SQL shown",
+    "Rooms → ส่งออกให้หุ่น → toast with Pi path"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "app.js:1064 delete_demo_data SQL; app.js:1074 Gmail guide; app.js:1012 export toast. Owner decision: operator steps accepted for this launch."
+   },
+   "root_cause": "Admin tasks not productised.",
+   "recommended_fix": "Short term: align banner copy with reality and label technical steps as one-time technician tasks. Later: owner-only delete-demo RPC button with confirm; Pi pulls meters.json from Supabase.",
+   "acceptance_criteria": [
+    "Demo banner copy matches what Settings offers",
+    "Technical steps explicitly labelled"
+   ],
+   "engineering_effort": "L"
+  },
+  {
+   "id": "WEB-036",
+   "title": "Email sending errors surface as raw technical messages (unconfigured Gmail, SMTP 550)",
+   "category": "user_journey",
+   "severity": "MEDIUM",
+   "priority": "P2",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "real_user"
+   ],
+   "page": "Bills",
+   "route": "/ (page=bills)",
+   "component": "sendBills; send-invoices error mapping",
+   "viewport": "all",
+   "user_journey": "Owner clicks ส่งอีเมล",
+   "description": "\"ส่งอีเมล 5 ฉบับ\" is enabled when Gmail secrets are missing and fails with \"บันทึกไม่สำเร็จ: ยังไม่ได้ตั้ง GMAIL_USER / GMAIL_APP_PASSWORD ใน Edge Function secrets\". A bounced address shows raw \"550 mailbox unavailable\". (Gmail is configured on live, so this affects new setups and bad addresses.)",
+   "user_impact": "Owner can't tell what to do next.",
+   "actual_behavior": "Enabled button → technical error; raw SMTP code.",
+   "expected_behavior": "Disabled with \"ยังส่งอีเมลไม่ได้ · ต้องตั้งอีเมลผู้ส่งก่อน (ตั้งค่า › อีเมล)\"; bounce → \"ส่งไม่ถึง · อีเมลผู้รับอาจผิด ตรวจอีเมลผู้เช่าแล้วกดส่งซ้ำ\".",
+   "steps_to_reproduce": [
+    "In ?mock without Gmail configured, Bills → ส่งอีเมล",
+    "Simulate a 550 bounce"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "Real-user agent (mock). friendlyError mapping lacks these cases."
+   },
+   "root_cause": "Mail status not used to gate the button; no SMTP error mapping.",
+   "recommended_fix": "Use loadMailStatus() to disable send with guidance; map SMTP 5xx to Thai guidance in friendlyError.",
+   "acceptance_criteria": [
+    "Send disabled with guidance when mail not configured",
+    "SMTP 550 shows Thai guidance"
+   ],
+   "engineering_effort": "S"
+  },
+  {
+   "id": "WEB-037",
+   "title": "fixStart: validation is client-only and changes have no reason/audit trail",
+   "category": "security",
+   "severity": "MEDIUM",
+   "priority": "P2",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "state",
+    "launch"
+   ],
+   "page": "Rooms → meter tile → แก้ค่าเริ่ม (pending w47)",
+   "route": "/ (page=rooms)",
+   "component": "fixStart; meters RLS",
+   "viewport": "all",
+   "user_journey": "Owner corrects a meter's start value after first bills",
+   "description": "The 'start ≤ first confirmed value' check exists only in the browser; RLS allows any start_value ≥ 0. No reason is captured and meters has no history table, yet start_value is the base of first bills.",
+   "user_impact": "Base of approved bills can change with no record of who/why; inconsistent values possible via API.",
+   "actual_behavior": "Single prompt, no reason, no log.",
+   "expected_behavior": "Reason required, change logged, DB-enforced bound.",
+   "steps_to_reproduce": [
+    "Rooms → meter → แก้ค่าเริ่ม → enter a value → saved with no reason",
+    "PATCH meters.start_value via REST above the first confirmed reading → accepted"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "app.js:979-988 fixStart; core_schema.sql:61 check (start_value >= 0) only."
+   },
+   "root_cause": "Meter edits not treated as auditable financial inputs.",
+   "recommended_fix": "Move to an RPC fix_meter_start(meter_id, value, reason) that validates against the first confirmed reading and inserts into meter_events; show history on the tile.",
+   "acceptance_criteria": [
+    "Start value change requires a reason and is listed in history",
+    "DB rejects start_value > first confirmed reading"
+   ],
+   "engineering_effort": "S"
+  },
+  {
+   "id": "WEB-038",
+   "title": "Migration history drift between repo and remote",
+   "category": "launch",
+   "severity": "MEDIUM",
+   "priority": "P2",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "launch"
+   ],
+   "page": "Backend",
+   "route": "",
+   "component": "aria/supabase/migrations",
+   "viewport": "n/a",
+   "user_journey": "Developer runs supabase db push",
+   "description": "Remote has 13 migrations with different version IDs (incl. invoices_guard_generated_cols, pg_net_to_extensions_schema folded into repo files); repo has 11. db push would treat all 11 local files as unapplied.",
+   "user_impact": "Risk of re-applying DDL to production or a failed deploy.",
+   "actual_behavior": "Versions mismatch.",
+   "expected_behavior": "Local files match remote versions (or documented manual-apply process).",
+   "steps_to_reproduce": [
+    "supabase migration list --linked → local/remote columns disagree"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "aria/supabase/migrations has 11 files; Launch listed 13 remote."
+   },
+   "root_cause": "Migrations applied via MCP/dashboard with new versions.",
+   "recommended_fix": "Rename local files to remote versions (or supabase migration repair) and add a README note.",
+   "acceptance_criteria": [
+    "supabase migration list shows no unapplied local migrations"
+   ],
+   "engineering_effort": "S"
+  },
+  {
+   "id": "WEB-039",
+   "title": "No client error monitoring",
+   "category": "reliability",
+   "severity": "MEDIUM",
+   "priority": "P2",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "launch"
+   ],
+   "page": "All pages",
+   "route": "/",
+   "component": "window.onerror / unhandledrejection",
+   "viewport": "all",
+   "user_journey": "An owner hits a JS error on their phone",
+   "description": "No window.onerror/unhandledrejection reporting; failures are only visible if the owner reports them. Edge function logs are clean (48 h) and cron runs OK.",
+   "user_impact": "Silent failures in money flows go unnoticed.",
+   "actual_behavior": "No telemetry.",
+   "expected_behavior": "Errors logged to a client_errors table (owner/guest, page, message, stack).",
+   "steps_to_reproduce": [
+    "grep app.js for onerror/unhandledrejection → none (only image onerror)"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "app.js:204 only image onload/onerror."
+   },
+   "root_cause": "Not implemented.",
+   "recommended_fix": "Insert-only client_errors table with RLS (authenticated insert), throttled reporter in app.js.",
+   "acceptance_criteria": [
+    "A thrown test error appears in client_errors"
+   ],
+   "engineering_effort": "S"
+  },
+  {
+   "id": "WEB-040",
+   "title": "approve_invoices trusts client-computed units, rates and segments",
+   "category": "security",
+   "severity": "MEDIUM",
+   "priority": "P2",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "launch"
+   ],
+   "page": "Bills",
+   "route": "/ (page=bills)",
+   "component": "approve_invoices RPC",
+   "viewport": "n/a",
+   "user_journey": "Owner approves bills",
+   "description": "Amounts are generated in the DB from units×rate, but units, rates, prev/curr and detail come from the browser (owner-only). A client bug (e.g. WEB-002/003) is frozen into invoices with no server cross-check.",
+   "user_impact": "Defense-in-depth gap for money correctness.",
+   "actual_behavior": "RPC inserts client values verbatim.",
+   "expected_behavior": "Server recomputes or at least verifies units/rates from readings, meters and rates.",
+   "steps_to_reproduce": [
+    "Call approve_invoices with arbitrary water_units as owner → accepted"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "migrations/20261003000100_invoices.sql:72-77."
+   },
+   "root_cause": "Billing logic lives only in logic.js.",
+   "recommended_fix": "Port typeUsage/rateOn to SQL and verify (reject on mismatch) in approve_invoices; reuse for N+1 base pinning.",
+   "acceptance_criteria": [
+    "RPC rejects items whose units/rate differ from server computation"
+   ],
+   "engineering_effort": "M"
+  },
+  {
+   "id": "WEB-041",
+   "title": "Unbound-reading detail: two primary buttons, 'ยังไม่ผูกมิเตอร์' repeated 4×, empty bind dropdown with no reason",
+   "category": "design",
+   "severity": "MEDIUM",
+   "priority": "P2",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "design",
+    "real_user"
+   ],
+   "page": "Review (unbound reading)",
+   "route": "/ (page=review)",
+   "component": "reviewDetail assign-form / confirm-form",
+   "viewport": "all",
+   "user_journey": "Owner opens a reading the robot could not attribute",
+   "description": "ผูก and a disabled gradient ยืนยันค่า (opacity .45) both look primary; the message appears in the chip, comparison hint, alert and fine print. On a new DB the bind dropdown can be empty because candidate meters are filtered by install date with no explanation (meter W-201-01 installed 5 Oct, reading 20 Sep).",
+   "user_impact": "Unclear next action; dead end when no candidates.",
+   "actual_behavior": "Duplicate messaging; empty select.",
+   "expected_behavior": "Single explanatory alert above the bind form; only ผูก primary until bound; empty state \"ไม่มีมิเตอร์ที่ติดตั้งก่อน 20 ก.ย. · แก้วันติดตั้งของมิเตอร์ หรือปฏิเสธค่านี้\".",
+   "steps_to_reproduce": [
+    "Review → select an unbound reading",
+    "?mock=empty: add a meter installed today, open an older unbound reading → empty dropdown"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "app.js:502-503 candidates filtered by meterActiveOn(captured_at); :505, :510, :529 repeated messages; :526 disabled primary."
+   },
+   "root_cause": "States layered without consolidation.",
+   "recommended_fix": "Hide the confirm row until bound; one alert; explicit empty-candidate message with links.",
+   "acceptance_criteria": [
+    "Unbound detail shows one primary action and one message",
+    "Empty candidate list explains why"
+   ],
+   "engineering_effort": "S"
+  },
+  {
+   "id": "WEB-042",
+   "title": "Onboarding progress marks steps done from defaults; weak validation on setup forms",
+   "category": "user_journey",
+   "severity": "MEDIUM",
+   "priority": "P2",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "real_user"
+   ],
+   "page": "Home onboarding, Rooms",
+   "route": "/ (page=home)",
+   "component": "onboarding steps; add-meter form; tenant email",
+   "viewport": "all",
+   "user_journey": "New owner follows the 1–5 checklist on an empty DB",
+   "description": "Steps are ticked from defaults (\"Aria-Dorm\", ฿18/฿7); export counted done with one water and no electric meter; new-meter form defaults to น้ำ even when the room is missing an electric meter; \"somchai@example\" accepted as email.",
+   "user_impact": "False sense of readiness; bills later blocked.",
+   "actual_behavior": "Checklist green while setup incomplete.",
+   "expected_behavior": "Steps check real completion; meter type defaults to the missing type; email validated.",
+   "steps_to_reproduce": [
+    "?mock=empty → Home onboarding shows steps done",
+    "Add tenant with email somchai@example → accepted"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "app.js:375-381 onboarding steps."
+   },
+   "root_cause": "Completion derived from presence of values, not intent.",
+   "recommended_fix": "Require explicit save for name/rates; export done only when every room has both types; default type to missing one; type=email + pattern requiring a dot in the domain.",
+   "acceptance_criteria": [
+    "Empty DB shows 0/5",
+    "Invalid email rejected"
+   ],
+   "engineering_effort": "S"
+  },
+  {
+   "id": "WEB-043",
+   "title": "Bills filter chips overflow off-screen with no affordance on phones",
+   "category": "mobile",
+   "severity": "MEDIUM",
+   "priority": "P2",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "mobile"
+   ],
+   "page": "Bills",
+   "route": "/ (page=bills)",
+   "component": "bills filter row",
+   "viewport": "≤414px",
+   "user_journey": "Owner looks for bills with problems",
+   "description": "Filter row scrollWidth 784 vs 341 at 375px; \"ติดปัญหา 9\" at x606 is off-screen behind a hidden scrollbar with no fade.",
+   "user_impact": "The most actionable filter is invisible.",
+   "actual_behavior": "Chips hidden off-screen.",
+   "expected_behavior": "Wrapped or visibly scrollable chips, problem chip first.",
+   "steps_to_reproduce": [
+    "Viewport 375 → Bills → filter row: ติดปัญหา not visible"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "Mobile agent measurement."
+   },
+   "root_cause": "Horizontal scroller without affordance.",
+   "recommended_fix": "flex-wrap on ≤540px or edge fade; order chips by actionability; hide zero-count chips.",
+   "acceptance_criteria": [
+    "All non-zero chips visible or clearly scrollable at 320px"
+   ],
+   "engineering_effort": "XS"
+  },
+  {
+   "id": "WEB-044",
+   "title": "Inconsistent edit affordances and disclosure patterns in Settings and detail views",
+   "category": "design",
+   "severity": "LOW",
+   "priority": "P2",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "design"
+   ],
+   "page": "Settings, Review, Rooms",
+   "route": "/",
+   "component": "editBtn variants, settings cards",
+   "viewport": "all",
+   "user_journey": "Owner edits settings",
+   "description": "Four edit styles (แก้ไข ghost+icon header, แก้ค่า bordered, เปลี่ยน ghost+link icon, แก้ค่าเริ่ม 11px text-link). PromptPay แก้ไข is in the header of the whole \"อีเมลบิลและการรับเงิน\" card but edits only PromptPay. In-body <details> for add rate/cycle vs header edit buttons; ธีมสี and ขั้นสูง share the settings icon; หอพัก uses the rooms nav icon.",
+   "user_impact": "Owner must learn several patterns; misleading scope of an edit button.",
+   "actual_behavior": "Mixed patterns.",
+   "expected_behavior": "One edit component; edit buttons scoped to what they edit; distinct icons.",
+   "steps_to_reproduce": [
+    "Settings → compare edit controls",
+    "Click แก้ไข on the email/payment card: only PromptPay opens"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "app.js:517, :522, :906, :1074."
+   },
+   "root_cause": "No shared edit component.",
+   "recommended_fix": "Create editBtn(label, form) helper; move PromptPay edit to its row or split the card; assign distinct icons.",
+   "acceptance_criteria": [
+    "All edit entry points use the same component",
+    "PromptPay edit control sits on the PromptPay row"
+   ],
+   "engineering_effort": "S"
+  },
+  {
+   "id": "WEB-045",
+   "title": "Small touch targets for consequential controls (cycle ‹ ›, settings Save/Cancel, rate chips)",
+   "category": "mobile",
+   "severity": "LOW",
+   "priority": "P2",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "mobile"
+   ],
+   "page": "Top bar, Settings, Bills",
+   "route": "/",
+   "component": "cycle nav buttons, settings actions, rate chips",
+   "viewport": "touch",
+   "user_journey": "Owner switches cycle on a phone",
+   "description": "Cycle ‹ › 28×28px ~4px from the label (changes which month every page shows); settings Cancel/Save 55×38 and 52×38 at 320px; rate chips 107×31.",
+   "user_impact": "Mis-taps; wrong cycle context.",
+   "actual_behavior": "Targets < 40px.",
+   "expected_behavior": "≥40×40 (cycle), ≥44 height for primary actions on coarse pointers.",
+   "steps_to_reproduce": [
+    "Viewport 375 → measure .cycle-nav buttons"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "app.css:18 cycle buttons 28px."
+   },
+   "root_cause": "Desktop sizing reused.",
+   "recommended_fix": "@media (pointer:coarse): cycle buttons 40×40, full-width settings action pair ≤540px, chips min-height 36.",
+   "acceptance_criteria": [
+    "All listed controls ≥40px on coarse pointers"
+   ],
+   "engineering_effort": "XS"
+  },
+  {
+   "id": "WEB-046",
+   "title": "Form inputs: missing inputmode on money fields; datetime-local shows CE date and low-contrast icon",
+   "category": "mobile",
+   "severity": "LOW",
+   "priority": "P2",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "mobile"
+   ],
+   "page": "Bill modal, Rooms, Settings, manual-entry modal",
+   "route": "/",
+   "component": "amount, rent_baht, baht_per_unit, datetime-local inputs",
+   "viewport": "mobile",
+   "user_journey": "Owner types a payment amount or reading time on a phone",
+   "description": "Payment amount, rent and rate inputs lack inputmode=decimal (iOS shows a full keyboard for type=number with step). datetime-local shows \"05/10/2026\" (CE) while the app uses พ.ศ., and its picker icon is low contrast because color-scheme:dark only covers date/month.",
+   "user_impact": "Slower entry; date-format inconsistency.",
+   "actual_behavior": "No inputmode; CE date; dim icon.",
+   "expected_behavior": "inputmode=decimal; dark color-scheme for all date/time inputs; Thai date echo next to the field.",
+   "steps_to_reproduce": [
+    "Open bill modal on a phone → amount field keyboard",
+    "Open manual-entry modal → date shows CE year"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "app.js:770, :916, :922, :1047 no inputmode; glass.css:638 color-scheme only for date/month."
+   },
+   "root_cause": "Partial input hardening.",
+   "recommended_fix": "Add inputmode=decimal; add datetime-local/time to the color-scheme rule (or <meta name=color-scheme content=dark>); show L.dateTh() echo under date inputs.",
+   "acceptance_criteria": [
+    "Money inputs open the decimal keypad",
+    "Date inputs show a Thai-date echo"
+   ],
+   "engineering_effort": "XS"
+  },
+  {
+   "id": "WEB-047",
+   "title": "Validation feedback gaps: live units not updated while correcting; missing-reason only toasts; void payment with empty reason does nothing",
+   "category": "user_journey",
+   "severity": "LOW",
+   "priority": "P2",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "real_user"
+   ],
+   "page": "Review, Bill modal",
+   "route": "/ (page=review)",
+   "component": "confirm-form, voidPayment",
+   "viewport": "all",
+   "user_journey": "Owner corrects a reading or voids a payment",
+   "description": "Typing 3284 still shows −20 units in \"หน่วยถ้ารับ OCR\"; a missing reason only shows a toast without highlighting the field; voidPayment returns silently when the reason is empty, and its button label \"ยกเลิก\" is ambiguous.",
+   "user_impact": "Owner unsure what happened.",
+   "actual_behavior": "Static units; silent no-op on void.",
+   "expected_behavior": "Live units preview; field-level error; toast \"ต้องใส่เหตุผล\"; label \"ยกเลิกรายการรับเงินนี้\".",
+   "steps_to_reproduce": [
+    "Review → edit value → units unchanged",
+    "Bill → payment ยกเลิก → OK with empty reason → nothing happens"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "app.js:810 `if (!reason || !reason.trim()) return;` without toast."
+   },
+   "root_cause": "No inline validation layer.",
+   "recommended_fix": "input listener updating units; aria-invalid + message on the reason field; toast on empty void reason; relabel.",
+   "acceptance_criteria": [
+    "Units update as the value changes",
+    "Empty void reason shows an error"
+   ],
+   "engineering_effort": "XS"
+  },
+  {
+   "id": "WEB-048",
+   "title": "Crop purge safety: backdated paid_on triggers immediate purge; purge endpoint callable by anyone",
+   "category": "security",
+   "severity": "LOW",
+   "priority": "P2",
+   "launch_blocker": false,
+   "confidence": "medium",
+   "found_by": [
+    "state",
+    "launch"
+   ],
+   "page": "Backend",
+   "route": "",
+   "component": "crops_due_for_purge; purge-crops function (verify_jwt=false)",
+   "viewport": "n/a",
+   "user_journey": "Owner records an old payment with its real (backdated) date",
+   "description": "Purge eligibility uses max(paid_on) ≤ today − 30, and paid_on is user-entered, so backdating a payment makes reading photos (evidence) purgeable at the next cron. purge-crops has verify_jwt=false and no secret; impact limited to deleting already-due images up to a day early.",
+   "user_impact": "Evidence photos may disappear earlier than the 30-day policy.",
+   "actual_behavior": "Backdated payment → crops eligible immediately.",
+   "expected_behavior": "Purge clock based on recorded_at (server time); function requires a shared secret.",
+   "steps_to_reproduce": [
+    "Record a payment with paid_on 40 days ago",
+    "Next purge run deletes that cycle's crops"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "migrations/20261003000500_crop_purge.sql:23 max(p.paid_on); purge-crops/index.ts:3 verify_jwt=false."
+   },
+   "root_cause": "Client-controlled date used for retention.",
+   "recommended_fix": "Use greatest(paid_on, recorded_at::date) or recorded_at; add an x-cron-secret header from Vault checked by the function.",
+   "acceptance_criteria": [
+    "Backdated payment does not shorten retention",
+    "Unauthenticated purge call returns 401"
+   ],
+   "engineering_effort": "XS"
+  },
+  {
+   "id": "WEB-049",
+   "title": "Hosting hygiene: repo files publicly served, default English 404, no privacy notice/contact",
+   "category": "launch",
+   "severity": "LOW",
+   "priority": "P2",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "launch"
+   ],
+   "page": "Netlify site",
+   "route": "/README.md, /tools/make_accent.py, /test/logic.test.mjs, /foo",
+   "component": "Netlify publish dir / netlify.toml",
+   "viewport": "all",
+   "user_journey": "Visitor or judge probes the site",
+   "description": "README.md, tools/make_accent.py, test/logic.test.mjs return 200 (no secrets). Unknown paths show Netlify's default English 404. No privacy notice/contact link, which PDPA expects once real tenant emails are processed.",
+   "user_impact": "Unpolished; future compliance gap.",
+   "actual_behavior": "200 for repo files; generic 404.",
+   "expected_behavior": "Repo files 404; Thai 404 page; privacy notice link in footer/login gate.",
+   "steps_to_reproduce": [
+    "curl -I https://aria-th.netlify.app/README.md → 200",
+    "Open /foo → Netlify English 404"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "aria/web contains README.md, tools/, test/ in the publish dir."
+   },
+   "root_cause": "Publish dir = source dir.",
+   "recommended_fix": "netlify.toml redirects for /README.md, /tools/*, /test/* → 404 (force); add 404.html in Thai; add a short privacy notice page.",
+   "acceptance_criteria": [
+    "Repo files return 404",
+    "Thai 404 page",
+    "Privacy notice reachable from login gate"
+   ],
+   "engineering_effort": "XS"
+  },
+  {
+   "id": "WEB-050",
+   "title": "Preview total can differ from stored total by ฿0.01",
+   "category": "state",
+   "severity": "LOW",
+   "priority": "P3",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "state"
+   ],
+   "page": "Bills",
+   "route": "/ (page=bills)",
+   "component": "logic.js round(); approveBills sum",
+   "viewport": "all",
+   "user_journey": "Owner compares preview with the approved bill",
+   "description": "JS Math.round(1.005*100)/100 = 1.00 while Postgres round(1.005,2) = 1.01. Stored amounts are correct (generated in DB); only preview/confirm sums can be off by a satang.",
+   "user_impact": "Rare ฿0.01 mismatch between preview and invoice.",
+   "actual_behavior": "Preview 1.00, invoice 1.01.",
+   "expected_behavior": "Identical.",
+   "steps_to_reproduce": [
+    "units×rate = 1.005 → compare preview and approved totals"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "logic.js:117 round; app.js:666 sum; invoices.sql:22-24 generated round(); mock.js:97 uses epsilon."
+   },
+   "root_cause": "Binary floating point rounding.",
+   "recommended_fix": "round = (x,d) => Math.round((x + Number.EPSILON) * 10**d) / 10**d (or integer satang math).",
+   "acceptance_criteria": [
+    "Unit test: 1.005 rounds to 1.01"
+   ],
+   "engineering_effort": "XS"
+  },
+  {
+   "id": "WEB-051",
+   "title": "Mock backend diverges from DB constraints",
+   "category": "reliability",
+   "severity": "LOW",
+   "priority": "P3",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "state"
+   ],
+   "page": "?mock",
+   "route": "/?mock",
+   "component": "js/mock.js",
+   "viewport": "n/a",
+   "user_journey": "Developer/auditor tests flows in mock mode",
+   "description": "mock add_manual_reading skips installed/retired date checks; addMeter/addTenancy/updateMeter skip overlap/check constraints; payout returned for guests (real RLS → null); equal captured_at bypasses the monotonic check in both mock and DB (strict < / >).",
+   "user_impact": "Bugs pass in mock and fail (or vice versa) in production.",
+   "actual_behavior": "Mock more permissive than DB.",
+   "expected_behavior": "Mock enforces the same constraints; DB monotonic check handles equal timestamps.",
+   "steps_to_reproduce": [
+    "?mock → add manual reading before meter install → accepted"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "mock.js:73-84."
+   },
+   "root_cause": "Mock maintained by hand.",
+   "recommended_fix": "Mirror key constraints in mock.js; decide tie-breaking for equal captured_at in DB (use id).",
+   "acceptance_criteria": [
+    "Constraint-violating mock calls throw the same Thai messages as the DB"
+   ],
+   "engineering_effort": "S"
+  },
+  {
+   "id": "WEB-052",
+   "title": "Design-system drift: ~37 font sizes, unsupported weights, 21 radii, repeated demo indicators, sidebar name breaks mid-word",
+   "category": "design",
+   "severity": "LOW",
+   "priority": "P3",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "design"
+   ],
+   "page": "All pages",
+   "route": "/",
+   "component": "theme.css, app.css, glass.css, styles.css",
+   "viewport": "all",
+   "user_journey": "General use",
+   "description": "Four stacked stylesheets yield ~37 font sizes (6–46px), weights 450–850 though Anuphan ships 100–700, 21 radii (buttons 8 vs 11, cards 22/24/28). Demo state shown 3× (sidebar badge, top badge, banner); \"หอพัก (ยังไม่ตั้ง / ชื่อ)\" breaks mid-word.",
+   "user_impact": "Inconsistent feel; maintenance cost.",
+   "actual_behavior": "No tokens.",
+   "expected_behavior": "~7 sizes, 3 weights, 4 radii; single demo indicator; word-break: keep-all for Thai names.",
+   "steps_to_reproduce": [
+    "Collect computed font-size/radius values across pages"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "Design agent DOM survey."
+   },
+   "root_cause": "Layered CSS without tokens.",
+   "recommended_fix": "Introduce type/radius tokens and consolidate layers incrementally; one demo indicator; word-break:keep-all on #ws-name.",
+   "acceptance_criteria": [
+    "≤8 font sizes, ≤4 radii in computed styles"
+   ],
+   "engineering_effort": "L"
+  },
+  {
+   "id": "WEB-053",
+   "title": "Performance: heavy backdrop-filter on low-end devices; static assets not cached",
+   "category": "performance",
+   "severity": "LOW",
+   "priority": "P3",
+   "launch_blocker": false,
+   "confidence": "medium",
+   "found_by": [
+    "mobile",
+    "launch"
+   ],
+   "page": "All pages",
+   "route": "/",
+   "component": "glass effects; Netlify headers",
+   "viewport": "mobile / low-end Android",
+   "user_journey": "Owner on a budget Android phone",
+   "description": "16 backdrop-filter elements on Home plus nested blur on buttons; desktop rAF scroll 16.7 ms avg / 17.6 max; canvas ~¼ resolution. Images, fonts and vendor/supabase-2.117.2.js served max-age=0,must-revalidate. Login page ≈276 KB, CLS 0, no long tasks (LCP measurement unreliable).",
+   "user_impact": "Possible jank on low-end devices; extra revalidation requests.",
+   "actual_behavior": "Blur everywhere; no long-lived caching.",
+   "expected_behavior": "Reduced blur on coarse pointers; immutable caching for versioned vendor/fonts.",
+   "steps_to_reproduce": [
+    "curl -I /vendor/supabase-2.117.2.js → cache-control max-age=0"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "Mobile agent rAF measurements; Launch header checks."
+   },
+   "root_cause": "Glass aesthetic applied globally; default Netlify caching.",
+   "recommended_fix": "@media (pointer:coarse) drop blur on .btn/inner cards; netlify.toml headers: /vendor/*, /fonts/* max-age=31536000, immutable; /img/* 1 day; optional WebP logo, preload Thai font.",
+   "acceptance_criteria": [
+    "Vendor/fonts served with immutable caching",
+    "≤6 backdrop-filter elements on Home on coarse pointers"
+   ],
+   "engineering_effort": "S"
+  },
+  {
+   "id": "WEB-054",
+   "title": "SEO: noindex is intentional; no description/OG tags",
+   "category": "seo",
+   "severity": "INFO",
+   "priority": "P3",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "launch"
+   ],
+   "page": "index.html",
+   "route": "/",
+   "component": "meta tags / headers",
+   "viewport": "all",
+   "user_journey": "n/a (back-office)",
+   "description": "noindex meta and X-Robots-Tag are present by design for a back-office app. No meta description or Open Graph tags, so shared links (e.g. to judges) render without a preview.",
+   "user_impact": "Plain link previews only.",
+   "actual_behavior": "No OG tags.",
+   "expected_behavior": "Optional: og:title/og:description/og:image for nicer link sharing; keep noindex.",
+   "steps_to_reproduce": [
+    "View source of index.html"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "Launch: noindex meta + header verified."
+   },
+   "root_cause": "Intentional.",
+   "recommended_fix": "Optionally add OG tags; no indexing changes.",
+   "acceptance_criteria": [
+    "noindex retained"
+   ],
+   "engineering_effort": "XS"
+  },
+  {
+   "id": "WEB-055",
+   "title": "Security headers and Supabase advisors: no action required",
+   "category": "security",
+   "severity": "INFO",
+   "priority": "P3",
+   "launch_blocker": false,
+   "confidence": "high",
+   "found_by": [
+    "launch"
+   ],
+   "page": "Site / backend",
+   "route": "/",
+   "component": "Netlify headers; Supabase advisors",
+   "viewport": "n/a",
+   "user_journey": "n/a",
+   "description": "CSP, HSTS preload, XFO DENY, nosniff, Referrer-Policy, Permissions-Policy present; only the publishable key ships; crops bucket private; send-invoices verifies JWT + is_owner. Advisors: 0 security errors; 13 multiple-permissive-policy and 6 unused-index performance warnings (negligible at this scale).",
+   "user_impact": "None.",
+   "actual_behavior": "Healthy.",
+   "expected_behavior": "Healthy.",
+   "steps_to_reproduce": [
+    "Run Supabase advisors; curl -I site"
+   ],
+   "evidence": {
+    "screenshot": "",
+    "console_error": "",
+    "network_request": "",
+    "notes": "Launch agent checks."
+   },
+   "root_cause": "n/a",
+   "recommended_fix": "Optionally merge permissive policies when touching RLS for WEB-006.",
+   "acceptance_criteria": [
+    "Advisors show 0 security errors after future changes"
+   ],
+   "engineering_effort": "XS"
+  }
+ ],
+ "launch_blockers": [
+  "WEB-001",
+  "WEB-002",
+  "WEB-003",
+  "WEB-004",
+  "WEB-005"
+ ],
+ "recommended_fix_order": [
+  "WEB-001",
+  "WEB-002",
+  "WEB-004",
+  "WEB-005",
+  "WEB-003",
+  "WEB-008",
+  "WEB-017",
+  "WEB-018",
+  "WEB-014",
+  "WEB-009",
+  "WEB-010",
+  "WEB-011",
+  "WEB-013",
+  "WEB-012",
+  "WEB-007",
+  "WEB-019",
+  "WEB-006",
+  "WEB-027",
+  "WEB-015",
+  "WEB-016",
+  "WEB-021",
+  "WEB-023",
+  "WEB-025",
+  "WEB-020",
+  "WEB-026",
+  "WEB-022",
+  "WEB-024",
+  "WEB-037",
+  "WEB-040",
+  "WEB-033",
+  "WEB-050",
+  "WEB-048",
+  "WEB-028",
+  "WEB-029",
+  "WEB-043",
+  "WEB-036",
+  "WEB-041",
+  "WEB-042",
+  "WEB-034",
+  "WEB-032",
+  "WEB-031",
+  "WEB-038",
+  "WEB-039",
+  "WEB-047",
+  "WEB-045",
+  "WEB-046",
+  "WEB-030",
+  "WEB-044",
+  "WEB-049",
+  "WEB-035",
+  "WEB-051",
+  "WEB-053",
+  "WEB-052",
+  "WEB-054",
+  "WEB-055"
+ ],
+ "agent_reports": {
+  "design": {
+   "issues_found": 22,
+   "summary": "22 findings (12 P1, 10 P2). Polished glass surface but system-level inconsistency: edit mode discards typed input, four edit affordances, native prompt/confirm in critical flows, AA contrast failures on primary gradients, sub-11px Thai text, competing home signals, auto-advance jumping to queue top. Merged into WEB-014, 015, 016, 019, 020, 024, 025, 028, 029, 030, 031, 034, 041, 044, 052; the possible double-render flicker after confirm was not visually confirmed and is not carried."
+  },
+  "mobile": {
+   "issues_found": 23,
+   "summary": "23 findings (2 P0, 10 P1, 11 P2) across 320–1024px and landscape. Confirmed P0: Guest top bar overflow (WEB-005). Landscape desktop-sidebar issue kept as MEDIUM P1 (WEB-022) rather than P0 given low landscape usage. Other merges: detail under sticky header + nested scrollers (WEB-021), modal scroll lock (WEB-023), modal small-screen layout (WEB-024), tiny text (WEB-025), bills filter chips (WEB-043), touch targets (WEB-045), inputs (WEB-046), perf (WEB-053)."
+  },
+  "state": {
+   "issues_found": 19,
+   "summary": "15 ranked findings (3 P0, 6 P1, 6 P2) plus 4 unranked notes. All three P0s confirmed in source (logic.js:137-139, logic.js:135 + app.js:1094-1102, app.js:83-95) and kept as blockers WEB-002/003/004. Move-out unbilled (WEB-007), partial-payment email (WEB-008), busy-state (WEB-017), stale modal (WEB-018), guest dialogs (WEB-019) confirmed; no-history (WEB-031), stale data (WEB-032), multi-meter lines (WEB-033), rounding (WEB-050), mock drift (WEB-051); unranked items folded into WEB-017 (toggleRent), WEB-006 (owner emails visible to guest), WEB-037 (fixStart RLS), WEB-048 (backdated paid_on purge)."
+  },
+  "real_user": {
+   "issues_found": 23,
+   "summary": "23 findings (2 P0, 14 P1, 7 P2) from owner and judge personas in mock. Both P0s downgraded per product context: developer setup steps are accepted operator steps (WEB-035, MEDIUM P2) and Gmail is configured on live (WEB-036, MEDIUM P2). Strongest contributions: cycle-blind date defaults (WEB-010), stale recipient after approval (WEB-012), no anomaly flag (WEB-013), double-click auto-advance (WEB-014), lifecycle flows (WEB-016)."
+  },
+  "launch": {
+   "issues_found": 16,
+   "summary": "16 findings (3 P1, 13 P2) and GO for pushing w47/g39 from main. Live data/test-bill finding promoted to P0 together with the deploy (WEB-001). Refuted: (a) 'onboarding edit shortcut missing from the diff' — it is already committed in HEAD (app.js:381 data-edit=\"settings-form\", app.js:1193 nav.dataset.edit) and live; (b) finding #4 'no-op guard blocks legit 0 on a rejected reading' — rejected readings render only the reopen row, never confirm-form (app.js:520), so submitConfirm cannot run for them; dropped."
+  }
+ }
+}

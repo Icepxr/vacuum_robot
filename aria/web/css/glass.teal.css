@@ -780,3 +780,13 @@ details.set-more[open] > :not(summary), details.rt-hist[open] > :not(summary) { 
 /* summary ของ details เล็กเกินจะแตะ (วัดได้ 18–19 px บนจอ 375) → ขยายพื้นที่แตะโดยไม่เปลี่ยนขนาดตัวอักษร */
 details.more > summary, details.rt-hist > summary { display: flex; align-items: center; min-height: 36px; cursor: pointer; }
 @media (max-width: 640px) { .modal-actions .btn { flex: 1 1 auto; } }
+.mt-fix { font-size: 11px; padding: 6px 4px; margin-left: 4px; }
+body.guest [data-action="fix-start"] { display: none !important; }
+
+/* audit WEB-005 (5 ต.ค.): จอแคบ ป้ายผู้ชมดันแถบบนล้นจอ (375 px ล้น 30 px · 320 px แถบล่างหลุดจอ) → ย้ายเป็นแถบบางใต้แถบบน ไม่กินที่แนวนอน */
+.top-right { min-width: 0; }
+@media (max-width: 540px) {
+  .guest-badge:not([hidden]) { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); padding: 3px 12px; font-size: 11px; white-space: nowrap;
+    background: rgba(8, 40, 64, .72); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+  body.guest #page-content { padding-top: 26px; }   /* เว้นที่ให้แถบผู้ชม ไม่ทับหัวหน้า */
+}
