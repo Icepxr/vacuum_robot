@@ -126,33 +126,45 @@ function lastConfirmed(readings, meterId, mIdx, pred) {
   return best;
 }
 
-// หน่วยของห้อง×ชนิด ในรอบ = Σ ต่อมิเตอร์ (ค่ายืนยันล่าสุดในรอบ − ค่าฐาน) · เปลี่ยนมิเตอร์กลางรอบ = รวมสองช่วง (แบบ v1 §5)
-export function typeUsage(roomId, type, range, data, mIdx) {
+// หน่วยของห้อง×ชนิด ในรอบ = Σ ต่อมิเตอร์ (ค่าสุดท้ายในรอบ − ค่าฐาน) · เปลี่ยนมิเตอร์กลางรอบ = รวมสองช่วง (แบบ v1 §5)
+// prevSegs = segments ของบิลรอบก่อนที่อนุมัติแล้ว → ใช้ curr ของบิลนั้นเป็นฐาน (ตรึง) ไม่คำนวณใหม่จากข้อมูลตอนนี้
+//   กันคิดเงินซ้ำ/ตกหล่นเมื่อแก้วันตัดรอบหรือแก้ค่ารอบก่อนหลังอนุมัติ (audit WEB-003) · ถ้าไม่ตรงกับข้อมูลตอนนี้ → warning ให้ไปออกฉบับแก้ไขรอบก่อน
+export function typeUsage(roomId, type, range, data, mIdx, prevSegs = null) {
   const meters = data.meters.filter(m => m.room_id === roomId && m.type === type && meterOverlaps(m, range.from, range.to));
-  if (!meters.length) return { ok: false, reason: `ไม่มีมิเตอร์${TYPE_TH[type]}ในรอบนี้`, segments: [] };
-  const segments = [];
+  if (!meters.length) return { ok: false, reason: `ไม่มีมิเตอร์${TYPE_TH[type]}ในรอบนี้`, segments: [], warnings: [] };
+  const segments = [], warnings = [];
   for (const m of meters.sort((a, b) => a.installed_at.localeCompare(b.installed_at))) {
     const before = lastConfirmed(data.readings, m.meter_id, mIdx, d => d <= range.from);
-    const base = before ? { value: Number(before.confirmed_value), source: 'reading' } : { value: Number(m.start_value), source: 'start' };
+    const live = before ? { value: Number(before.confirmed_value), source: 'reading' } : { value: Number(m.start_value), source: 'start' };
+    const pinned = (prevSegs || []).find(x => x.meter_id === m.meter_id && x.curr != null);
+    const base = pinned ? { value: Number(pinned.curr), source: 'invoice' } : live;
+    if (pinned && Math.abs(base.value - live.value) > 1e-9) warnings.push(`ฐาน${TYPE_TH[type]} ${m.meter_id} ใช้ตามบิลรอบก่อน ${base.value} แต่ข้อมูลตอนนี้เป็น ${live.value} · ถ้าค่ารอบก่อนผิด ให้ออกฉบับแก้ไขรอบก่อน`);
     const inCycle = lastConfirmed(data.readings, m.meter_id, mIdx, d => d > range.from && d <= range.to);
     let curr = inCycle ? Number(inCycle.confirmed_value) : null;
-    if (curr == null && m.retired_at && m.retired_at <= range.to && m.end_value != null) curr = Number(m.end_value);
-    if (curr == null) return { ok: false, reason: `ยังไม่ยืนยันค่า${TYPE_TH[type]} (${m.meter_id})`, segments };
+    // ถอดมิเตอร์ในรอบนี้: ค่าตอนถอดคือค่าสุดท้ายจริง แม้หุ่นอ่านไว้ก่อนหน้าในรอบ (audit WEB-002 · เดิมใช้แค่เมื่อไม่มีค่าในรอบ → หน่วยหาย)
+    if (m.retired_at && m.retired_at <= range.to && m.end_value != null) {
+      const end = Number(m.end_value);
+      if (curr != null && end < curr) return { ok: false, reason: `ค่าตอนถอด ${m.meter_id} (${end}) ต่ำกว่าค่าที่ยืนยันล่าสุด (${curr})`, segments, warnings };
+      curr = end;
+    }
+    if (curr == null) return { ok: false, reason: `ยังไม่ยืนยันค่า${TYPE_TH[type]} (${m.meter_id})`, segments, warnings };
     const units = round(curr - base.value, 4);
-    if (units < 0) return { ok: false, reason: `หน่วย${TYPE_TH[type]}ติดลบ (${m.meter_id})`, segments };
+    if (units < 0) return { ok: false, reason: `หน่วย${TYPE_TH[type]}ติดลบ (${m.meter_id})`, segments, warnings };
     segments.push({ meter_id: m.meter_id, base: base.value, baseSource: base.source, curr, units });
   }
-  return { ok: true, units: round(segments.reduce((s, x) => s + x.units, 0), 4), segments };
+  return { ok: true, units: round(segments.reduce((s, x) => s + x.units, 0), 4), segments, warnings };
 }
 
 export function billPreview(room, cycle, data, mIdx) {
   const range = cycleRange(cycle, data.cycles, data.settings);
   const cycleRow = data.cycles.find(c => c.cycle === cycle);
   const tenancy = tenancyOn(data.tenancies, room.room_id, range.to);
-  const reasons = [];
+  const prevInv = (data.invoices || []).find(v => v.room_id === room.room_id && v.cycle === shiftCycle(cycle, -1) && v.state === 'approved');
+  const reasons = [], warnings = [];
   const lines = {};
   for (const type of TYPES) {
-    const u = typeUsage(room.room_id, type, range, data, mIdx);
+    const u = typeUsage(room.room_id, type, range, data, mIdx, prevInv?.detail?.segments?.[type] || null);
+    warnings.push(...(u.warnings || []));
     const rate = rateOn(data.rates, type, range.to);
     if (!u.ok) reasons.push(u.reason);
     if (!rate) reasons.push(`ยังไม่ตั้งอัตรา${TYPE_TH[type]}ที่มีผล ณ ${dateTh(range.to)}`);
@@ -170,7 +182,7 @@ export function billPreview(room, cycle, data, mIdx) {
   let state = 'ready';
   if (!tenancy) state = 'vacant';
   else if (!complete) state = 'blocked';
-  return { room, range, tenancy, lines, includeRent, rent, total, reasons, state, noEmail: !!tenancy && !tenancy.email };
+  return { room, range, tenancy, lines, includeRent, rent, total, reasons, warnings, state, noEmail: !!tenancy && !tenancy.email };
 }
 
 // ── หน้าหลัก ──

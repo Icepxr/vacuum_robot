@@ -1,6 +1,6 @@
 // ARIA หลังบ้าน · vanilla JS (ต่อจาก design/aria-prototype) + Supabase
 // ขอบเขต: ขั้น 3 ของแบบ v1 §7 (บัญชีเจ้าของ + 5 หน้า + reading_events) · บิลเป็นพรีวิว (ขั้น 4 ยังไม่มีตาราง invoices) · ยังไม่ส่งอีเมล (ขั้น 5)
-import * as L from './logic.js?v=w13';
+import * as L from './logic.js?v=w14';
 import { createBackdrop, accentNow } from './liquid.js?v=w41';
 
 let gateBg = null, appBg = null;   // วอลเปเปอร์สองโทน (อินสแตนซ์แยก · ตอนเปลี่ยนหน้าทำงานพร้อมกัน)
@@ -81,21 +81,44 @@ async function write(fn, okText) {
   state.busy = true;
   document.body.classList.add('busy');
   try {
-    await fn();
+    // หน้าจอยังเป็นข้อมูลเก่า (โหลดใหม่ไม่สำเร็จครั้งก่อน) → ต้องโหลดได้ก่อนถึงเขียนต่อ กันบันทึกซ้ำจากยอดเก่า
+    if (state.stale) {
+      try { await reload(); state.stale = false; } catch { toast('ยังโหลดข้อมูลล่าสุดไม่ได้ · ตรวจเน็ตแล้วรีเฟรชหน้าก่อนทำต่อ', true); return false; }
+    }
+    try {
+      await fn();
+    } catch (e) {
+      toast(`บันทึกไม่สำเร็จ: ${friendlyError(e.message)}`, true);
+      const typed = keepTyped();
+      await reload().catch(() => {});   // บางอย่างอาจสำเร็จไปก่อนพัง (เช่น ส่งอีเมลชุดแรกแล้ว) → ให้หน้าตรงกับฐานข้อมูล
+      typed();                          // แต่ไม่ทิ้งสิ่งที่ผู้ใช้พิมพ์ไว้ในฟอร์ม → แก้แล้วกดบันทึกซ้ำได้
+      refreshOpenBill();
+      return false;
+    }
+    // ถึงตรงนี้ = บันทึกสำเร็จแล้วแน่นอน (audit WEB-004: เดิมเน็ตหลุดตอนโหลดใหม่ก็ขึ้น "ไม่สำเร็จ" → ผู้ใช้กดซ้ำ ได้รายการรับเงินซ้ำ)
     state.editing = null;
-    await reload();
+    try {
+      await reload();
+    } catch {
+      state.stale = true;
+      closeModal();                     // ไม่เปิดหน้าต่างที่มียอดเก่าค้างไว้ให้กดซ้ำ
+      toast(`${okText || 'บันทึกแล้ว'} · แต่โหลดข้อมูลใหม่ไม่สำเร็จ — รีเฟรชหน้าก่อนทำต่อ อย่ากดบันทึกซ้ำ`, true);
+      return false;
+    }
     if (okText) toast(okText);
     return true;
-  } catch (e) {
-    toast(`บันทึกไม่สำเร็จ: ${friendlyError(e.message)}`, true);
-    const typed = keepTyped();
-    await reload().catch(() => {});   // บางอย่างอาจสำเร็จไปก่อนพัง (เช่น ส่งอีเมลชุดแรกแล้ว) → ให้หน้าตรงกับฐานข้อมูล
-    typed();                          // แต่ไม่ทิ้งสิ่งที่ผู้ใช้พิมพ์ไว้ในฟอร์ม → แก้แล้วกดบันทึกซ้ำได้
-    return false;
   } finally {
     state.busy = false;
     document.body.classList.remove('busy');
+    document.querySelectorAll('.is-busy').forEach(x => x.classList.remove('is-busy'));
+    if (state.data) { const t = keepTyped(); render(); t(); }   // ปุ่มที่ render ตอน busy (ปฏิเสธ/ยกเลิกการยืนยัน) กลับมากดได้ (audit WEB-017) · ไม่ทิ้งค่าที่พิมพ์
   }
+}
+
+// หน้าต่างบิลที่เปิดอยู่ = แสดงยอดล่าสุดหลังเขียน (ทั้งสำเร็จและล้มเหลว)
+function refreshOpenBill() {
+  const room = $('#modal-root .modal-backdrop:not(.closing) [data-bill-modal]')?.dataset.billModal;
+  if (room && ctx().bills.some(b => b.room.room_id === room)) showBill(room);
 }
 
 // จำค่าที่พิมพ์ในทุกฟอร์มของหน้า (ตาม id ฟอร์ม + name) แล้วคืนให้หลัง render ใหม่
@@ -106,7 +129,9 @@ function keepTyped() {
 
 // ข้อความจาก constraint ของ Postgres เป็นภาษาอังกฤษ · trigger ของเราเขียนไทยอยู่แล้ว ปล่อยผ่าน
 function friendlyError(msg) {
+  if (/duplicate key/.test(msg) && /client_key/.test(msg)) return 'รายการรับเงินนี้บันทึกไปแล้ว (กันบันทึกซ้ำ) · รีเฟรชหน้าเพื่อดูยอดล่าสุด';
   if (/duplicate key/.test(msg)) return 'ซ้ำกับรายการที่มีอยู่แล้ว';
+  if (/cutoff_locked/.test(msg)) return 'เปลี่ยนวันตัดรอบไม่ได้ · รอบนี้หรือรอบถัดไปอนุมัติบิลแล้ว';
   if (/exclusion constraint/.test(msg)) return 'ช่วงวันที่ทับกับรายการเดิมของห้องนี้ (ผู้เช่า/มิเตอร์ต้องไม่ซ้อนกัน)';
   if (/violates check constraint/.test(msg)) return `ค่าไม่ผ่านเงื่อนไขของฐานข้อมูล (${msg.match(/"([^"]+)"/)?.[1] ?? 'check'})`;
   if (/violates foreign key/.test(msg)) return 'อ้างถึงรายการที่ไม่มีอยู่ หรือยังมีรายการอื่นใช้อยู่';
@@ -558,6 +583,7 @@ async function submitConfirm(form) {
   const ocr = form.dataset.ocr === '' ? null : Number(form.dataset.ocr);
   const decided = form.dataset.decided === '1';
   const changed = decided || ocr == null || v !== ocr;
+  if (decided && v === Number(r.confirmed_value)) { toast('ค่าเดิม · ไม่มีอะไรเปลี่ยน'); stopEdit(); return; }   // กันแถว corrected ซ้ำ (เจอบนเว็บจริง 3 ต.ค.: reading 39 สองแถวห่าง 3 วินาที)
   if ((changed || form.dataset.needReason === '1') && !reason) return toast('ต้องใส่เหตุผลเมื่อแก้ค่าจาก OCR หรือค่ามีธงเตือน', true);
   const ev = { reading_id: r.id, event: changed ? 'corrected' : 'confirmed', confirmed_value: v, reason: reason || null };
   const next = L.reviewQueue(state.data.readings, mIdx).map(x => x.r.id).find(id => id !== r.id);
@@ -663,7 +689,10 @@ async function approveBills(rooms, revise = false) {
   if (!items.length) return;
   const sum = items.reduce((s, it) => s + Math.round(it.water_units * it.water_rate * 100) / 100 + Math.round(it.electric_units * it.electric_rate * 100) / 100 + Number(it.rent_baht), 0);
   const what = items.length === 1 ? `ห้อง ${items[0].room_id}` : `${items.length} ห้อง`;
-  if (!confirm(`${revise ? 'ออกฉบับแก้ไข' : 'อนุมัติบิล'} ${what} · รอบ${L.cycleLabel(state.cycle)}\nยอดรวม ${baht(sum)}\n\nอนุมัติแล้วยอดจะถูกตรึง แก้ภายหลังต้องออกฉบับแก้ไข (ฉบับเดิมเก็บเป็นประวัติ)`)) return;
+  const zero = items.filter(it => ['water', 'electric'].some(t => (it.detail.segments[t] || []).some(x => x.baseSource === 'start' && x.base === 0 && x.units > 0))).map(it => it.room_id);
+  const warnRooms = c.bills.filter(b => rooms.includes(b.room.room_id) && b.state === 'ready' && (b.warnings || []).length).map(b => b.room.room_id);
+  const zeroNote = (warnRooms.length ? `\n\n⚠ ห้อง ${warnRooms.join(', ')} ฐานไม่ตรงกับข้อมูลรอบก่อน · ดูคำเตือนในหน้าต่างบิล` : '') + (zero.length ? `\n\n⚠ ห้อง ${zero.join(', ')} ฐานมิเตอร์ = 0 → คิดทุกหน่วยบนหน้าปัด · ตรวจค่าเริ่มของมิเตอร์ก่อน` : '');
+  if (!confirm(`${revise ? 'ออกฉบับแก้ไข' : 'อนุมัติบิล'} ${what} · รอบ${L.cycleLabel(state.cycle)}\nยอดรวม ${baht(sum)}\n\nอนุมัติแล้วยอดจะถูกตรึง แก้ภายหลังต้องออกฉบับแก้ไข (ฉบับเดิมเก็บเป็นประวัติ)${zeroNote}`)) return;
   const row = c.d.cycles.find(x => x.cycle === state.cycle);
   if (await write(() => api.approveInvoices(state.cycle, row?.cutoff_date ?? c.range.to, items), `${revise ? 'ออกฉบับแก้ไข' : 'อนุมัติ'} ${what} แล้ว`)) closeModal();
 }
@@ -720,7 +749,9 @@ function showBill(roomId) {
   const b = c.bills.find(x => x.room.room_id === roomId);
   const v = b.inv;
   const [label, tone] = BILL_STATE[b.view];
-  const seg = (segs) => (segs || []).map(s => `<small class="inv-meter">${esc(s.meter_id)} · ${num(s.base)} → ${num(s.curr)}${s.baseSource === 'start' ? ' · ฐาน = ค่าตอนติดตั้ง' : ''}</small>`).join('');
+  const segsOf = t => v ? v.detail?.segments?.[t] : b.lines[t].segments;
+  const zeroBase = ['water', 'electric'].flatMap(t => (segsOf(t) || []).filter(x => x.baseSource === 'start' && Number(x.base) === 0 && Number(x.units) > 0).map(x => x.meter_id));
+  const seg = (segs) => (segs || []).map(s => `<small class="inv-meter">${esc(s.meter_id)} · ${num(s.base)} → ${num(s.curr)}${s.baseSource === 'start' ? ' · ฐาน = ค่าตอนติดตั้ง' : s.baseSource === 'invoice' ? ' · ฐาน = บิลรอบก่อน' : ''}</small>`).join('');
   const line = t => { const l = b.lines[t];
     return `<div class="inv-line ${t}"><span class="bl-ic">${icon(t)}</span><div><b>ค่า${L.TYPE_TH[t]}</b><small>${l.ok ? `${num(l.units)} หน่วย × ${l.rate != null ? baht(l.rate) : '?'}` : 'ยังคำนวณไม่ได้'}</small>${seg(l.segments)}</div><strong>${baht(l.amount)}</strong></div>`; };
   const vline = t => `<div class="inv-line ${t}"><span class="bl-ic">${icon(t)}</span><div><b>ค่า${L.TYPE_TH[t]}</b><small>${num(Number(v[`${t}_units`]))} หน่วย × ${baht(Number(v[`${t}_rate`]))}</small>${seg(v.detail?.segments?.[t])}</div><strong>${baht(Number(v[`${t}_amount`]))}</strong></div>`;
@@ -738,11 +769,13 @@ function showBill(roomId) {
   if (!v && b.reasons.some(r => r.startsWith('ยังไม่ยืนยัน'))) actions.push(`<button class="btn primary" data-page="review">ไปยืนยันค่า</button>`);
   if (!v && b.reasons.some(r => r.startsWith('ยังไม่ตั้งอัตรา'))) actions.push(`<button class="btn primary" data-page="settings">ตั้งอัตรา</button>`);
   openModal(`<div class="modal-head"><div><h2 id="modal-title">ห้อง ${esc(roomId)}</h2><p class="muted" style="font-size:12px;margin:0">รอบ${L.cycleLabel(state.cycle)}${who ? ` · ${esc(who)}` : ''}</p></div><button type="button" aria-label="ปิด" data-action="close-modal">×</button></div>
-    <div class="inv">
+    <div class="inv" data-bill-modal="${esc(roomId)}">
       <div class="inv-top"><span class="bc-state ${tone}">${v ? icon('lock') : '<i></i>'}${label}</span><span class="inv-mail">${icon('mail')}${esc(mail)}</span></div>
       ${body}
     </div>
     ${v && b.changed.length ? `<ul class="inv-why"><li>${icon('alert')}ข้อมูลเปลี่ยนหลังอนุมัติ: ${esc(b.changed.join(', '))}${b.state === 'ready' ? ` · ยอดใหม่ ${baht(b.total)}` : ''}</li></ul>` : ''}
+    ${(b.warnings || []).length && b.state === 'ready' ? `<ul class="inv-why">${b.warnings.map(w => `<li>${icon('alert')}${esc(w)}</li>`).join('')}</ul>` : ''}
+    ${zeroBase.length ? `<ul class="inv-why"><li>${icon('alert')}ฐานของ ${esc(zeroBase.join(', '))} = 0 (ค่าตอนติดตั้ง) · บิลนี้คิดทุกหน่วยบนหน้าปัด · ถ้าวันติดตั้งหน้าปัดไม่ใช่ 0 ให้แก้ค่าเริ่มของมิเตอร์ก่อนอนุมัติ${v ? ' แล้วออกฉบับแก้ไข' : ''}</li></ul>` : ''}
     ${!v && b.reasons.length ? `<ul class="inv-why">${b.reasons.map(r => `<li>${icon('alert')}${esc(r)}</li>`).join('')}</ul>` : ''}
     ${v ? billFollowUp(b) : ''}
     <p class="inv-note">${v ? `อนุมัติโดย ${esc(v.approved_by)} · ${L.dateTimeTh(v.approved_at)}${history.length ? ` · ฉบับเดิม ${history.map(h => `#${h.revision} ${baht(Number(h.total_baht))}`).join(', ')}` : ''}` : 'พรีวิว · ยังไม่ใช่เอกสารเรียกเก็บเงิน'}</p>
@@ -760,7 +793,7 @@ function billFollowUp(b) {
     <section><h4>${icon('mail')}อีเมล</h4><ul class="fu-list">${sends}</ul></section>
     <section><h4>${icon('baht')}รับเงิน <span class="mini ${pc}">${pt}</span><small>${left ? `ค้าง ${baht(left)}` : 'ครบแล้ว'}</small></h4>
       ${pays ? `<ul class="fu-list">${pays}</ul>` : ''}
-      ${left ? `<form id="pay-form" class="set-inline" data-pay-room="${esc(b.room.room_id)}">
+      ${left ? `<form id="pay-form" class="set-inline" data-pay-room="${esc(b.room.room_id)}" data-key="${payKey(b)}">
         <label class="mini-field"><small>ยอด (บาท)</small><input name="amount" type="number" min="0.01" step="0.01" value="${left.toFixed(2)}" required></label>
         <label class="mini-field"><small>วันที่รับ</small><input name="paid_on" type="date" value="${L.todayBkk()}" required></label>
         <label class="mini-field"><small>ช่องทาง</small><select name="method">${Object.entries(METHOD_TH).map(([k, t]) => `<option value="${k}">${t}</option>`).join('')}</select></label>
@@ -789,13 +822,22 @@ async function sendBills(rooms, resend = false) {
   closeModal();
   if (bills.length === 1) showBill(bills[0].room.room_id);
 }
+// คีย์กันบันทึกซ้ำ (unique ในฐานข้อมูล · audit WEB-004): คงที่ต่อ "ยอดคงค้างชุดเดียวกัน" → กดซ้ำจากหน้าต่างเดิม = ถูกปฏิเสธ
+// เปลี่ยนเมื่อมีรายการรับเงินใหม่หรือยกเลิกรายการ → รับงวดถัดไปได้ตามปกติ
+const payKeys = new Map();
+function payKey(b) {
+  const k = `${state.cycle}|${b.room.room_id}|${b.payments.map(p => p.id + (p.voided_at ? 'v' : '')).join(',')}`;
+  if (!payKeys.has(k)) payKeys.set(k, crypto.randomUUID());
+  return payKeys.get(k);
+}
+
 async function addPayment(form) {
   const b = ctx().bills.find(x => x.room.room_id === form.dataset.payRoom);
   const f = new FormData(form);
   const amount = Number(f.get('amount'));
   if (!(amount > 0)) return toast('ยอดต้องมากกว่า 0', true);
   if (!confirm(`บันทึกรับเงินห้อง ${b.room.room_id} ${baht(amount)} (${METHOD_TH[f.get('method')]}) วันที่ ${L.dateTh(f.get('paid_on'))}?\nแก้ภายหลังไม่ได้ ต้องยกเลิกแล้วบันทึกใหม่`)) return;
-  const row = { cycle: state.cycle, room_id: b.room.room_id, invoice_id: b.inv.id, amount, paid_on: f.get('paid_on'), method: f.get('method'), note: blankToNull(f.get('note')) };
+  const row = { cycle: state.cycle, room_id: b.room.room_id, invoice_id: b.inv.id, amount, paid_on: f.get('paid_on'), method: f.get('method'), note: blankToNull(f.get('note')), client_key: form.dataset.key };
   if (await write(() => api.addPayment(row), `บันทึกรับเงินห้อง ${b.room.room_id} แล้ว`)) showBill(b.room.room_id);
 }
 async function voidPayment(id) {
@@ -897,7 +939,7 @@ function roomDetail(roomId, c) {
         ${active ? `<button class="mt-retire mt-manual" data-action="manual-read" data-meter="${esc(m.meter_id)}" title="กรอกเลขเองเมื่อหุ่นถ่ายไม่ได้">กรอกเอง</button><button class="mt-retire" data-action="retire" data-meter="${esc(m.meter_id)}" title="ปลด/เปลี่ยนมิเตอร์">ปลด</button>` : status('ปลดแล้ว', '')}</div>
       <div class="mt-val ${!lastConf && pend ? 'pending' : ''}"><b>${lastConf ? num(Number(lastConf.confirmed_value)) : pend ? num(pend.value) : '—'}</b><small>${lastConf ? `ยืนยัน ${L.dateTh(L.bkkDate(lastConf.captured_at))}` : pend ? `OCR ${L.dateTh(L.bkkDate(pend.captured_at))} · รอยืนยัน` : 'ยังไม่มีค่า'}</small></div>
       ${rs.length ? `<div class="mt-hist">${rs.slice(0, 4).map(r => `<button class="mt-chip ${r.status}${r.source === 'manual' ? ' manual' : ''}" data-page="review" data-reading="${r.id}" title="${CHIP[r.status] || r.status}${r.source === 'manual' ? ' · กรอกเอง' : ''}"><i></i>${num(r.confirmed_value ?? r.value)}<small>${L.dateTh(L.bkkDate(r.captured_at)).replace(/ \d{4}$/, '')}</small></button>`).join('')}</div>` : ''}
-      <small class="mt-meta">ติดตั้ง ${L.dateTh(m.installed_at)} · เริ่ม ${num(Number(m.start_value))}${m.retired_at ? ` · ปลด ${L.dateTh(m.retired_at)} · สุดท้าย ${num(m.end_value == null ? null : Number(m.end_value))}` : ''}</small></div>`;
+      <small class="mt-meta">ติดตั้ง ${L.dateTh(m.installed_at)} · เริ่ม ${num(Number(m.start_value))}${active ? ` <button class="text-link mt-fix" data-action="fix-start" data-meter="${esc(m.meter_id)}">แก้ค่าเริ่ม</button>` : ''}${m.retired_at ? ` · ปลด ${L.dateTh(m.retired_at)} · สุดท้าย ${num(m.end_value == null ? null : Number(m.end_value))}` : ''}</small></div>`;
   };
   const nextW = L.nextMeterId(d.meters, roomId, 'water');
 
@@ -927,7 +969,7 @@ function roomDetail(roomId, c) {
       <label class="mini-field"><small>จำนวนหลัก</small><input name="digits" type="number" min="1" max="9" value="5" required></label>
       <label class="mini-field"><small>ทศนิยม</small><input name="decimals" type="number" min="0" max="4" value="0" required></label>
       <label class="mini-field"><small>วันติดตั้ง</small><input name="installed_at" type="date" value="${today}" required></label>
-      <label class="mini-field"><small>ค่าบนหน้าปัดวันติดตั้ง</small><input name="start_value" type="number" min="0" step="any" value="0" required></label>
+      <label class="mini-field"><small>ค่าบนหน้าปัดวันติดตั้ง</small><input name="start_value" type="number" min="0" step="any" placeholder="เลขที่เห็นวันนี้" required></label>
       <button class="btn primary small" type="submit">เพิ่ม</button></form>
       <p class="set-hint">เปลี่ยนมิเตอร์ = ปลดตัวเก่าแล้วเพิ่มตัวใหม่วันเดียวกัน · เพิ่มเสร็จกด “ส่งออกให้หุ่น”</p></details></section>`;
 
@@ -964,7 +1006,21 @@ async function addMeter(form) {
   const type = f.get('type');
   const row = { meter_id: L.nextMeterId(state.data.meters, state.selectedRoom, type), room_id: state.selectedRoom, type,
     digits: Number(f.get('digits')), decimals: Number(f.get('decimals')), installed_at: f.get('installed_at'), start_value: Number(f.get('start_value')) };
+  // ฐาน 0 = บิลแรกคิดทุกหน่วยที่หน้าปัดเคยหมุนมา (เจอจริงบนเว็บ 3 ต.ค.: ห้อง A102/A103 บิลแรก 1,234 หน่วย)
+  if (row.start_value === 0 && !confirm(`ค่าบนหน้าปัดวันติดตั้ง = 0 ?\n\nบิลแรกจะคิดทุกหน่วยตั้งแต่ 0 ถึงเลขที่อ่านได้ · ใช้ 0 เฉพาะมิเตอร์ใหม่ที่หน้าปัดเป็น 0 จริง`)) return;
   if (await write(() => api.addMeter(row), `เพิ่ม ${row.meter_id} แล้ว · อย่าลืมส่งออกให้หุ่น`)) markMetersChanged();
+}
+
+// ค่าเริ่ม = เลขบนหน้าปัดวันติดตั้ง = ฐานของบิลแรก · ต้องไม่เกินค่าที่ยืนยันครั้งแรก (ไม่งั้นหน่วยติดลบ)
+async function fixStart(id) {
+  const m = mIdx.get(id);
+  const first = state.data.readings.filter(r => L.readingMeterId(r, mIdx) === id && r.status === 'confirmed').sort((a, b) => a.captured_at.localeCompare(b.captured_at))[0];
+  const raw = prompt(`ค่าบนหน้าปัด ${id} วันติดตั้ง (${L.dateTh(m.installed_at)})\nตอนนี้ = ${num(Number(m.start_value))}${first ? ` · ค่าที่ยืนยันแรก ${num(Number(first.confirmed_value))}` : ''}\n\nบิลที่อนุมัติแล้วไม่เปลี่ยนเอง ต้องออกฉบับแก้ไข`, String(Number(m.start_value)));
+  if (raw === null || raw.trim() === '') return;
+  const v = Number(raw);
+  if (!Number.isFinite(v) || v < 0) return toast('ค่าเริ่มต้องเป็นตัวเลขไม่ติดลบ', true);
+  if (first && v > Number(first.confirmed_value)) return toast(`ค่าเริ่มต้องไม่เกินค่าที่ยืนยันครั้งแรก ${num(Number(first.confirmed_value))}`, true);
+  await write(() => api.updateMeter(id, { start_value: v }), `ค่าเริ่ม ${id} = ${num(v)} แล้ว`);
 }
 
 async function retireMeter(id) {
@@ -976,6 +1032,8 @@ async function retireMeter(id) {
   if (endRaw === null) return;
   const end = endRaw.trim() === '' ? null : Number(endRaw);
   if (end != null && (!Number.isFinite(end) || end < 0)) return toast('ค่าสุดท้ายต้องเป็นตัวเลขไม่ติดลบ', true);
+  const last = state.data.readings.filter(r => L.readingMeterId(r, mIdx) === id && r.status === 'confirmed' && L.bkkDate(r.captured_at) <= date).sort((a, b) => b.captured_at.localeCompare(a.captured_at))[0];
+  if (end != null && last && end < Number(last.confirmed_value)) return toast(`ค่าตอนถอดต้องไม่ต่ำกว่าค่าที่ยืนยันล่าสุด ${num(Number(last.confirmed_value))}`, true);
   if (await write(() => api.updateMeter(id, { retired_at: date, end_value: end }), `ปลด ${id} แล้ว · เพิ่มตัวใหม่ได้ที่ “เพิ่มมิเตอร์”`)) markMetersChanged();
 }
 
@@ -1076,6 +1134,9 @@ async function saveCycle(form) {
   const cycle = String(f.get('cycle'));
   const cutoff = String(f.get('cutoff_date'));
   const row = state.data.cycles.find(x => x.cycle === cycle);
+  // รอบนี้หรือรอบถัดไปอนุมัติบิลแล้ว = ห้ามเลื่อนวันตัด (ช่วงของบิลที่ตรึงไว้จะไม่ตรง → คิดซ้ำ/ตกหล่น · audit WEB-003 · ฐานข้อมูลกันซ้ำ)
+  const locked = (state.data.invoices || []).filter(v => v.state === 'approved' && (v.cycle === cycle || v.cycle === L.shiftCycle(cycle, 1)));
+  if (row && row.cutoff_date !== cutoff && locked.length) return toast(`เปลี่ยนวันตัดรอบ${L.cycleLabel(cycle)}ไม่ได้ · อนุมัติบิลแล้ว ${[...new Set(locked.map(v => v.room_id))].join(', ')} (รอบนี้หรือรอบถัดไป)`, true);
   if (cutoff <= L.cutoffFor(L.shiftCycle(cycle, -1), state.data.cycles, state.data.settings)) return toast('วันตัดรอบต้องหลังวันตัดรอบของรอบก่อน', true);
   if (cutoff > L.cutoffFor(L.shiftCycle(cycle, 1), state.data.cycles, state.data.settings)) return toast('วันตัดรอบต้องก่อนวันตัดรอบของรอบถัดไป', true);
   await write(() => api.upsertCycle({ cycle, cutoff_date: cutoff, include_rent: row?.include_rent ?? false }), `ตั้งวันตัดรอบ${L.cycleLabel(cycle)} = ${L.dateTh(cutoff)}`);
@@ -1212,6 +1273,7 @@ document.addEventListener('click', e => {
   else if (act === 'mail-test') mailTest(a);
   else if (act === 'approve-all') approveBills(ctx().bills.filter(b => b.view === 'ready').map(b => b.room.room_id));
   else if (act === 'retire') retireMeter(a.dataset.meter);
+  else if (act === 'fix-start') fixStart(a.dataset.meter);
   else if (act === 'move-out') moveOut(Number(a.dataset.id));
   else if (act === 'reload') location.reload();
   else if (act === 'account-menu') toggleAccountMenu();
@@ -1323,7 +1385,7 @@ async function boot() {
   document.querySelectorAll('[data-icon]').forEach(n => { n.innerHTML = icon(n.dataset.icon); });
   const local = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
   if (local && new URLSearchParams(location.search).has('mock')) {
-    api = (await import('./mock.js?v=w45')).createMockApi();
+    api = (await import('./mock.js?v=w48')).createMockApi();
   } else {
     if (!window.supabase) return showGate('Failed to load', '', '<button class="gate-google plain" data-action="reload"><span>Reload</span></button>');
     api = (await import('./api.js?v=w45')).createApi();

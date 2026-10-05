@@ -119,6 +119,44 @@ test('บิล: เปลี่ยนมิเตอร์กลางรอบ
   assert.equal(b.lines.water.segments.length, 2);
 });
 
+// audit WEB-002 (5 ต.ค. 2569): หุ่นอ่านมิเตอร์เก่าไว้กลางรอบแล้วค่อยถอด → ค่าตอนถอดต้องเป็นค่าสุดท้าย ไม่ใช่ค่าที่อ่านไว้ก่อน
+test('บิล: ถอดมิเตอร์หลังหุ่นอ่านในรอบ = ใช้ค่าตอนถอด · ค่าตอนถอดต่ำกว่าค่าที่ยืนยัน = ติดปัญหา', () => {
+  const d = baseData();
+  d.meters[0] = meter('W-101-01', '101', 'water', { start_value: 900, retired_at: '2026-09-20', end_value: 1050 });
+  d.meters.push(meter('W-101-02', '101', 'water', { installed_at: '2026-09-20', start_value: 0 }));
+  d.readings[0] = confirmed('W-101-01', '2026-09-10T03:00:00Z', 1000);
+  d.readings.push(confirmed('W-101-02', '2026-09-25T03:00:00Z', 30));
+  const idx = L.meterIndex(d.meters);
+  const b = L.billPreview({ room_id: '101' }, '2026-09', d, idx);
+  assert.equal(b.lines.water.units, 180);         // (1050 − 900) + (30 − 0) · เดิมได้ 130
+  d.meters[0].end_value = 990;
+  const b2 = L.billPreview({ room_id: '101' }, '2026-09', d, L.meterIndex(d.meters));
+  assert.equal(b2.state, 'blocked');
+  assert.ok(b2.reasons.some(r => r.includes('ค่าตอนถอด')));
+});
+
+// audit WEB-003: ฐานรอบถัดไป = curr ของบิลรอบก่อนที่อนุมัติแล้ว (ตรึง) · ข้อมูลรอบก่อนเปลี่ยนหลังอนุมัติ = เตือน ไม่คิดซ้ำ
+test('บิล: ฐานรอบถัดไปตรึงตามบิลที่อนุมัติแล้ว แม้ข้อมูลรอบก่อนเปลี่ยน', () => {
+  const d = baseData();
+  d.readings.push(confirmed('W-101-01', '2026-10-20T03:00:00Z', 1020), confirmed('E-101-01', '2026-10-20T03:00:00Z', 3200));
+  const idx = L.meterIndex(d.meters);
+  d.invoices = [{ room_id: '101', cycle: '2026-09', state: 'approved', detail: { segments: {
+    water: [{ meter_id: 'W-101-01', base: 1000, curr: 1013, units: 13 }], electric: [{ meter_id: 'E-101-01', base: 3000, curr: 3109.5, units: 109.5 }] } } }];
+  let b = L.billPreview({ room_id: '101' }, '2026-10', d, idx);
+  assert.equal(b.lines.water.units, 7);
+  assert.equal(b.lines.water.segments[0].baseSource, 'invoice');
+  assert.equal(b.warnings.length, 0);
+  // ค่ากันยายนถูกแก้เป็น 1010 หลังอนุมัติ → ฐานตุลาคมยังเป็น 1013 ตามบิล + มีคำเตือน
+  d.readings[0] = confirmed('W-101-01', '2026-09-20T03:00:00Z', 1010);
+  b = L.billPreview({ room_id: '101' }, '2026-10', d, idx);
+  assert.equal(b.lines.water.units, 7);
+  assert.equal(b.warnings.length, 1);
+  // บิลที่ถูกแทน (superseded) ไม่ใช้เป็นฐาน
+  d.invoices[0].state = 'superseded';
+  b = L.billPreview({ room_id: '101' }, '2026-10', d, idx);
+  assert.equal(b.lines.water.units, 10);
+});
+
 test('ห้องอ่านครบ: ทุกมิเตอร์ที่ติดตั้งมีค่าไม่ถูกปฏิเสธในรอบ', () => {
   const d = baseData(); const idx = L.meterIndex(d.meters);
   const range = L.cycleRange('2026-09', [], settingsEnd);
