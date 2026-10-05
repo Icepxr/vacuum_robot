@@ -244,7 +244,7 @@
         if (ev.v_max !== cfg.vMax || ev.w_max !== cfg.wMax) { cfg.vMax = ev.v_max; cfg.wMax = ev.w_max; save(); applyCfg(); }
         logEv(`เพดาน ${ev.v_max} mm/s · หมุน ${ev.w_max} mrad/s`, ""); break;
       case "nack": toast("ปฏิเสธ: " + (NACK_TH[ev.reason] || ev.reason), "warn"); logEv("ปฏิเสธ " + ev.reason, "warn"); beep("warn"); break;
-      case "capture": $("capture").disabled = false; if (ev.ok) { capCount++; $("capn").textContent = `${capCount} ใบ`; toast("ถ่ายแล้ว — กำลังอ่านตัวเลข…", "good"); beep("good"); } else { toast("ถ่ายไม่สำเร็จ: " + ev.reason, "bad"); beep("bad"); } logEv(ev.ok ? `ถ่าย ${ev.image}` : `ถ่ายไม่สำเร็จ ${ev.reason}`, ev.ok ? "good" : "bad"); break;
+      case "capture": $("capture").disabled = false; shutter.result(!!ev.ok); if (ev.ok) { capCount++; $("capn").textContent = `${capCount} ใบ`; toast("ถ่ายแล้ว — กำลังอ่านตัวเลข…", "good"); beep("good"); } else { toast("ถ่ายไม่สำเร็จ: " + ev.reason, "bad"); beep("bad"); } logEv(ev.ok ? `ถ่าย ${ev.image}` : `ถ่ายไม่สำเร็จ ${ev.reason}`, ev.ok ? "good" : "bad"); break;
       case "reading": if (ev.pending) { logEv(`ค่า ${ev.value ?? "—"} (conf ${ev.confidence}) · รอตัดสิน`, ""); break; } toast(ev.value == null ? "อ่านตัวเลขไม่ออก — เล็งให้เข้ากรอบแล้วถ่ายใหม่" : `อ่านได้ ${ev.value}`, ev.value == null ? "warn" : "good"); logEv(`ค่า ${ev.value ?? "—"} (conf ${ev.confidence})`, ev.value == null ? "warn" : "good"); break;
       case "log": if (ev.level === "bad" || ev.level === "warn") { logEv(ev.msg, ev.level); if (ev.level === "bad") toast(ev.msg, "bad"); } else if (ev.level === "good") logEv(ev.msg, "good"); break;
       case "event": logEv(`ESP32: ${ev.code} ${ev.detail || ""}`, "warn"); break;
@@ -405,7 +405,132 @@
       else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
     }
   });
-  function capture() { if (stopLatch.active) return; $("capture").disabled = true; send({ t: "capture" }); setTimeout(() => $("capture").disabled = false, 5000); }
+  // ถ่ายภาพ: ส่งคำสั่งทันที (Pi ใช้เฟรมล่าสุด ณ ตอนรับ) · ชัตเตอร์เป็นเอฟเฟกต์ฝั่งจอ ไม่หน่วงคำสั่ง
+  function capture() { if (stopLatch.active) return; $("capture").disabled = true; send({ t: "capture" }); shutter.fire(); setTimeout(() => $("capture").disabled = false, 5000); }
+  // ชัตเตอร์สมจริง: โฟกัสล็อก → ม่านบน/ล่างปิด–เปิด (2 คลิก) → แฟลช → ภาพนิ่งค้างย่อกลางจอ ("กำลังอ่านตัวเลข…")
+  //   → ป๊อปอัพ "เก็บรูปนี้ไหม" เปิด (review.js เรียก window.mrcShot.land) = ภาพลอยลงช่องรูปในป๊อปอัพ
+  //   → ไม่มีป๊อปอัพภายใน 7 s (ไม่มีค่ารอตัดสิน) = ลอยไปเหนือปุ่มถ่ายแทน · ถ่ายไม่สำเร็จ = สั่น ! แดง แล้วจาง
+  const shutter = (() => {
+    const vp = document.querySelector(".viewport"), cam = $("cam"), btn = $("capture");
+    const reduce = () => window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let thumb = null, pill = null, mode = null, holdT = 0, leaveT = 0, holdAnim = null, okSeen = false, firedAt = 0, early = null;
+    const el = (cls, parent) => { const d = document.createElement("div"); d.className = cls; d.setAttribute("aria-hidden", "true"); parent.appendChild(d); return d; };
+    function click(at, freq, gain) {                    // เสียงม่านชัตเตอร์ = noise สั้นผ่าน band-pass (ไม่ต้องมีไฟล์)
+      if (!cfg.sound) return;
+      try {
+        actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+        const n = Math.floor(actx.sampleRate * 0.03), buf = actx.createBuffer(1, n, actx.sampleRate), d = buf.getChannelData(0);
+        for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 4);
+        const src = actx.createBufferSource(), bp = actx.createBiquadFilter(), g = actx.createGain();
+        bp.type = "bandpass"; bp.frequency.value = freq; bp.Q.value = 1.4; g.gain.value = gain;
+        src.buffer = buf; src.connect(bp); bp.connect(g); g.connect(actx.destination); src.start(actx.currentTime + at);
+      } catch (e) {}
+    }
+    function frameRect() {                              // กรอบภาพจริงใน viewport (object-fit: contain · object-position: center 37 %)
+      const r = vp.getBoundingClientRect(), nw = cam.naturalWidth, nh = cam.naturalHeight;
+      if (!nw || !nh) return null;
+      const k = Math.min(r.width / nw, r.height / nh), w = nw * k, h = nh * k;
+      const op = (getComputedStyle(cam).objectPosition || "50% 50%").split(" ").map((v) => parseFloat(v) / 100);
+      return { left: r.left + (r.width - w) * (op[0] || 0.5), top: r.top + (r.height - h) * (isNaN(op[1]) ? 0.5 : op[1]), width: w, height: h };
+    }
+    function snapshot() {
+      const fr = frameRect(); if (!fr) return null;
+      try {
+        const c = document.createElement("canvas"); c.width = Math.min(960, cam.naturalWidth); c.height = Math.round(c.width * cam.naturalHeight / cam.naturalWidth);
+        const g = c.getContext("2d"); if (cfg.mirror) { g.translate(c.width, 0); g.scale(-1, 1); }
+        g.drawImage(cam, 0, 0, c.width, c.height); return { c, fr };
+      } catch (e) { return null; }
+    }
+    const place = (t, r) => Object.assign(t.style, { left: r.left + "px", top: r.top + "px", width: r.width + "px", height: r.height + "px" });
+    const ease = (k) => k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+    // ลอยไปหาเป้าที่ "ขยับได้" (การ์ดป๊อปอัพกำลังเด้งเข้า / รูปกำลังโหลด) → อ่านตำแหน่งเป้าใหม่ทุกเฟรม
+    function flyTo(t, target, ms, radius, done) {
+      if (holdAnim) { const r = t.getBoundingClientRect(); holdAnim.cancel(); holdAnim = null; place(t, r); }
+      const s = t.getBoundingClientRect(), r0 = parseFloat(getComputedStyle(t).borderTopLeftRadius) || 0, t0 = performance.now();
+      let fin = false;
+      const finish = () => { if (fin) return; fin = true; if (t.isConnected) { place(t, target()); t.style.borderRadius = radius + "px"; } done(); };
+      if (reduce() || document.hidden) { finish(); return; }
+      setTimeout(finish, ms + 400);                     // กันค้าง: แท็บถูกซ่อนกลางทาง rAF หยุด → ไปจบที่เป้าเลย
+      (function step(now) {
+        if (fin || !t.isConnected) return;
+        const k = Math.min(1, (now - t0) / ms), e = ease(k), g = target();
+        place(t, { left: s.left + (g.left - s.left) * e, top: s.top + (g.top - s.top) * e, width: s.width + (g.width - s.width) * e, height: s.height + (g.height - s.height) * e });
+        t.style.borderRadius = (r0 + (radius - r0) * e) + "px";
+        if (k < 1) requestAnimationFrame(step); else finish();
+      })(t0);
+    }
+    function leave(t, ms) { if (!t || !t.isConnected) return; t.classList.add("gone"); setTimeout(() => t.remove(), ms || 400); if (thumb === t) { thumb = null; mode = null; } }
+    function clear() { clearTimeout(holdT); clearTimeout(leaveT); if (holdAnim) holdAnim.cancel(); holdAnim = null; if (thumb) thumb.remove(); thumb = pill = null; mode = null; }
+    function hold(shot) {                               // ภาพนิ่งยุบลงกลางกรอบกล้อง ค้างรอป๊อปอัพ
+      clear(); okSeen = false;
+      const t = thumb = document.createElement("div"); t.className = "shot-thumb"; t.setAttribute("aria-hidden", "true"); t.appendChild(shot.c);
+      pill = el("shot-pill", t); pill.textContent = "กำลังอ่านตัวเลข…";
+      document.body.appendChild(t); mode = "hold";
+      const fr = shot.fr, k = 0.72, h = { left: fr.left + fr.width * (1 - k) / 2, top: fr.top + fr.height * (1 - k) / 2, width: fr.width * k, height: fr.height * k };
+      place(t, h);
+      if (!reduce() && t.animate) {
+        holdAnim = t.animate([{ left: fr.left + "px", top: fr.top + "px", width: fr.width + "px", height: fr.height + "px", borderRadius: "0px" },
+                              { left: h.left + "px", top: h.top + "px", width: h.width + "px", height: h.height + "px", borderRadius: "14px" }],
+                             { duration: 520, easing: "cubic-bezier(.2,.9,.25,1)" });
+        holdAnim.onfinish = () => { holdAnim = null; };
+      }
+      t.style.borderRadius = "14px";
+      holdT = setTimeout(toButton, 7000);
+      if (early) { const e = early; early = null; land(e.slot, e.img); }   // ป๊อปอัพมาก่อนภาพนิ่ง (OCR ~0.2 s วัดจริง < 0.32 s) → ลงจอดต่อทันที
+    }
+    function toButton() {                               // ไม่มีป๊อปอัพมารับ → ไปพักเหนือปุ่มถ่าย
+      const t = thumb; if (!t || mode !== "hold") return;
+      mode = "button"; if (pill) pill.classList.add("gone");
+      const b = (btn.querySelector(".ico") || btn).getBoundingClientRect(), r = t.getBoundingClientRect();
+      const h = Math.max(30, Math.min(54, btn.getBoundingClientRect().height * 1.05)), w = h * r.width / r.height;
+      const end = { left: b.left + b.width / 2 - w / 2, top: b.top + b.height / 2 - h / 2 - h * 0.9, width: w, height: h };
+      flyTo(t, () => end, 620, 8, () => {
+        btn.classList.remove("shot-pop"); void btn.offsetWidth; btn.classList.add("shot-pop");
+        if (okSeen) t.classList.add("ok");
+        leaveT = setTimeout(() => leave(t), 1800);
+      });
+    }
+    // review.js เรียกตอนเปิดป๊อปอัพ · คืน true = รับช่วงอนิเมชันรูปเอง (รูปจริงในการ์ดซ่อนไว้จนภาพนิ่งลงจอด)
+    function land(slot, img) {
+      if (!slot) return false;
+      if (!thumb && performance.now() - firedAt < 1500) { early = { slot, img }; slot.classList.add("shot-landing"); return true; }   // ชัตเตอร์ยังไม่จบ → จองไว้
+      const t = thumb; if (!t || mode !== "hold") return false;
+      clearTimeout(holdT); mode = "review"; if (pill) pill.classList.add("gone");
+      slot.classList.add("shot-landing"); t.classList.add("landing");
+      const ready = () => img && !img.hidden && img.complete && img.naturalWidth > 0;
+      const target = () => { const r = (ready() ? img : slot).getBoundingClientRect(); return { left: r.left, top: r.top, width: r.width, height: r.height }; };
+      const radius = parseFloat(getComputedStyle(slot).borderTopLeftRadius) || 12;
+      flyTo(t, target, 640, radius, () => {
+        const reveal = () => { slot.classList.remove("shot-landing"); leave(t, 260); };
+        if (ready() || !img || img.hidden) { reveal(); return; }
+        const t1 = setTimeout(reveal, 1500);            // รูปจริงยังโหลดไม่เสร็จ → ภาพนิ่งนั่งแทนในช่องก่อน
+        img.addEventListener("load", () => { clearTimeout(t1); place(t, target()); reveal(); }, { once: true });
+      });
+      return true;
+    }
+    function fire() {
+      if (!vp) return;
+      firedAt = performance.now(); early = null;
+      const old = vp.querySelector(".shot-fx"); if (old) old.remove();
+      const fx = el("shot-fx" + (reduce() ? " still" : ""), vp);
+      el("shot-af", fx); el("shot-curtain top", fx); el("shot-curtain bot", fx); el("shot-flash", fx);
+      const shot = snapshot();                          // เก็บเฟรมตอนกด = เฟรมเดียวกับที่ Pi กำลังเซฟ (± 1 เฟรม)
+      if (!reduce()) { click(0.13, 2600, 0.5); click(0.24, 1500, 0.32); }
+      if (cfg.vibrate && navigator.vibrate) setTimeout(() => navigator.vibrate(18), 130);
+      setTimeout(() => fx.remove(), 900);
+      if (shot) setTimeout(() => hold(shot), reduce() ? 0 : 320);
+      else setTimeout(() => { if (early) { early.slot.classList.remove("shot-landing"); early = null; } }, 400);   // ขึ้นหลังม่านเปิดสุด · แฟลชต่อบนภาพนิ่ง (::before)
+    }
+    function result(ok) {                               // เรียกจาก ev "capture"
+      if (ok) { okSeen = true; if (mode === "button" && thumb) thumb.classList.add("ok"); return; }
+      btn.classList.remove("shot-bad"); void btn.offsetWidth; btn.classList.add("shot-bad");
+      const t = thumb; if (!t || mode === "review") return;
+      clearTimeout(holdT); mode = "failed"; t.classList.add("bad"); if (pill) pill.textContent = "ถ่ายไม่สำเร็จ";
+      leaveT = setTimeout(() => leave(t), 2200);
+    }
+    window.mrcShot = { land };
+    return { fire, result };
+  })();
   $("capture").onclick = capture;
   const BRUSH_ON_PCT = 100;
   let suction = 0, brush = 0, idleT;

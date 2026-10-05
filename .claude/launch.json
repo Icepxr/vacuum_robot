@@ -24,6 +24,18 @@
         "aria/web"
       ],
       "port": 8766
+    },
+    {
+      "name": "pi-static",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8767",
+        "--directory",
+        "11_pi5_vision/src"
+      ],
+      "port": 8767
     }
   ]
 }

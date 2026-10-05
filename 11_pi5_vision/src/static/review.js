@@ -66,6 +66,7 @@
     box.hidden = false;
     void box.offsetWidth;                 // เริ่มจากสถานะก่อนเข้า ไม่งั้น transition ไม่เล่น
     box.classList.add("in");
+    if (window.mrcShot && item.crop_url) window.mrcShot.land(box.querySelector(".review-crop"), img);   // ภาพจากชัตเตอร์ลอยลงช่องรูป (drive.js)
     paintBadge();
     (roomValue() ? $("review-keep") : roomOther.hidden ? roomSel : roomOther).focus({ preventScroll: true });
   }
