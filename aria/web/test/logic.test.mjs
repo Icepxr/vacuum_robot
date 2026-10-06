@@ -173,3 +173,29 @@ test('meters.json: เฉพาะมิเตอร์ที่ติดตั�
   assert.equal(L.nextMeterId(ms, '2', 'water'), 'W-2-03');
   assert.equal(L.nextMeterId(ms, '3', 'electric'), 'E-3-01');
 });
+
+test('ถ่ายซ้ำ: มิเตอร์/ห้องเดียวกันในรอบเดียวกัน → ธง duplicate ให้เจ้าของเลือกบนเว็บ', () => {
+  const idx = L.meterIndex([meter('W-204-01', '204', 'water'), meter('W-205-01', '205', 'water')]);
+  const cyc = { cycles: [], settings: settingsEnd };
+  const a = reading('W-204-01', '2026-10-06T03:00:00Z', 150);
+  const b = reading('W-204-01', '2026-10-06T03:05:00Z', 151);
+  const old = confirmed('W-204-01', '2026-09-20T03:00:00Z', 140);                         // รอบก่อน = ไม่ซ้ำ
+  const other = reading('W-205-01', '2026-10-06T03:06:00Z', 90);                          // คนละห้อง
+  const unb = reading(null, '2026-10-06T03:07:00Z', 152, { room_id: '204', meter_type: 'water' });   // ยังไม่ผูก แต่ห้อง+ชนิดเดียวกัน
+  const rej = reading('W-204-01', '2026-10-06T03:08:00Z', 153, { status: 'rejected' });    // ปฏิเสธแล้ว = ไม่นับ
+  const rs = [a, b, old, other, unb, rej];
+  assert.deepEqual(L.readingFlags(a, rs, idx, cyc).dups.map(x => x.id), [b.id, unb.id]);
+  assert.ok(L.readingFlags(b, rs, idx, cyc).flags.includes('duplicate'));
+  assert.ok(L.readingFlags(unb, rs, idx, cyc).flags.includes('duplicate'));
+  assert.ok(!L.readingFlags(other, rs, idx, cyc).flags.includes('duplicate'));
+  assert.ok(!L.readingFlags(a, rs, idx).flags.includes('duplicate'));                      // ไม่ส่งรอบ = ไม่ตรวจ (ผู้เรียกเดิม)
+  // ยืนยันไปแล้วหนึ่งใบ → ใบที่ยังรอยืนยันยังติดธง · ใบที่ยืนยันแล้วไม่ติด
+  const c1 = confirmed('W-205-01', '2026-10-06T02:00:00Z', 88);
+  assert.ok(L.readingFlags(other, [other, c1], idx, cyc).flags.includes('duplicate'));
+  assert.ok(!L.readingFlags(c1, [other, c1], idx, cyc).flags.includes('duplicate'));
+  // ลำดับคิว: ยังไม่ผูก → ถ่ายซ้ำ → ที่เหลือ
+  const q = L.reviewQueue(rs, idx, cyc).map(x => x.r.id);
+  assert.equal(q[0], unb.id);
+  assert.deepEqual(q.slice(1, 3), [a.id, b.id]);
+  assert.equal(q[3], other.id);
+});

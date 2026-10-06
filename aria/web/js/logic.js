@@ -82,27 +82,50 @@ export function previousConfirmed(reading, meterId, readings, mIdx) {
   return m ? { value: Number(m.start_value), source: 'start', at: null } : null;
 }
 
-// ธงความเสี่ยงของค่าที่รอยืนยัน · ลำดับตามแบบ v1 §4.1 "ต้องดูก่อน"
-export function readingFlags(r, readings, mIdx) {
+// ถ่ายซ้ำ (6 ต.ค. 2026 · ผู้ใช้สั่ง): คนขับเลือกห้อง/มิเตอร์ซ้ำกับรูปอื่นในรอบบิลเดียวกัน → เจ้าของตัดสินบนเว็บว่าใช้รูปไหน
+// "ที่เดียวกัน" = ผูกมิเตอร์แล้วทั้งคู่ → มิเตอร์ตัวเดียวกัน · ไม่งั้น → ห้อง+ชนิดเดียวกัน (ผูกแล้วใช้ห้อง/ชนิดของมิเตอร์นั้น)
+// ไม่นับรูปที่ถูกปฏิเสธแล้ว · cyc = { cycles, settings } · ไม่ส่ง cyc = ไม่ตรวจ
+function readingTarget(r, mIdx) {
+  const meterId = readingMeterId(r, mIdx), m = meterId ? mIdx.get(meterId) : null;
+  return { meterId, room: m ? m.room_id : r.room_id, type: m ? m.type : r.meter_type };
+}
+function sameTarget(a, b) {
+  if (a.meterId && b.meterId) return a.meterId === b.meterId;
+  return !!a.room && !!a.type && a.room === b.room && a.type === b.type;
+}
+export function duplicatesOf(r, readings, mIdx, cyc) {
+  if (!cyc || r.status === 'rejected') return [];
+  const t = readingTarget(r, mIdx);
+  const c = cycleOfDate(bkkDate(r.captured_at), cyc.cycles, cyc.settings);
+  return readings
+    .filter(x => x.id !== r.id && x.status !== 'rejected' && sameTarget(t, readingTarget(x, mIdx))
+      && cycleOfDate(bkkDate(x.captured_at), cyc.cycles, cyc.settings) === c)
+    .sort((a, b) => a.captured_at.localeCompare(b.captured_at));
+}
+
+// ธงความเสี่ยงของค่าที่รอยืนยัน · ลำดับตามแบบ v1 §4.1 "ต้องดูก่อน" · duplicate ตรวจเฉพาะค่าที่ยังรอยืนยัน (ตัดสินแล้ว = จบ)
+export function readingFlags(r, readings, mIdx, cyc = null) {
   const meterId = readingMeterId(r, mIdx);
   const prev = meterId ? previousConfirmed(r, meterId, readings, mIdx) : null;
   const value = r.value == null ? null : Number(r.value);
+  const dups = r.status === 'ocr' ? duplicatesOf(r, readings, mIdx, cyc) : [];
   const flags = [];
   if (!meterId) flags.push('unassigned');
+  if (dups.length) flags.push('duplicate');
   if (value == null) flags.push('unreadable');
   else if (prev && value < prev.value) flags.push('below_prev');
   if (r.confidence != null && r.confidence < LOW_CONFIDENCE) flags.push('low_conf');
   if (r.clock_synced === false) flags.push('clock');
-  return { meterId, prev, value, flags };
+  return { meterId, prev, value, flags, dups };
 }
 
-const FLAG_RANK = { unassigned: 0, below_prev: 1, unreadable: 2, low_conf: 3, clock: 4 };
+const FLAG_RANK = { unassigned: 0, duplicate: 1, below_prev: 2, unreadable: 3, low_conf: 4, clock: 5 };
 const rankOf = flags => Math.min(9, ...flags.map(f => FLAG_RANK[f]));
 
-export function reviewQueue(readings, mIdx) {
+export function reviewQueue(readings, mIdx, cyc = null) {
   return readings
     .filter(r => r.status === 'ocr')
-    .map(r => ({ r, ...readingFlags(r, readings, mIdx) }))
+    .map(r => ({ r, ...readingFlags(r, readings, mIdx, cyc) }))
     .sort((a, b) => rankOf(a.flags) - rankOf(b.flags) || a.r.captured_at.localeCompare(b.r.captured_at));
 }
 

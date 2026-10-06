@@ -1,6 +1,6 @@
 // ARIA หลังบ้าน · vanilla JS (ต่อจาก design/aria-prototype) + Supabase
 // ขอบเขต: ขั้น 3 ของแบบ v1 §7 (บัญชีเจ้าของ + 5 หน้า + reading_events) · บิลเป็นพรีวิว (ขั้น 4 ยังไม่มีตาราง invoices) · ยังไม่ส่งอีเมล (ขั้น 5)
-import * as L from './logic.js?v=w14';
+import * as L from './logic.js?v=w15';
 import { createBackdrop, accentNow } from './liquid.js?v=w41';
 
 let gateBg = null, appBg = null;   // วอลเปเปอร์สองโทน (อินสแตนซ์แยก · ตอนเปลี่ยนหน้าทำงานพร้อมกัน)
@@ -54,6 +54,7 @@ const status = (text, tone = '') => `<span class="status ${tone}">${esc(text)}</
 
 const FLAG_TEXT = {
   unassigned: ['ยังไม่ผูกมิเตอร์', 'bad'],
+  duplicate: ['ถ่ายซ้ำ', 'warn'],
   below_prev: ['ต่ำกว่าค่าก่อน', 'bad'],
   unreadable: ['OCR อ่านไม่ออก', 'warn'],
   low_conf: ['OCR ไม่มั่นใจ', 'warn'],
@@ -150,11 +151,12 @@ function toast(message, bad = false) {
 }
 
 // ───────── ค่าที่ใช้หลายหน้า ─────────
+const cycCtx = d => ({ cycles: d.cycles, settings: d.settings });   // ให้ logic รู้รอบบิล (ตรวจถ่ายซ้ำ)
 function ctx() {
   const d = state.data;
   const range = L.cycleRange(state.cycle, d.cycles, d.settings);
   const inCycle = L.readingsInCycle(d.readings, range);
-  const queue = L.reviewQueue(d.readings, mIdx);
+  const queue = L.reviewQueue(d.readings, mIdx, cycCtx(d));
   const rooms = [...d.rooms].sort((a, b) => a.room_id.localeCompare(b.room_id, 'en', { numeric: true }));
   const capture = new Map(rooms.map(r => [r.room_id, L.roomCaptureState(r, range, d, mIdx, inCycle)]));
   const bills = rooms.map(r => L.billPreview(r, state.cycle, d, mIdx));
@@ -499,7 +501,7 @@ function renderReview(c) {
   const q = c.queue;
   let sel = d.readings.find(r => r.id === state.selectedReading);
   if (!sel && q.length) { sel = q[0].r; state.selectedReading = sel.id; }
-  const head = pageHead('METER REVIEW', 'ยืนยันค่ามิเตอร์', q.length ? `รอยืนยัน ${q.length} ค่า · เรียง ยังไม่ผูก → ต่ำกว่าค่าก่อน → อ่านไม่ออก → ไม่มั่นใจ → เวลาไม่ยืนยัน → ปกติ` : 'ไม่มีค่าที่รอยืนยัน');
+  const head = pageHead('METER REVIEW', 'ยืนยันค่ามิเตอร์', q.length ? `รอยืนยัน ${q.length} ค่า · เรียง ยังไม่ผูก → ถ่ายซ้ำ → ต่ำกว่าค่าก่อน → อ่านไม่ออก → ไม่มั่นใจ → เวลาไม่ยืนยัน → ปกติ` : 'ไม่มีค่าที่รอยืนยัน');
   const queueHtml = q.map(x => {
     const f = x.flags[0];
     const cyc = L.cycleOfDate(L.bkkDate(x.r.captured_at), d.cycles, d.settings);
@@ -513,7 +515,7 @@ function renderReview(c) {
 }
 
 function reviewDetail(r, c) {
-  const { meterId, prev, value, flags } = L.readingFlags(r, c.d.readings, mIdx);
+  const { meterId, prev, value, flags, dups } = L.readingFlags(r, c.d.readings, mIdx, cycCtx(c.d));
   const meter = meterId ? mIdx.get(meterId) : null;
   const decided = r.status !== 'ocr';
   const manual = r.source === 'manual';   // เจ้าของกรอกเอง ไม่มีรูป (add_manual_reading)
@@ -536,7 +538,8 @@ function reviewDetail(r, c) {
       ${manual ? `<div class="comparison-box"><small>กรอกเอง</small><strong>${num(value)}</strong><small>ไม่มีรูป · เหตุผลอยู่ในประวัติ</small></div>` : `<div class="comparison-box"><small>OCR (${esc(r.ocr_engine || '—')})</small><strong>${num(value)}</strong><small>ข้อความดิบ “${esc(r.raw_text ?? '')}” · มั่นใจ ${pct(r.confidence)}</small></div>`}
       <div class="comparison-box"><small>${manual ? 'หน่วยจากค่าที่กรอก' : 'หน่วยถ้ารับ OCR'}</small><strong class="${units != null && units < 0 ? 'neg' : ''}">${num(units)}</strong><small>${meter ? `${meter.digits} หลัก · ทศนิยม ${meter.decimals}` : ''}</small></div>
     </div>
-    ${flags.length ? `<div class="alert ${flags.some(f => FLAG_TEXT[f][1] === 'bad') ? 'bad' : 'warn'}">${flags.map(f => `<strong>${FLAG_TEXT[f][0]}</strong>`).join(' · ')}${flags.includes('clock') ? ' — นาฬิกา Pi ยังไม่ซิงก์ตอนถ่าย ตรวจว่ารูปนี้เป็นของรอบนี้จริง' : ''}${flags.includes('below_prev') ? ' — ถ้ามิเตอร์ถูกเปลี่ยนตัว ให้ปลดตัวเก่าและเพิ่มตัวใหม่ที่หน้า “ห้องและมิเตอร์” แล้วผูกค่านี้กับตัวใหม่' : ''}</div>` : ''}
+    ${flags.length ? `<div class="alert ${flags.some(f => FLAG_TEXT[f][1] === 'bad') ? 'bad' : 'warn'}">${flags.map(f => `<strong>${FLAG_TEXT[f][0]}</strong>`).join(' · ')}${flags.includes('clock') ? ' — นาฬิกา Pi ยังไม่ซิงก์ตอนถ่าย ตรวจว่ารูปนี้เป็นของรอบนี้จริง' : ''}${flags.includes('duplicate') ? ` — มีรูปของ${meterId ? 'มิเตอร์' : 'ห้อง+ชนิด'}เดียวกันในรอบนี้อีก ${dups.length} รูป เลือกด้านล่างว่าจะใช้รูปไหน` : ''}${flags.includes('below_prev') ? ' — ถ้ามิเตอร์ถูกเปลี่ยนตัว ให้ปลดตัวเก่าและเพิ่มตัวใหม่ที่หน้า “ห้องและมิเตอร์” แล้วผูกค่านี้กับตัวใหม่' : ''}</div>` : ''}
+    ${dups.length ? dupPanel(r, dups) : ''}
     <div class="detail-grid"><div class="detail-kv"><small>${manual ? 'กรอกให้' : 'คนขับเลือก'}</small><strong>ห้อง ${esc(r.room_id ?? '—')} · ${L.TYPE_TH[r.meter_type] ?? '—'}</strong></div><div class="detail-kv"><small>${manual ? 'บันทึกเมื่อ' : 'ขึ้นคลาวด์เมื่อ'}</small><strong>${L.dateTimeTh(r.received_at)}</strong></div></div>
 
     ${meterId && !isEditing('assign-form') ? `<div class="bound-view"><span><small>ผูกกับมิเตอร์</small><b>${esc(meterId)}</b> · ${esc(meterLabel(meterId))}</span><button class="btn small ghost" type="button" data-action="edit" data-form="assign-form">${icon('link')}เปลี่ยน</button></div>`
@@ -560,6 +563,7 @@ function reviewDetail(r, c) {
 
 // signed URL อายุ 5 นาที · สร้างใหม่ทุกครั้งที่เปิดรายการ (bucket crops เป็น private)
 async function loadCrop() {
+  document.querySelectorAll('img.dup-crop:not([src])').forEach(async t => { try { t.src = await api.cropUrl(t.dataset.path); } catch { t.replaceWith(Object.assign(document.createElement('span'), { textContent: 'โหลดรูปไม่ได้' })); } });
   const img = $('#crop-img');
   if (!img) return;
   const path = img.dataset.path;
@@ -586,7 +590,7 @@ async function submitConfirm(form) {
   if (decided && v === Number(r.confirmed_value)) { toast('ค่าเดิม · ไม่มีอะไรเปลี่ยน'); stopEdit(); return; }   // กันแถว corrected ซ้ำ (เจอบนเว็บจริง 3 ต.ค.: reading 39 สองแถวห่าง 3 วินาที)
   if ((changed || form.dataset.needReason === '1') && !reason) return toast('ต้องใส่เหตุผลเมื่อแก้ค่าจาก OCR หรือค่ามีธงเตือน', true);
   const ev = { reading_id: r.id, event: changed ? 'corrected' : 'confirmed', confirmed_value: v, reason: reason || null };
-  const next = L.reviewQueue(state.data.readings, mIdx).map(x => x.r.id).find(id => id !== r.id);
+  const next = L.reviewQueue(state.data.readings, mIdx, cycCtx(state.data)).map(x => x.r.id).find(id => id !== r.id);
   if (await write(() => api.addEvent(ev), `${changed ? 'แก้และยืนยัน' : 'ยืนยัน'} ${num(v)} แล้ว`) && !decided && next) { state.selectedReading = next; render(); }
 }
 
@@ -594,8 +598,43 @@ async function rejectReading() {
   const r = state.data.readings.find(x => x.id === state.selectedReading);
   const reason = prompt('เหตุผลที่ปฏิเสธ (เช่น รูปเบลอ / ถ่ายผิดห้อง) — เว้นว่างได้');
   if (reason === null) return;
-  const next = L.reviewQueue(state.data.readings, mIdx).map(x => x.r.id).find(id => id !== r.id);
+  const next = L.reviewQueue(state.data.readings, mIdx, cycCtx(state.data)).map(x => x.r.id).find(id => id !== r.id);
   if (await write(() => api.addEvent({ reading_id: r.id, event: 'rejected', reason: reason.trim() || null }), 'ปฏิเสธแล้ว · รอถ่ายใหม่') && next) { state.selectedReading = next; render(); }
+}
+
+// ถ่ายซ้ำ: รูปทุกใบของมิเตอร์/ห้องเดียวกันในรอบนี้ (รวมใบที่เปิดอยู่) · เลือก "ใช้รูปนี้" = ปฏิเสธใบที่เหลือ (ดึงกลับได้จากประวัติ)
+function dupPanel(r, dups) {
+  const all = [r, ...dups].sort((a, b) => a.captured_at.localeCompare(b.captured_at));
+  const card = x => {
+    const v = x.status === 'confirmed' ? Number(x.confirmed_value) : x.value == null ? null : Number(x.value);
+    const img = x.crop_path ? `<img class="dup-crop" alt="" data-path="${esc(x.crop_path)}">` : `<span>${x.source === 'manual' ? 'กรอกเอง' : 'ไม่มีรูป'}</span>`;
+    return `<div class="dup-item${x.id === r.id ? ' current' : ''}">
+      <button class="dup-thumb" type="button" data-page="review" data-reading="${x.id}" title="เปิดรูปนี้">${img}</button>
+      <div class="dup-meta"><b>${num(v)}</b><small>${L.dateTimeTh(x.captured_at)}</small><small>${x.status === 'confirmed' ? 'ยืนยันแล้ว' : x.source === 'manual' ? 'กรอกเอง · รอยืนยัน' : 'รอยืนยัน'}${x.id === r.id ? ' · ใบนี้' : ''}</small></div>
+      <button class="btn small${x.id === r.id ? ' primary' : ''}" type="button" data-action="keep-dup" data-keep="${x.id}" ${state.busy ? 'disabled' : ''}>ใช้รูปนี้</button>
+    </div>`;
+  };
+  return `<div class="dup-panel"><div class="dup-head"><strong>ถ่ายซ้ำ ${all.length} รูปในรอบนี้ · เลือกรูปที่จะใช้</strong><small>รูปที่ไม่เลือกจะถูกปฏิเสธ (ดึงกลับมาตรวจได้) · ถ้าตั้งใจอ่านหลายครั้งในรอบ ยืนยันตามปกติได้ — บิลใช้ค่าล่าสุดที่ยืนยัน</small></div><div class="dup-list">${all.map(card).join('')}</div></div>`;
+}
+
+async function keepDuplicate(keepId) {
+  const r = state.data.readings.find(x => x.id === state.selectedReading);
+  const keep = state.data.readings.find(x => x.id === keepId);
+  if (!r || !keep) return;
+  const { dups } = L.readingFlags(r, state.data.readings, mIdx, cycCtx(state.data));
+  const others = [r, ...dups].filter(x => x.id !== keepId && x.status !== 'rejected');
+  if (!others.length) return;
+  const confirmedN = others.filter(x => x.status === 'confirmed').length;
+  const when = L.dateTimeTh(keep.captured_at);
+  if (!confirm(`ใช้รูป ${when} แล้วปฏิเสธอีก ${others.length} รูป${confirmedN ? `\n(${confirmedN} รูปในนี้ยืนยันค่าไปแล้ว — ค่านั้นจะไม่ถูกใช้คิดบิล)` : ''}\nดึงกลับมาตรวจได้ภายหลัง`)) return;
+  const reason = `ถ่ายซ้ำ — เลือกใช้รูป ${when}`;
+  const ok = await write(async () => { for (const x of others) await api.addEvent({ reading_id: x.id, event: 'rejected', reason }); },
+    `เลือกรูป ${when} · ปฏิเสธรูปซ้ำ ${others.length} รูป`);
+  if (!ok) return;
+  // รูปที่เลือกยังรอยืนยัน = อยู่ที่ใบนั้นต่อ (ยืนยันค่า) · ยืนยันไปแล้ว = ไปคิวถัดไป
+  const after = state.data.readings.find(x => x.id === keepId);
+  state.selectedReading = after?.status === 'ocr' ? keepId : (L.reviewQueue(state.data.readings, mIdx, cycCtx(state.data))[0]?.r.id ?? keepId);
+  render();
 }
 
 // ยกเลิกการยืนยัน/ปฏิเสธ → กลับเป็นรอยืนยัน (event 'reopened') · บิลที่อนุมัติแล้วไม่เปลี่ยนเอง → หน้าบิลขึ้น "ค่าเปลี่ยน" ให้ออกฉบับแก้ไข
@@ -1262,6 +1301,7 @@ document.addEventListener('click', e => {
   if (act === 'edit') startEdit(a.dataset.form);
   else if (act === 'edit-cancel') stopEdit();
   else if (act === 'reject') rejectReading();
+  else if (act === 'keep-dup') keepDuplicate(Number(a.dataset.keep));
   else if (act === 'reopen') reopenReading();
   else if (act === 'manual-read') showManualForm(a.dataset.meter);
   else if (act === 'export') exportRegistry();
@@ -1385,7 +1425,7 @@ async function boot() {
   document.querySelectorAll('[data-icon]').forEach(n => { n.innerHTML = icon(n.dataset.icon); });
   const local = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
   if (local && new URLSearchParams(location.search).has('mock')) {
-    api = (await import('./mock.js?v=w48')).createMockApi();
+    api = (await import('./mock.js?v=w49')).createMockApi();
   } else {
     if (!window.supabase) return showGate('Failed to load', '', '<button class="gate-google plain" data-action="reload"><span>Reload</span></button>');
     api = (await import('./api.js?v=w45')).createApi();
