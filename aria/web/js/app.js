@@ -1,7 +1,7 @@
 // ARIA หลังบ้าน · vanilla JS (ต่อจาก design/aria-prototype) + Supabase
 // ขอบเขต: ขั้น 3 ของแบบ v1 §7 (บัญชีเจ้าของ + 5 หน้า + reading_events) · บิลเป็นพรีวิว (ขั้น 4 ยังไม่มีตาราง invoices) · ยังไม่ส่งอีเมล (ขั้น 5)
 import * as L from './logic.js?v=w15';
-import { createBackdrop, accentNow } from './liquid.js?v=w41';
+import { createBackdrop, accentNow } from './liquid.js?v=w48';
 
 let gateBg = null, appBg = null;   // วอลเปเปอร์สองโทน (อินสแตนซ์แยก · ตอนเปลี่ยนหน้าทำงานพร้อมกัน)
 
@@ -207,19 +207,39 @@ function render() {
   shown.page = state.page; shown.sel = sel;
   if (state.guest) lockForGuest();
   if (state.page === 'review') loadCrop();
-  if (state.page === 'settings') { (window.requestIdleCallback || setTimeout)(() => prepStyles(accentNow() === 'teal' ? 'purple' : 'teal')); if (!state.guest) loadMailStatus(); }
+  if (state.page === 'settings' && !state.guest) loadMailStatus();   // ไฟล์ธีมโหลดล่วงหน้าตอนชี้/แตะการ์ด (10 ธีม × 4 ไฟล์ = ~1.2 MB ไม่โหลดทั้งหมด)
 }
 
-// ธีมสี (ผู้ใช้ขอ 2 ต.ค. · ม่วงเก็บไว้สลับกลับ) · จำต่อเบราว์เซอร์ · ไฟล์ .teal.css สร้างจาก tools/make_accent.py
-const ACCENTS = { purple: { name: 'ม่วง', meta: '#1a0d38', logo: 'img/aria-logo-plum.png', sw: 'linear-gradient(135deg, #8b5cf6, #d946ef)' }, teal: { name: 'เขียวฟ้า', meta: '#071918', logo: 'img/aria-logo-teal.png', sw: 'linear-gradient(135deg, #388782, #3c94b2)' } };
+// ธีมสี (ผู้ใช้ขอ 2 ต.ค. เขียวฟ้า · 6 ต.ค. ดำเทา + ชมพูหรู + ทอง · ม่วงเก็บไว้สลับกลับ) · จำต่อเบราว์เซอร์
+// ไฟล์ .<ธีม>.css + โลโก้ + สี meta/sw สร้างจาก tools/make_accent.py (ค่าที่สคริปต์พิมพ์ออกมา) · ต้องตรงกับ META ใน accent.js
+const ACCENTS = {   // ลำดับ = ลำดับบนหน้าตั้งค่า (ไล่ตามวงสี) · pv = สีพรีวิวบนการ์ดเลือกธีมเท่านั้น
+  purple: { name: 'ม่วง', desc: 'อเมทิสต์ · ค่าเริ่มต้น', meta: '#1a0d38', pv: ['#8b5cf6', '#d946ef'] },
+  sapphire: { name: 'ไพลิน', desc: 'น้ำเงินลึก', meta: '#0c142e', pv: ['#5576d7', '#4a53eb'] },
+  navy: { name: 'กรมท่า', desc: 'น้ำเงินหม่น สุขุม', meta: '#12161e', pv: ['#6a7c9c', '#9fb0d4'] },
+  teal: { name: 'เขียวฟ้า', desc: 'ทะเลลึก', meta: '#071918', pv: ['#388782', '#3c94b2'] },
+  emerald: { name: 'มรกต', desc: 'เขียวมรกต', meta: '#081912', pv: ['#3c8968', '#389a81'] },
+  gold: { name: 'ทอง', desc: 'อำพัน · บรอนซ์', meta: '#1c1508', pv: ['#977640', '#e8c77e'] },
+  copper: { name: 'ทองแดง', desc: 'ส้มทองแดง', meta: '#21120a', pv: ['#a96c4b', '#e0a070'] },
+  ruby: { name: 'ทับทิม', desc: 'แดงทับทิม', meta: '#290d10', pv: ['#c65763', '#e25453'] },
+  rose: { name: 'ชมพูหรู', desc: 'ไวน์ · rose gold', meta: '#270e16', pv: ['#be5a7b', '#e8a0a8'] },
+  blush: { name: 'ชมพูพาสเทล', desc: 'Pantone 7422 C', meta: '#250f13', pv: ['#c98896', '#f4cdd4'] },   // ปุ่มหลักใช้ #F4CDD4 ตรง (make_accent.py accent_override)
+  hotpink: { name: 'ชมพูสด', desc: 'บานเย็นสดใส', meta: '#2a0a1b', pv: ['#cb4c90', '#ef468e'] },
+  graphite: { name: 'ดำเทา', desc: 'ผ้าซาตินดำเงา', meta: '#151617', pv: ['#26272b', '#c9cbd1'] },
+};
+const accentLogo = name => `img/aria-logo-${name === 'purple' ? 'plum' : name}.png`;
+// ชี้/แตะ/โฟกัสการ์ดธีม = โหลดไฟล์ CSS ของธีมนั้นไว้ก่อน → ตอนกดสลับได้ทันที
+['pointerover', 'focusin', 'touchstart'].forEach(ev => document.addEventListener(ev, e => {
+  const k = e.target.closest?.('[data-accent-pick]')?.dataset.accentPick;
+  if (k && k !== accentNow()) prepStyles(k);
+}, { passive: true }));
 function applyAccentAssets() {
   const a = ACCENTS[accentNow()];
-  const g = $('.gate-logo'); if (g) g.src = a.logo;
+  const g = $('.gate-logo'); if (g) g.src = accentLogo(accentNow());
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', a.meta);
 }
 // สลับไฟล์ CSS แบบไม่ค้าง: โหลดชุดของอีกธีมไว้ก่อนเป็น media="not all" (ไม่มีผลกับหน้า) → ตอนกดแค่สลับ media ทันที
 // ไฟล์ /css ตั้ง no-cache (netlify.toml) → ถ้าไม่โหลดไว้ก่อน ทุกครั้งที่กดต้องรอเซิร์ฟเวอร์
-const cssHref = (h, name) => name === 'teal' ? h.replace(/css\/(\w+)\.css/, 'css/$1.teal.css') : h.replace(/\.teal\.css/, '.css');
+const cssHref = (h, name) => { const base = h.replace(/css\/(\w+)\.\w+\.css/, 'css/$1.css'); return name === 'purple' ? base : base.replace(/css\/(\w+)\.css/, `css/$1.${name}.css`); };
 const prepared = {};
 function prepStyles(name) {
   if (prepared[name]) return prepared[name];
@@ -245,7 +265,7 @@ function commitStyles(name, links) {
 function applyAccentNow(name, links) {
   try { localStorage.setItem('aria.accent', name); } catch {}
   commitStyles(name, links);
-  if (name === 'teal') document.documentElement.dataset.accent = 'teal'; else delete document.documentElement.dataset.accent;
+  if (name !== 'purple') document.documentElement.dataset.accent = name; else delete document.documentElement.dataset.accent;
   applyAccentAssets();
   render();
   appBg?.drawNow();   // พื้นหลังเดิม แค่เปลี่ยนจานสี
@@ -256,7 +276,12 @@ async function setAccent(name) {
   try {
     const links = await prepStyles(name);   // ปกติโหลดไว้แล้วตั้งแต่เปิดหน้าตั้งค่า
     const smooth = document.startViewTransition && !matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (smooth) await document.startViewTransition(() => applyAccentNow(name, links)).finished;
+    if (smooth) {
+      // แท็บถูกซ่อน/สลับเร็ว = transition ถูกยกเลิก (InvalidStateError) แต่ callback ยังทำงาน → กลืน error ไม่ให้ค้างในคอนโซล
+      const vt = document.startViewTransition(() => applyAccentNow(name, links));
+      vt.ready.catch(() => {});
+      await vt.finished.catch(() => {});
+    }
     else applyAccentNow(name, links);
   } finally { setAccent.busy = false; }
 }
@@ -1149,9 +1174,12 @@ function renderSettings(c) {
       ${setRow('พร้อมเพย์รับเงิน', `<input name="promptpay_id" inputmode="numeric" maxlength="17" value="${esc(pp)}" placeholder="0812345678">`, 'มือถือ 10 หลัก หรือเลขบัตร 13 หลัก · ใส่ QR ในอีเมล', viewVal(pp, 'ยังไม่ตั้ง · อีเมลไม่มี QR'))}
       ${editActions()}</form>
     <details class="rt-hist rd-past"><summary>วิธีตั้ง Gmail ผู้ส่ง</summary><span>1. บัญชี Google ของหอ → Security → เปิด 2-Step Verification</span><span>2. myaccount.google.com/apppasswords → สร้าง App Password (16 ตัว)</span><span>3. Supabase → Edge Functions → Secrets → เพิ่ม GMAIL_USER = อีเมลหอ และ GMAIL_APP_PASSWORD = รหัส 16 ตัว</span><span>4. กลับมากด "ส่งทดสอบ" ด้านบน</span></details>`, '', editBtn('payout-form'));
-  const look = sec('settings', 'ธีมสี', `<div class="accent-picks">${Object.entries(ACCENTS).map(([k, v]) => `<button class="accent-pick ${k} ${accentNow() === k ? 'active' : ''}" data-accent-pick="${k}" aria-pressed="${accentNow() === k}"><span class="sw" style="background:${v.sw}" aria-hidden="true"></span>${v.name}</button>`).join('')}</div><p class="set-hint">จำไว้เฉพาะเบราว์เซอร์นี้</p>`);
+  const cur = accentNow();
+  const look = sec('settings', 'ธีมสี', `<div class="theme-wrap"><div class="theme-grid" role="radiogroup" aria-label="ธีมสี">${Object.entries(ACCENTS).map(([k, v]) => `<button type="button" class="theme-card${cur === k ? ' active' : ''}" role="radio" aria-checked="${cur === k}" data-accent-pick="${k}" style="--t-bg:${v.meta};--t-a:${v.pv[0]};--t-b:${v.pv[1]}">
+      <span class="theme-prev" aria-hidden="true"><i class="tp-glow"></i><i class="tp-pane"><b></b><b></b><em></em></i><span class="theme-check">${icon('check')}</span></span>
+      <span class="theme-name">${v.name}<small>${v.desc}</small></span></button>`).join('')}</div></div><p class="set-hint">จำไว้เฉพาะเบราว์เซอร์นี้ · สีสถานะ (แดง เหลือง เขียว) เหมือนกันทุกธีม</p>`);
   return `<section class="page">${pageHead('PREFERENCES', 'ตั้งค่า', 'มีผลกับบิลรอบที่ยังไม่ปิด')}
-  <div class="set-layout"><div class="set-col">${dorm}${rates}${cyc}</div><div class="set-col">${acct}${mail}${look}${adv}</div></div></section>`;
+  <div class="set-layout"><div class="set-col">${dorm}${rates}${cyc}</div><div class="set-col">${acct}${mail}${adv}</div><div class="set-wide">${look}</div></div></section>`;   // ธีมสีกินเต็มความกว้าง (การ์ดพรีวิว 5 ใบต่อแถว)
 }
 
 async function saveSettings(form) {
