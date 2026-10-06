@@ -1,0 +1,146 @@
+/* drive-glass.css — หน้าขับ /drive แบบ Liquid Glass (ฟีล iOS) · โหลดหลัง drive-vr.css + review.css
+   หลัก: แก้วใสจริง (เบลอ + เพิ่มสีภาพกล้องด้านหลัง) · ไม่มีขอบแข็ง ใช้แสงสะท้อนขอบบนซ้ายแทน · มุมโค้งมาก
+   ปุ่มเป็นแก้วลอยซ้อนในแผง · ขาว/เทาเท่านั้น สีใช้เฉพาะความหมาย (แดง = หยุด · เขียว = ภาพสด/ปกติ · เหลือง = เตือน)
+   แก้ไขเฉพาะหน้าตา (สี เงา มุม ตัวอักษร) ไม่แตะขนาด/ตำแหน่งที่ drive-vr.css จัดไว้ตามจอ
+   ไม่รองรับ backdrop-filter = ใช้หน้าตาม่วงทึบเดิม · ผู้ใช้ตั้ง "ลดความโปร่งใส" = แก้วทึบขึ้น */
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+:root {
+  --lg-blur: blur(20px) saturate(185%);
+  --lg-fill: linear-gradient(150deg, rgba(255, 255, 255, .17) 0%, rgba(255, 255, 255, .06) 42%, rgba(255, 255, 255, .10) 100%), rgba(18, 18, 24, .32);
+  --lg-rim: inset 1px 1px 0 rgba(255, 255, 255, .42), inset -1px -1px 0 rgba(255, 255, 255, .10), inset 0 0 0 .5px rgba(255, 255, 255, .16);
+  --lg-lift: 0 12px 36px rgba(0, 0, 0, .26), 0 1px 3px rgba(0, 0, 0, .18);
+  --lg-key: rgba(255, 255, 255, .11);
+  --lg-key-rim: inset 0 1px 0 rgba(255, 255, 255, .26), inset 0 0 0 .5px rgba(255, 255, 255, .10);
+  --lg-key-on: rgba(255, 255, 255, .92);
+  --lg-label: rgba(255, 255, 255, .96);
+  --lg-sub: rgba(235, 235, 245, .72);
+  --lg-fill-hud: linear-gradient(150deg, rgba(255, 255, 255, .15) 0%, rgba(255, 255, 255, .05) 42%, rgba(255, 255, 255, .08) 100%), rgba(14, 14, 20, .42);
+  --lg-red: 255, 59, 48;    /* systemRed */
+  --lg-green: 52, 199, 89;  /* systemGreen */
+  --lg-amber: 255, 204, 0;
+  --lg-r-panel: 30px;
+  --lg-r-key: 18px;
+}
+.cockpit { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "Noto Sans Thai", "Thonburi", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+
+/* ขอบจอดำม่วง (แถบบน + vignette รอบภาพ) คงไว้ตาม drive-vr.css — ผู้ใช้สั่ง 5 ต.ค. */
+
+/* ── วัสดุแก้ว (ใช้ร่วม) ─────────────────────────────────────────── */
+.chip, .hud-r .icon, .air-overview, .vision-heading, .drive-panel, .task-panel, .zoom-tag, .toast {
+  border: 0; color: var(--lg-label); background: var(--lg-fill);
+  -webkit-backdrop-filter: var(--lg-blur); backdrop-filter: var(--lg-blur);
+  box-shadow: var(--lg-rim), var(--lg-lift);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .35);
+}
+/* ป้ายเล็กบนแถบบน = ตัวหนังสือเล็ก → แก้วเข้มกว่าแผงเล็กน้อยให้อ่านออกบนพื้นสว่าง */
+.chip, .air-overview, .vision-heading, .zoom-tag, .hud-r .icon { background: var(--lg-fill-hud); }
+.drive-panel, .task-panel { border-radius: var(--lg-r-panel); }
+
+/* ── แถบบน ─────────────────────────────────────────────────────── */
+.brand-copy small { color: var(--lg-sub); }
+.chip { border-radius: 999px; font-weight: 600; letter-spacing: 0; }
+.chip b { color: #fff; }
+.chip.mode, .chip.mode.idle { background: var(--lg-fill-hud); color: #fff; }
+.chip.mode::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; vertical-align: 1px;
+  background: rgb(var(--lg-green)); box-shadow: 0 0 8px rgba(var(--lg-green), .8); }
+.chip.mode.idle::before { background: rgba(255, 255, 255, .55); box-shadow: none; }
+.chip.mode.mission { background: linear-gradient(rgba(var(--lg-amber), .55), rgba(var(--lg-amber), .40)); color: #fff; }
+.chip.mode.mission::before { background: #fff; box-shadow: none; }
+.chip.mode.lost { background: linear-gradient(rgba(var(--lg-red), .78), rgba(var(--lg-red), .62)); color: #fff; }
+.chip.mode.lost::before { background: #fff; box-shadow: none; }
+.chip.bad { color: #ffb4ae; }
+.chip.warn { color: rgb(var(--lg-amber)); }
+.hud-r .icon { border-radius: 999px; font-weight: 600; transition: transform .2s cubic-bezier(.3, 1.5, .5, 1); }
+.hud-r .icon:active { transform: scale(.94); }
+
+.air-overview { border-radius: 22px; gap: 18px; }
+.air-summary, .air-summary strong { color: var(--lg-sub); }
+.air-metric small, .air-metric i { color: var(--lg-sub); }
+.air-metric b { color: #fff; font-weight: 600; }
+.vision-heading { border-radius: 999px; }
+.vision-heading .eyebrow { color: var(--lg-sub); letter-spacing: .08em; }
+.live-badge { background: rgba(var(--lg-green), .9); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35); }
+.live-badge.is-offline { background: rgba(var(--lg-red), .82); }
+.zoom-tag { border-radius: 999px; }
+
+/* ── หัวแผง: ไม่มีป้ายเลข "01 / DRIVE" · หัวข้อ + บรรทัดรองแบบ iOS ─────── */
+.panel-heading .eyebrow { display: none; }
+.panel-heading h1, .panel-heading h2 { font-size: 17px; font-weight: 600; letter-spacing: -.01em; color: #fff; }
+.panel-heading p { color: var(--lg-sub); font-size: 11px; }
+
+/* ── ปุ่มแก้วในแผง (ซ้อนแก้ว) ──────────────────────────────────── */
+.pad-grid { border: 0; background: none; box-shadow: none; padding: 0; }
+.pad-grid button, .pad-foot button, .cam-step, .cam-foot button, .dock-btn.tog, .camera-details {
+  border: 0; color: #fff; background: var(--lg-key); box-shadow: var(--lg-key-rim);
+  transition: transform .22s cubic-bezier(.3, 1.5, .5, 1), background-color .15s ease, color .15s ease, box-shadow .2s ease;
+}
+.pad-grid button { border-radius: var(--lg-r-key); font-weight: 600; }
+.pad-grid button:active, .pad-foot button:active, .cam-step:active, .cam-foot button:active, .dock-btn.tog:active { transform: scale(.94); background: rgba(255, 255, 255, .24); }
+.pad-grid button.hold { background: var(--lg-key-on); color: #111; text-shadow: none; transform: scale(.96);
+  box-shadow: inset 0 1px 0 #fff, 0 0 22px rgba(255, 255, 255, .35); }
+.pad-grid .pad-stop { background: rgba(var(--lg-red), .30); color: #fff; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .25), inset 0 0 0 .5px rgba(var(--lg-red), .5); }
+.pad-grid .pad-stop:active { background: rgba(var(--lg-red), .85); }
+
+/* 50 / 75 / 100 = segmented control: รางแก้วจม + ช่องที่เลือกเป็นแก้วสว่าง */
+.pad-foot { gap: 2px; padding: 2px; border-radius: 999px; background: rgba(0, 0, 0, .22); box-shadow: inset 0 1px 2px rgba(0, 0, 0, .25), inset 0 -.5px 0 rgba(255, 255, 255, .10); }
+.pad-foot button { border-radius: 999px; background: transparent; box-shadow: none; color: var(--lg-sub); font-weight: 600; }
+.pad-foot button.on { background: rgba(255, 255, 255, .26); color: #fff; font-weight: 700;
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, .45), inset 0 0 0 .5px rgba(255, 255, 255, .2), 0 2px 8px rgba(0, 0, 0, .25); }
+
+/* ตัวเลขความเร็ว + แถบเลื่อนขาว */
+.dial { border-top-color: rgba(255, 255, 255, .12); }
+.dial-head { color: var(--lg-sub); }
+.dial-num b { color: #fff; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.dial-slider, .cam-slider { accent-color: #fff; }
+.joy-ring { border-color: rgba(255, 255, 255, .25); background: radial-gradient(circle, rgba(255, 255, 255, .14) 0 35%, rgba(0, 0, 0, .18) 36%); }
+.joy-knob { background: radial-gradient(circle at 32% 26%, #fff, rgba(235, 235, 245, .82) 70%); box-shadow: 0 6px 18px rgba(0, 0, 0, .35); }
+
+/* ── แผงเครื่องมือ ──────────────────────────────────────────────── */
+.camera-details { border-radius: var(--lg-r-key); }
+.camera-details summary { color: #fff; font-weight: 600; }
+.camera-details summary::after { color: var(--lg-sub); }
+.campad, .task-panel .campad { border-top-color: rgba(255, 255, 255, .12); }
+.cam-row { border: 0; border-radius: 14px; background: rgba(0, 0, 0, .18); box-shadow: inset 0 1px 2px rgba(0, 0, 0, .2), inset 0 -.5px 0 rgba(255, 255, 255, .08); }
+.cam-lbl { color: var(--lg-sub); font-weight: 600; }
+.cam-step { border-radius: 10px; }
+.cam-foot button { border-radius: 999px; font-weight: 600; }
+/* ปุ่มถ่าย = ปุ่มหลักแบบ prominent glass (ขาวทึบเกือบเต็ม) */
+.dock-btn.cap { border: 0; border-radius: var(--lg-r-key); background: rgba(255, 255, 255, .92); color: #111; text-shadow: none; font-weight: 700;
+  box-shadow: inset 0 1px 0 #fff, inset 0 -8px 16px rgba(0, 0, 0, .06), 0 8px 24px rgba(0, 0, 0, .28);
+  transition: transform .22s cubic-bezier(.3, 1.5, .5, 1), background-color .15s ease; }
+.dock-btn.cap:active { transform: scale(.96); background: #fff; }
+.dock-btn.cap .ico, .dock-btn.cap b { color: #111; }
+.dock-btn.cap b { opacity: .55; font-weight: 600; }
+.dock-btn.cap:disabled { background: rgba(255, 255, 255, .6); }
+.dock-btn.tog { border-radius: var(--lg-r-key); }
+.dock-btn.tog .ico { color: #fff; }
+.dock-btn.tog b { color: var(--lg-sub); }
+.dock-btn.tog.on { background: var(--lg-key-on); color: #111; text-shadow: none; box-shadow: inset 0 1px 0 #fff, 0 0 20px rgba(255, 255, 255, .3); }
+.dock-btn.tog.on .ico, .dock-btn.tog.on b { color: #111; }
+.task-panel .review-badge { border: 0; border-radius: 999px; background: rgba(var(--lg-amber), .22); color: #fff;
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, .35), inset 0 0 0 .5px rgba(var(--lg-amber), .6); }
+
+/* ── หยุดฉุกเฉิน = แก้วแดง (ยังเด่นสุดบนจอ · ไม่จางเท่าแผงอื่น) ─────────── */
+.estop { border: 0; border-radius: 24px; background: linear-gradient(160deg, rgba(var(--lg-red), .92), rgba(215, 38, 30, .86));
+  -webkit-backdrop-filter: var(--lg-blur); backdrop-filter: var(--lg-blur);
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, .45), inset -1px -1px 0 rgba(0, 0, 0, .12), 0 12px 32px rgba(var(--lg-red), .35), 0 2px 6px rgba(0, 0, 0, .3);
+  transition: transform .2s cubic-bezier(.3, 1.5, .5, 1); }
+.estop:active { transform: scale(.97); box-shadow: inset 1px 1px 0 rgba(255, 255, 255, .35), 0 6px 18px rgba(var(--lg-red), .4); }
+.estop .estop-icon { border-color: rgba(255, 255, 255, .8); border-radius: 8px; }
+
+/* ── toast ── */
+.toast { border-radius: 999px; }
+.toast.good { background: linear-gradient(rgba(var(--lg-green), .70), rgba(var(--lg-green), .55)); }
+.toast.warn { background: linear-gradient(rgba(var(--lg-amber), .62), rgba(var(--lg-amber), .48)); }
+.toast.bad { background: linear-gradient(rgba(var(--lg-red), .80), rgba(var(--lg-red), .65)); }
+
+/* จอเล็ก/แนวนอนเตี้ย: ขนาดแผงเล็กลง → มุมเล็กตาม (สัดส่วนเดียวกับ iOS) */
+@media (max-width: 600px) and (orientation: portrait), (max-height: 530px) and (min-width: 600px) {
+  :root { --lg-r-panel: 22px; --lg-r-key: 13px; }
+  .estop { border-radius: 18px; }
+  .air-overview { border-radius: 18px; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root { --lg-fill: rgba(30, 30, 36, .88); --lg-fill-hud: rgba(30, 30, 36, .9); --lg-key: rgba(255, 255, 255, .16); }
+}
+}
