@@ -344,11 +344,22 @@ def crop_image(name: str):
 def api_pending():
     """F10 รูปที่ยังไม่ได้ตัดสิน (รวมที่ค้างจากเน็ตหลุด/ปิดแอป) + ห้องจากทะเบียนสำหรับตัวเลือกในป๊อปอัพ"""
     reg = S.load_registry()
-    rooms = sorted({str(m.get("room")) for m in reg["meters"] if m.get("room")})
+    rooms = S.room_ids(reg)                     # 8 ต.ค.: รวมห้องที่ยังไม่มีมิเตอร์ (ทะเบียนดึงจาก ARIA เอง)
     items = [{k: r.get(k) for k in ("local_id", "captured_at", "value", "raw_text", "confidence", "pending_since")}
              | {"crop_url": f"/crops/{r['local_id']}.jpg" if r.get("crop_path") else None} for r in S.list_pending()]
     return JSONResponse({"items": items, "rooms": rooms, "registry_version": reg["registry_version"],
+                         "registry_pulled_at": reg["pulled_at"],
                          "ttl_days": S.PENDING_TTL.days})
+
+
+@app.post("/api/registry/pull")
+async def api_registry_pull():
+    """ปุ่ม "อัปเดตรายชื่อห้อง" ในป๊อปอัพ — ดึงทะเบียนจาก ARIA ทันที (ปกติ mrc-sync ดึงเองเมื่อ ARIA เปลี่ยน)"""
+    import sync_supabase as SY
+    ok, msg = await asyncio.to_thread(SY.pull_registry, SY.token(), None)
+    reg = S.load_registry()
+    return JSONResponse({"ok": ok, "message": msg, "rooms": S.room_ids(reg), "registry_version": reg["registry_version"],
+                         "registry_pulled_at": reg["pulled_at"]}, status_code=200 if ok else 502)
 
 
 @app.post("/api/pending/{lid}")
@@ -654,7 +665,7 @@ def main():
     ap.add_argument("--no-serial", action="store_true", help="ไม่มี ESP32 — ภาพสด/ถ่ายจากเว็บอย่างเดียว")
     ap.add_argument("--camera", type=int, default=CFG.CAMERA_INDEX)
     ap.add_argument("--image", help="ใช้รูปนี้แทนกล้อง")
-    ap.add_argument("--engine", choices=["sevenseg", "tesseract", "ssocr"], default="sevenseg")   # C30: 7-seg ก่อน (18 ก.ย.)
+    ap.add_argument("--engine", choices=["sevenseg", "cells", "tesseract", "ssocr"], default="cells")   # 7 ต.ค.: cells แทน sevenseg (C30 เดิม 18 ก.ย.) — ไฟล์ 26 §26.5–26.9
     ap.add_argument("--run-id", default=time.strftime("run_%Y%m%d_%H%M%S"))
     ap.add_argument("--no-air", action="store_true", help="ไม่อ่าน ENS160/AHT21")
     args = ap.parse_args()

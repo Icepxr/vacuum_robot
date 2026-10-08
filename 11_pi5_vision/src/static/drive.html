@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="/static/aria-touch-icon.png">
 <link rel="stylesheet" href="/static/drive.css?v=c44">
 <link rel="stylesheet" href="/static/drive-vr.css?v=glass2">
-<link rel="stylesheet" href="/static/review.css?v=f10-roomsel">
+<link rel="stylesheet" href="/static/review.css?v=reg1">
 <link rel="stylesheet" href="/static/drive-glass.css?v=3">
 </head>
 <body>
@@ -142,6 +142,7 @@
       <span class="review-select"><select id="review-room" required><option value="">— เลือกห้อง —</option></select></span>
       <input id="review-room-other" inputmode="text" autocomplete="off" maxlength="10" placeholder="พิมพ์เลขห้อง เช่น 204" hidden>
     </label>
+    <p class="review-reg"><span id="review-reg-info"></span><button id="review-reg-pull" type="button">อัปเดตรายชื่อห้อง</button></p>
     <fieldset class="review-type"><legend>ชนิดมิเตอร์</legend>
       <label><input type="radio" name="review-type" value="water"> น้ำ</label>
       <label><input type="radio" name="review-type" value="electric"> ไฟ</label>
@@ -313,6 +314,6 @@
 </section>
 <script src="/static/drive-state.js?v=20260927"></script>
 <script src="/static/drive.js?v=shot4"></script>
-<script src="/static/review.js?v=shot2"></script>
+<script src="/static/review.js?v=reg1"></script>
 </body>
 </html>

@@ -88,13 +88,14 @@ class UsbCameraBackend:
     ตัวเลข: cap.read() ≈ 61 ms · imwrite 14 ms · resize 6 ms [วัดจริง 11 ก.ย. — ไฟล์ 19 §19.4.1]
     C36: ซูม/แพน/ทิลต์/โฟกัสผ่าน UVC ถ้ากล้องมี (BRIO) · ไม่มีก็ซูมแบบซอฟต์แวร์ (ครอปเฟรม 1080p — ใช้กับภาพสด/ถ่าย/OCR เหมือนกันหมด)"""
 
-    def __init__(self, index=CFG.CAMERA_INDEX, size=CFG.CAMERA_SIZE, engine="sevenseg",
+    def __init__(self, index=CFG.CAMERA_INDEX, size=CFG.CAMERA_SIZE, engine="cells",
                  run_id=None, meter_type="water"):
         import cv2                                   # นำเข้าตรงนี้ให้ import โมดูลได้บนเครื่องที่ไม่มี cv2
         import meter_reader as MR
         self.cv2, self.MR = cv2, MR
         self.engine, self.run_id, self.meter_type = engine, run_id, meter_type
         self.cfg = MR.load_config()
+        threading.Thread(target=MR.warmup, args=(engine,), name="ocr-warmup", daemon=True).start()   # โหลดโมเดลระหว่างเปิดกล้อง
         index = find_camera(index)
         cap = cv2.VideoCapture(index, cv2.CAP_V4L2)
         if not cap.isOpened():
@@ -201,7 +202,7 @@ class UsbCameraBackend:
         MR = self.MR
         raw, conf, value, err, crop = "", 0.0, None, None, None
         try:
-            binimg, cropped = MR.preprocess(frame, self.cfg)
+            binimg, cropped = MR.prepare(self.engine, frame, self.cfg)   # engine ภาพสีข้ามขั้นขาวดำ (~60 ms)
             crop = MR.crop_jpeg(cropped)                 # crop หน้าปัดสำหรับป๊อปอัพ + คลาวด์ (ภาพต้นฉบับอยู่ใน images/ แล้ว)
             raw, conf = MR.run_engine(self.engine, binimg, cropped, self.cfg)
             value = MR.parse_value(raw, self.cfg.get("expected_digits"), self.cfg.get("decimal_places"))
@@ -475,7 +476,7 @@ def main():
     ap.add_argument("--baud", type=int, default=CFG.SERIAL_BAUD)
     ap.add_argument("--camera", type=int, default=CFG.CAMERA_INDEX, help="index ของกล้อง USB · -1 = หาเองจาก /dev/v4l/by-id")
     ap.add_argument("--image", help="ใช้รูปนี้แทนกล้อง (ทดสอบลิงก์)")
-    ap.add_argument("--engine", choices=["sevenseg", "tesseract", "ssocr"], default="sevenseg")
+    ap.add_argument("--engine", choices=["sevenseg", "cells", "tesseract", "ssocr"], default="cells")
     ap.add_argument("--meter-type", default="water")
     ap.add_argument("--run-id", default=time.strftime("run_%Y%m%d_%H%M%S"))
     ap.add_argument("--selftest", action="store_true", help="ทดสอบกล้อง→SD→OCR โดยไม่แตะ serial")

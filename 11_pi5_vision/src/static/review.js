@@ -123,13 +123,31 @@
   badge.onclick = () => { if (queue.length) open(queue[0]); };
   roomOther.addEventListener("keydown", (e) => { if (e.key === "Enter") decide(true); });
 
+  // ทะเบียนห้อง: Pi ดึงจาก ARIA เองเมื่อมีเน็ต (mrc-sync) · ปุ่มนี้ดึงทันที (8 ต.ค.)
+  function setRooms(list) {
+    rooms = [...new Set((list || []).map((r) => String(r).replace(/[^A-Za-z0-9]/g, "")).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, "en", { numeric: true }));
+    paintRooms();
+  }
+  function paintReg(d, note) {
+    const v = d.registry_version, at = d.registry_pulled_at;
+    $("review-reg-info").textContent = note || (v == null ? "ยังไม่มีรายชื่อห้องจาก ARIA"
+      : `รายชื่อห้อง v${v}` + (at ? ` · อัปเดต ${fmtTime(at)}` : ""));
+  }
+  $("review-reg-pull").onclick = async () => {
+    const b = $("review-reg-pull"); b.disabled = true; paintReg({}, "กำลังดึงจาก ARIA…");
+    try {
+      const r = await fetch("/api/registry/pull", { method: "POST" }), d = await r.json();
+      setRooms(d.rooms); paintReg(d, r.ok ? null : (d.message || "ดึงไม่ได้") + " — ใช้รายชื่อเดิม");
+    } catch (e) { paintReg({}, "ต่อ Pi ไม่ได้"); }
+    b.disabled = false;
+  };
+
   async function refresh() {
     try {
       const d = await (await fetch("/api/pending", { cache: "no-store" })).json();
       queue = d.items || [];
-      rooms = [...new Set((d.rooms || []).map((r) => String(r).replace(/[^A-Za-z0-9]/g, "")).filter(Boolean))]
-        .sort((a, b) => a.localeCompare(b, "en", { numeric: true }));
-      paintRooms();
+      setRooms(d.rooms); paintReg(d);
       if (cur && !queue.some((q) => q.local_id === cur.local_id)) close();
       paintBadge();
     } catch (e) {}

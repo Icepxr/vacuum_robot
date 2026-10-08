@@ -109,8 +109,8 @@ def load_config():
     return defaults
 
 
-def preprocess(img, cfg):
-    """คืน (ภาพที่ผ่านการเตรียมแล้ว, ภาพกลางทางไว้ดูตอนปรับจูน)"""
+def crop_roi(img, cfg):
+    """หมุน/ดัด perspective/ครอปตาม roi_config — ภาพสี (engine ที่อ่านภาพสีใช้แค่ขั้นนี้)"""
     h, w = img.shape[:2]
 
     if cfg.get("rotate_deg"):
@@ -139,8 +139,11 @@ def preprocess(img, cfg):
     y1 = max(0, min(h, int((c["y"] + c["h"]) * h)))
     if x1 <= x0 or y1 <= y0:
         raise ValueError(f"กรอบ crop ไม่ถูกต้อง: x {x0}-{x1}, y {y0}-{y1} บนภาพ {w}×{h}")
-    img = img[y0:y1, x0:x1]
+    return img[y0:y1, x0:x1]
 
+
+def binarize(img, cfg):
+    """ภาพสีที่ครอปแล้ว → ภาพขาวดำสำหรับ tesseract/ssocr (bilateral + CLAHE + ขยาย + threshold ≈ 60 ms บน Pi 5 ที่ 1080p)"""
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     gray = cv2.bilateralFilter(gray, 7, 60, 60)        # ลด noise แต่ยังเก็บขอบตัวเลข
 
@@ -162,8 +165,22 @@ def preprocess(img, cfg):
 
     if cfg.get("invert"):
         out = cv2.bitwise_not(out)
+    return out
 
-    return out, img
+
+def preprocess(img, cfg):
+    """คืน (ภาพที่ผ่านการเตรียมแล้ว, ภาพกลางทางไว้ดูตอนปรับจูน)"""
+    img = crop_roi(img, cfg)
+    return binarize(img, cfg), img
+
+
+def prepare(engine, img, cfg):
+    """เตรียมภาพเท่าที่ engine ต้องใช้ · engine ภาพสี (cells/sevenseg) ไม่ต้องทำภาพขาวดำ → binimg = None
+    7 ต.ค. 2026 วัดบน Pi: preprocess เต็ม 69 ms ต่อภาพ ส่วนใหญ่เป็นขั้นขาวดำที่ engine ภาพสีทิ้งไปเฉยๆ (ไฟล์ 26 §26.9)"""
+    cropped = crop_roi(img, cfg)
+    if getattr(OCR_ENGINES[engine], "needs_color", False):
+        return None, cropped
+    return binarize(cropped, cfg), cropped
 
 
 # ─────────────────────────────────────────────────────────────
@@ -231,7 +248,26 @@ def ocr_sevenseg(cropped_bgr, cfg=None):
 ocr_sevenseg.needs_color = True
 
 
-OCR_ENGINES = {"sevenseg": ocr_sevenseg, "tesseract": ocr_tesseract, "ssocr": ocr_ssocr}
+def ocr_cells(cropped_bgr, cfg=None):
+    """กล่อง REAI: หาแถบ 4 ช่องจากกรอบ → อ่านทีละช่องด้วย CNN จิ๋ว (cellread.py) — ไม่ขึ้นกับสี/แบบของตัวเลข
+    7 ต.ค. 2026 ชุดสังเคราะห์บนรูปกล่องจริง: ถูกครบ 4 หลัก 90.7 % / 95.2 % · กล่องว่างจริง 11/11 · Pi ~110 ms (ไฟล์ 26 §26.5–26.7)
+    ช่องว่างคืนเป็น "_" — parse_value ตัดทิ้งเอง · ทุกช่องว่าง/ไม่เจอกล่อง = อ่านไม่ออก"""
+    import cellread
+    r = cellread.read_meter(cropped_bgr)
+    if not r["ok"]:
+        return "", 0.0
+    return r["text"], r["conf"]
+ocr_cells.needs_color = True
+
+
+OCR_ENGINES = {"sevenseg": ocr_sevenseg, "cells": ocr_cells, "tesseract": ocr_tesseract, "ssocr": ocr_ssocr}
+
+
+def warmup(engine):
+    """โหลดโมเดลล่วงหน้า (เรียกตอนเปิดกล้อง) — ไม่งั้นภาพแรกหลังบูตช้ากว่าปกติ ~175 ms [วัดจริง 7 ต.ค.]"""
+    if engine == "cells":
+        import cellread
+        cellread.warmup()
 
 
 def run_engine(engine, binimg, cropped_bgr, cfg):
@@ -356,12 +392,13 @@ def process_one(img, cfg, engine, run_id, meter_type, name=None, debug_dir=None)
 
     raw, conf, value, err = "", 0.0, None, None
     try:
-        binimg, cropped = preprocess(img, cfg)
+        binimg, cropped = prepare(engine, img, cfg)
         raw, conf = run_engine(engine, binimg, cropped, cfg)
         value = parse_value(raw, cfg.get("expected_digits"), cfg.get("decimal_places"))
         if debug_dir:
             Path(debug_dir).mkdir(parents=True, exist_ok=True)
-            cv2.imwrite(str(Path(debug_dir) / f"{rid}_bin.png"), binimg)
+            if binimg is not None:
+                cv2.imwrite(str(Path(debug_dir) / f"{rid}_bin.png"), binimg)
             cv2.imwrite(str(Path(debug_dir) / f"{rid}_crop.png"), cropped)
     except Exception as e:                     # noqa: BLE001 — ตั้งใจจับทุกอย่าง
         err = f"{type(e).__name__}: {e}"
@@ -377,7 +414,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--source", choices=["picamera2", "usb", "folder"], default="folder")
     ap.add_argument("--path", help="โฟลเดอร์รูป เมื่อ --source folder")
-    ap.add_argument("--engine", choices=list(OCR_ENGINES), default="sevenseg")
+    ap.add_argument("--engine", choices=list(OCR_ENGINES), default="cells")
     ap.add_argument("--meter-type", default="water", help="water | electric")
     ap.add_argument("--run-id", default=datetime.now().strftime("run_%Y%m%d_%H%M%S"))
     ap.add_argument("--debug-dir", help="เซฟภาพหลัง threshold ไว้ดูตอนปรับจูน")

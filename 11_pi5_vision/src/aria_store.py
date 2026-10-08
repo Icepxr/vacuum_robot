@@ -61,17 +61,60 @@ def clock_synced():
     return {"yes": True, "no": False}.get(out)
 
 
-# ── ทะเบียนมิเตอร์ (ARIA export → scp ลง data/meters.json ตอนอยู่แล็บ) ──
+# ── ทะเบียนห้อง+มิเตอร์ (data/meters.json) ──
+# 8 ต.ค. 2026: Pi ดึงเองจาก ARIA (sync_supabase.pull_registry → Edge Function GET /ingest/registry) — ไม่ต้อง export แล้ว scp
+# ไฟล์จากปุ่มส่งออกบนเว็บแบบเดิม (ไม่มี "rooms") ยังอ่านได้ — ห้องได้จากมิเตอร์
 
 def load_registry():
-    """คืน dict {"registry_version": int|None, "meters": [...]} · ไม่มีไฟล์/ไฟล์เสีย = ทะเบียนว่าง (ถ่ายต่อได้)"""
+    """คืน {"registry_version", "meters", "rooms", "sha", "exported_at", "pulled_at"}
+    ไม่มีไฟล์/ไฟล์เสีย = ทะเบียนว่าง (ถ่ายต่อได้) · rooms = รายชื่อห้องทั้งหมด รวมห้องที่ยังไม่มีมิเตอร์"""
     *_, reg_path = _dirs()
     try:
         d = json.loads(reg_path.read_text(encoding="utf-8"))
         meters = [m for m in d.get("meters", []) if isinstance(m, dict) and m.get("meter_id")]
-        return {"registry_version": d.get("registry_version"), "meters": meters}
-    except (OSError, ValueError):
-        return {"registry_version": None, "meters": []}
+        rooms = [str(r.get("room_id") if isinstance(r, dict) else r) for r in d.get("rooms", []) or []]
+        rooms = [r for r in rooms if ROOM_RE.match(r)]
+        return {"registry_version": d.get("registry_version"), "meters": meters, "rooms": rooms,
+                "sha": d.get("sha"), "exported_at": d.get("exported_at"), "pulled_at": d.get("pulled_at")}
+    except (OSError, ValueError, AttributeError):
+        return {"registry_version": None, "meters": [], "rooms": [], "sha": None, "exported_at": None, "pulled_at": None}
+
+
+def _natural(s):
+    return [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", s)]
+
+
+def room_ids(reg):
+    """ตัวเลือกห้องในป๊อปอัพ = ห้องในทะเบียน ∪ ห้องที่มีมิเตอร์ · เรียงแบบตัวเลข (A2 ก่อน A10)"""
+    rooms = set(reg.get("rooms") or []) | {str(m.get("room")) for m in reg["meters"] if m.get("room")}
+    return sorted((r for r in rooms if ROOM_RE.match(r)), key=_natural)
+
+
+def save_registry(d, pulled_at=None):
+    """เขียนทะเบียนที่ดึงจาก ARIA ลง meters.json แบบ atomic · เก็บรุ่นก่อนไว้ที่ meters.json.prev
+    คืน (True, None) | (False, เหตุผล) — ไม่เขียนถ้ารูปแบบผิด หรือทะเบียนใหม่ว่างทั้งที่ของเดิมมีข้อมูล (กันคลาวด์พลาดล้างรายชื่อห้องทิ้ง)"""
+    if not isinstance(d, dict) or not isinstance(d.get("registry_version"), int):
+        return False, "bad_version"
+    rooms, meters = d.get("rooms"), d.get("meters")
+    if not isinstance(rooms, list) or not isinstance(meters, list):
+        return False, "bad_shape"
+    for r in rooms:
+        if not isinstance(r, dict) or not ROOM_RE.match(str(r.get("room_id", ""))):
+            return False, "bad_room"
+    for m in meters:
+        if not isinstance(m, dict) or not m.get("meter_id") or m.get("type") not in METER_TYPES \
+                or not ROOM_RE.match(str(m.get("room", ""))):
+            return False, "bad_meter"
+    cur = load_registry()
+    if not rooms and not meters and (cur["rooms"] or cur["meters"]):
+        return False, "empty_refused"
+    *_, reg_path = _dirs()
+    out = {"registry_version": d["registry_version"], "exported_at": d.get("exported_at"), "sha": d.get("sha"),
+           "pulled_at": pulled_at or _now().isoformat(), "rooms": rooms, "meters": meters}
+    if reg_path.is_file():
+        _write_atomic(reg_path.with_name(reg_path.name + ".prev"), reg_path.read_bytes())
+    _write_atomic(reg_path, json.dumps(out, ensure_ascii=False, indent=1).encode("utf-8"))
+    return True, None
 
 
 def resolve_meter(reg, room_id, meter_type):

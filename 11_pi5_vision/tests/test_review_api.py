@@ -65,3 +65,16 @@ def test_reading_event_marks_pending_and_attaches(web, tmp_path, monkeypatch):
     hub.on_event(ev)
     assert hub.events[-1]["pending"] is True and hub.events[-1]["crop_url"] == f"/crops/{rec['local_id']}.jpg"
     assert S.get_pending(rec["local_id"])["clock_synced"] is False
+
+
+def test_rooms_without_meters_and_pull_button(web, tmp_path, monkeypatch):
+    """8 ต.ค.: ทะเบียนจาก ARIA มี rooms → ห้องที่ยังไม่มีมิเตอร์อยู่ใน dropdown · ปุ่มดึงทันทีคืนรายชื่อใหม่"""
+    import sync_supabase as SY
+    c, *_ = web
+    (tmp_path / "meters.json").write_text(json.dumps({"registry_version": 5, "pulled_at": "2026-10-08T03:00:00+00:00",
+        "rooms": [{"room_id": "A101"}, {"room_id": "A103"}], "meters": [{"meter_id": "W-A101-01", "room": "A101", "type": "water"}]}))
+    d = c.get("/api/pending").json()
+    assert d["rooms"] == ["A101", "A103"] and d["registry_version"] == 5 and d["registry_pulled_at"]
+    monkeypatch.setattr(SY, "pull_registry", lambda tok, sha=None: (False, "ดึงทะเบียนไม่ได้ (None): offline"))
+    r = c.post("/api/registry/pull")
+    assert r.status_code == 502 and r.json()["rooms"] == ["A101", "A103"]     # เน็ตล้ม = ใช้รายชื่อเดิม

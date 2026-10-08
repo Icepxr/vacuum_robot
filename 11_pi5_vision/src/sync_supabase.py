@@ -17,6 +17,7 @@ sync_supabase.py — ส่งแถวที่คนขับกด "เก็
     python sync_supabase.py                 # ส่งที่ค้าง
     python sync_supabase.py --dry-run       # ดูว่าจะส่งอะไร ไม่ส่งจริง
     python sync_supabase.py --retry-errors  # ส่งแถวที่คลาวด์เคยปฏิเสธซ้ำอีกรอบ
+    python sync_supabase.py --registry      # ดึงทะเบียนห้อง+มิเตอร์จาก ARIA อย่างเดียว (8 ต.ค.)
 """
 import argparse
 import json
@@ -73,6 +74,26 @@ def http(method, path, tok, body=None, ctype="application/json"):
         return None, {"error": str(e)}
 
 
+def pull_registry(tok, cloud_sha=None):
+    """ดึงทะเบียนห้อง+มิเตอร์จาก ARIA ลง data/meters.json · คืน (ok, ข้อความ)
+    cloud_sha = sha ที่ POST /readings ส่งกลับมา — ตรงกับของในเครื่องแล้วไม่เรียกเลย (ไม่เพิ่ม invocation)
+    เน็ตล้ม/คลาวด์ปฏิเสธ = ใช้ทะเบียนเดิมต่อ ไม่แตะไฟล์"""
+    if not tok:
+        return False, "ไม่มี token ของอุปกรณ์"
+    have = S.load_registry().get("sha")
+    if cloud_sha and cloud_sha == have:
+        return True, "ทะเบียนล่าสุดแล้ว"
+    code, resp = http("GET", "/registry" + (f"?have_sha={have}" if have else ""), tok)
+    if code != 200:
+        return False, f"ดึงทะเบียนไม่ได้ ({code}): {resp.get('error', resp)}"
+    if resp.get("unchanged"):
+        return True, "ทะเบียนล่าสุดแล้ว"
+    ok, why = S.save_registry(resp, now_iso())
+    if not ok:
+        return False, f"ไม่เขียนทะเบียน: {why}"
+    return True, f"ทะเบียน v{resp['registry_version']} · {len(resp['rooms'])} ห้อง · {len(resp['meters'])} มิเตอร์"
+
+
 def local_status():
     """สถานะจากเว็บบน Pi (กล้อง/อากาศ/อุณหภูมิ/รหัสเตือน) · เว็บไม่รัน = ไม่มีค่าพวกนี้ ไม่ใช่ error"""
     try:
@@ -100,7 +121,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--retry-errors", action="store_true")
+    ap.add_argument("--registry", action="store_true", help="ดึงทะเบียนห้อง+มิเตอร์อย่างเดียว")
     args = ap.parse_args()
+    if args.registry:
+        ok, msg = pull_registry(token())
+        print(msg)
+        return 0 if ok else 1
 
     state = S.load_sync_state()
     rows = S.kept_rows()
@@ -140,6 +166,9 @@ def main():
                 print(f"  คลาวด์ปฏิเสธ {rej.get('local_id')}: {rej.get('reason')}")
         sent += len(resp.get("accepted", []))
         S.save_sync_state(state)      # บันทึกทุกชุด — ตายกลางคันเสียแค่ชุดเดียว (ส่งซ้ำก็เป็น no-op ฝั่งคลาวด์)
+        if n == 0 and resp.get("registry_sha"):
+            ok, msg = pull_registry(tok, resp["registry_sha"])   # ARIA เปลี่ยนทะเบียน → ดึงลงเครื่อง
+            print(f"  {msg}")
 
     # 2) crop ของแถวที่ขึ้นแล้ว
     crops = 0
