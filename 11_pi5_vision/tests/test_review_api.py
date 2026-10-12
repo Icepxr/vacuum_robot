@@ -75,6 +75,8 @@ def test_rooms_without_meters_and_pull_button(web, tmp_path, monkeypatch):
         "rooms": [{"room_id": "A101"}, {"room_id": "A103"}], "meters": [{"meter_id": "W-A101-01", "room": "A101", "type": "water"}]}))
     d = c.get("/api/pending").json()
     assert d["rooms"] == ["A101", "A103"] and d["registry_version"] == 5 and d["registry_pulled_at"]
+    g = c.get("/api/registry").json()                                          # การ์ดในตั้งค่าหน้าขับ
+    assert g["registry_version"] == 5 and g["meters"] == 1 and g["rooms_without_meter"] == ["A103"] and g["registry_pulled_at"]
     monkeypatch.setattr(SY, "pull_registry", lambda tok, sha=None: (False, "ดึงทะเบียนไม่ได้ (None): offline"))
     r = c.post("/api/registry/pull")
     assert r.status_code == 502 and r.json()["rooms"] == ["A101", "A103"]     # เน็ตล้ม = ใช้รายชื่อเดิม

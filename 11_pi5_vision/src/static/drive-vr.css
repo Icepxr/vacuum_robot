@@ -266,6 +266,13 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .settings-card { margin-top: 12px; padding: 16px; border: 1px solid #e9e0f2; border-radius: 15px; background: #fff; }
 .settings-card h3 { margin: 0; font-size: 15px; font-weight: 800; color: #3c2057; }
 .section-note { margin: 4px 0 12px; color: #8a7a98; font-size: 11px; line-height: 1.5; }
+.reg-kv { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 2px 14px; margin: 0 0 12px; font-size: 13px; line-height: 1.6; }
+.reg-kv dt { color: #9782a9; } .reg-kv dd { margin: 0; color: #3c2057; overflow-wrap: anywhere; }
+.reg-kv dd small { color: #9782a9; }
+.reg-pull { width: 100%; min-height: 44px; padding: 8px 12px; border: 1px solid #9b64d0; border-radius: 10px; background: #793bc2; color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; }
+.reg-pull:disabled { opacity: .55; cursor: progress; }
+.reg-msg { min-height: 1.5em; margin: 8px 0 0; font-size: 12px; color: #6f5e80; }
+.reg-msg.bad { color: #b4234a; } .reg-msg.good { color: #18805a; }
 .sheet .row { min-height: 58px; margin: 0; padding: 12px 0; gap: 12px; font-size: 13px; line-height: 1.5; }
 .sheet .row:last-child { border-bottom: 0; }
 .sheet .row > span { min-width: 0; }
@@ -320,7 +327,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 @media (min-width: 700px) {
   #pane-use.on { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; align-content: start; padding-top: 12px; }
   #pane-use .settings-card { margin-top: 0; padding: 13px; }
-  #pane-use .settings-card:nth-child(3), #pane-use .settings-hint { grid-column: 1 / -1; }
+  #pane-use .settings-card:nth-child(3), #pane-use .registry-card, #pane-use .settings-hint { grid-column: 1 / -1; }
   #pane-use .choice-grid { gap: 6px; }
   #pane-use .choice-grid button { min-height: 83px; padding: 6px; }
   #pane-use .choice-grid strong { font-size: 12px; }

@@ -125,15 +125,19 @@
     if (cur == null) { camGoto(a, a.start()); toast(`${a.name}: ผูกสัญญาณที่ ${Math.round(a.target)}° ก่อน แล้วค่อยกดอีกครั้ง`, "warn"); return false; }
     camGoto(a, cur + dir * deg, false); return true;
   }
-  let holdT = null, holdD = null;
+  let holdT = null, holdD = null, holdBtn = null;
+  // กดค้างใช้ร่วมกันทั้งปุ่ม −/+ บนจอ และคีย์ลัด (↑↓ เสา · Z X มุมกล้อง · 12 ต.ค.)
+  function camHoldStop() { clearTimeout(holdD); clearInterval(holdT); holdT = holdD = null; if (holdBtn) holdBtn.classList.remove("hold"); holdBtn = null; }
+  function camHoldStart(k, dir, btn = null) {
+    camHoldStop(); const a = camAx[k];
+    holdBtn = btn || document.querySelector(`[data-hold="${k}:${dir}"]`); if (holdBtn) holdBtn.classList.add("hold");
+    if (!camNudge(a, dir, 1)) return;                                         // แตะ = 1°
+    holdD = setTimeout(() => { holdT = setInterval(() => camNudge(a, dir, HOLD_DPS[k] * HOLD_TICK_MS / 1000), HOLD_TICK_MS); }, HOLD_DELAY_MS);
+  }
   document.querySelectorAll("[data-hold]").forEach((b) => {
-    const [k, d] = b.dataset.hold.split(":"); const a = camAx[k], dir = +d;
-    const stop = () => { clearTimeout(holdD); clearInterval(holdT); holdT = holdD = null; b.classList.remove("hold"); };
-    b.addEventListener("pointerdown", (e) => { e.preventDefault(); try { b.setPointerCapture(e.pointerId); } catch (_) {} b.classList.add("hold");
-      stop(); b.classList.add("hold");
-      if (!camNudge(a, dir, 1)) return;                                         // แตะ = 1°
-      holdD = setTimeout(() => { holdT = setInterval(() => camNudge(a, dir, HOLD_DPS[k] * HOLD_TICK_MS / 1000), HOLD_TICK_MS); }, HOLD_DELAY_MS); });
-    ["pointerup", "pointercancel", "lostpointercapture"].forEach((ev) => b.addEventListener(ev, stop));
+    const [k, d] = b.dataset.hold.split(":"); const dir = +d;
+    b.addEventListener("pointerdown", (e) => { e.preventDefault(); try { b.setPointerCapture(e.pointerId); } catch (_) {} camHoldStart(k, dir, b); });
+    ["pointerup", "pointercancel", "lostpointercapture"].forEach((ev) => b.addEventListener(ev, () => { if (holdBtn === b) camHoldStop(); }));
   });
   for (const a of Object.values(camAx)) {
     a.sl.addEventListener("pointerdown", () => { a.drag = true; });
@@ -327,13 +331,18 @@
   });
   function dpadVec() { if (!padHeld.size) return null; let x = 0, y = 0; for (const [dx, dy] of padHeld.values()) { x += dx; y += dy; } return [Math.max(-1, Math.min(1, x)), Math.max(-1, Math.min(1, y))]; }
   const keys = new Set();
+  const CAM_KEYS = { arrowup: ["lift", 1], arrowdown: ["lift", -1], z: ["tilt", -1], x: ["tilt", 1] };   // ทิศตรงกับปุ่ม −/+ บนจอ
+  let camKey = null;
   window.addEventListener("keydown", (e) => { if (stopLatch.active || e.target.closest("#sheet, #emergency-screen")) return; if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return; if (e.repeat) return; const k = e.key.toLowerCase();
     if (k === " ") { e.preventDefault(); estop(); return; } if (k === "c") { capture(); return; } if (k === "f") { toggleSuction(); return; } if (k === "g") { toggleBrush(); return; }
     if (k === "1") return setSpeed(50); if (k === "2") return setSpeed(75); if (k === "3") return setSpeed(100);
-    if (k === "q") return zoomBy(-0.5); if (k === "e") return zoomBy(0.5); keys.add(k); });
-  window.addEventListener("keyup", (e) => { keys.delete(e.key.toLowerCase()); pump(); });
-  window.addEventListener("blur", () => { keys.clear(); endJoy(); padHeld.clear(); document.querySelectorAll("#pad .hold").forEach((x) => x.classList.remove("hold")); });
-  const keyVec = () => { let x = 0, y = 0; if (keys.has("w") || keys.has("arrowup")) y++; if (keys.has("s") || keys.has("arrowdown")) y--; if (keys.has("a") || keys.has("arrowleft")) x--; if (keys.has("d") || keys.has("arrowright")) x++; return [x, y]; };
+    if (k === "q") return zoomBy(-0.5); if (k === "e") return zoomBy(0.5);
+    if (CAM_KEYS[k]) { e.preventDefault(); camKey = k; camHoldStart(...CAM_KEYS[k]); return; }   // ↑↓ เสา · Z X มุมกล้อง (กดค้าง = เดินต่อเนื่อง)
+    keys.add(k); });
+  window.addEventListener("keyup", (e) => { const k = e.key.toLowerCase(); if (k === camKey) { camKey = null; camHoldStop(); } keys.delete(k); pump(); });
+  window.addEventListener("blur", () => { keys.clear(); camKey = null; camHoldStop(); endJoy(); padHeld.clear(); document.querySelectorAll("#pad .hold").forEach((x) => x.classList.remove("hold")); });
+  // 12 ต.ค. (ผู้ใช้): ลูกศรขึ้น/ลง ย้ายไปคุมเสา → ขับเดินหน้า/ถอยใช้ W/S เท่านั้น · ← → ยังเลี้ยวได้
+  const keyVec = () => { let x = 0, y = 0; if (keys.has("w")) y++; if (keys.has("s")) y--; if (keys.has("a") || keys.has("arrowleft")) x--; if (keys.has("d") || keys.has("arrowright")) x++; return [x, y]; };
   let padBtn = {};
   function padVec() { const gp = (navigator.getGamepads ? navigator.getGamepads() : [])[0]; if (!gp) return [0, 0];
     const p = (i) => gp.buttons[i] && gp.buttons[i].pressed; const edge = (i, fn) => { if (p(i) && !padBtn[i]) fn(); padBtn[i] = p(i); };
@@ -560,8 +569,32 @@
     settingsTabs.forEach((b) => { const selected = b.dataset.tab === name; b.classList.toggle("on", selected); b.setAttribute("aria-selected", String(selected)); b.tabIndex = selected ? 0 : -1; });
     document.querySelectorAll(".pane").forEach((p) => { p.classList.toggle("on", p.dataset.pane === name); p.scrollTop = 0; });
   }
+  // รายชื่อห้องและมิเตอร์ (ทะเบียนจาก ARIA) · 12 ต.ค.
+  const fmtWhen = (iso) => { try { return iso ? new Date(iso).toLocaleString("th-TH", { hour12: false, dateStyle: "short", timeStyle: "short" }) : "ยังไม่เคยดึง"; } catch (e) { return iso; } };
+  function paintRegistry(d) {
+    $("reg-ver").textContent = d.registry_version == null ? "ยังไม่มีทะเบียน" : `v${d.registry_version}`;
+    $("reg-at").textContent = fmtWhen(d.registry_pulled_at);
+    const rooms = d.rooms || [], none = d.rooms_without_meter || [];
+    $("reg-rooms").textContent = rooms.length ? `${rooms.length} ห้อง · ${rooms.join(", ")}` : "—";
+    $("reg-meters").textContent = `${d.meters ?? 0} ตัว` + (none.length ? ` · ยังไม่มีมิเตอร์: ${none.join(", ")}` : "");
+  }
+  function regMsg(text, cls) { const m = $("reg-msg"); m.textContent = text; m.className = "reg-msg" + (cls ? " " + cls : ""); }
+  async function loadRegistry() {
+    try { paintRegistry(await (await fetch("/api/registry", { cache: "no-store" })).json()); } catch (e) { regMsg("อ่านทะเบียนจาก Pi ไม่ได้", "bad"); }
+  }
+  $("reg-pull").onclick = async () => {
+    const b = $("reg-pull"); b.disabled = true; regMsg("กำลังดึงจาก ARIA…");
+    try {
+      const r = await fetch("/api/registry/pull", { method: "POST" }), d = await r.json();
+      paintRegistry(d);
+      regMsg(r.ok ? d.message : `${d.message || "ดึงไม่ได้"} — ใช้รายชื่อเดิมต่อ`, r.ok ? "good" : "bad");
+      if (r.ok) window.dispatchEvent(new CustomEvent("mrc:registry", { detail: d }));   // ป๊อปอัพหลังถ่ายได้รายชื่อใหม่ทันที
+    } catch (e) { regMsg("ต่อ Pi ไม่ได้", "bad"); }
+    b.disabled = false;
+  };
+
   function closeSettings() { sheet.hidden = true; $("reset-confirm").hidden = true; $("settings-btn").focus(); }
-  $("settings-btn").onclick = () => { document.querySelectorAll(".settings-group").forEach((group) => group.open = false); settingsTab("use"); sheet.hidden = false; renderKv(); $("sheet-close").focus(); };
+  $("settings-btn").onclick = () => { document.querySelectorAll(".settings-group").forEach((group) => group.open = false); settingsTab("use"); sheet.hidden = false; renderKv(); regMsg(""); loadRegistry(); $("sheet-close").focus(); };
   $("sheet-close").onclick = closeSettings;
   $("air").onclick = () => { sheet.hidden = false; settingsTab("status"); renderKv(); $("air-details").open = true; $("sheet-close").focus(); };
   sheet.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); closeSettings(); } });

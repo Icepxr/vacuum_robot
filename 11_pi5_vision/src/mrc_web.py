@@ -352,14 +352,27 @@ def api_pending():
                          "ttl_days": S.PENDING_TTL.days})
 
 
+def _registry_summary(reg):
+    rooms = S.room_ids(reg)
+    with_meter = {str(m.get("room")) for m in reg["meters"]}
+    return {"rooms": rooms, "registry_version": reg["registry_version"], "registry_pulled_at": reg["pulled_at"],
+            "exported_at": reg["exported_at"], "meters": len(reg["meters"]),
+            "rooms_without_meter": [r for r in rooms if r not in with_meter]}
+
+
+@app.get("/api/registry")
+def api_registry():
+    """การ์ด "รายชื่อห้องและมิเตอร์" ในตั้งค่าหน้าขับ — ทะเบียนที่ Pi ใช้อยู่ตอนนี้"""
+    return JSONResponse(_registry_summary(S.load_registry()))
+
+
 @app.post("/api/registry/pull")
 async def api_registry_pull():
-    """ปุ่ม "อัปเดตรายชื่อห้อง" ในป๊อปอัพ — ดึงทะเบียนจาก ARIA ทันที (ปกติ mrc-sync ดึงเองเมื่อ ARIA เปลี่ยน)"""
+    """ปุ่ม "ดึงรายชื่อล่าสุด" (ตั้งค่า) / "อัปเดตรายชื่อห้อง" (ป๊อปอัพ) — ดึงทะเบียนจาก ARIA ทันที
+    ปกติ mrc-sync ดึงเองเมื่อ ARIA เปลี่ยน (ทุก 5 นาทีเมื่อมีเน็ต)"""
     import sync_supabase as SY
     ok, msg = await asyncio.to_thread(SY.pull_registry, SY.token(), None)
-    reg = S.load_registry()
-    return JSONResponse({"ok": ok, "message": msg, "rooms": S.room_ids(reg), "registry_version": reg["registry_version"],
-                         "registry_pulled_at": reg["pulled_at"]}, status_code=200 if ok else 502)
+    return JSONResponse({"ok": ok, "message": msg, **_registry_summary(S.load_registry())}, status_code=200 if ok else 502)
 
 
 @app.post("/api/pending/{lid}")

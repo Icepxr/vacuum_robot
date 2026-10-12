@@ -143,6 +143,8 @@
     b.disabled = false;
   };
 
+  window.addEventListener("mrc:registry", (e) => { setRooms(e.detail.rooms); paintReg(e.detail); });   // ดึงจากหน้าตั้งค่า
+
   async function refresh() {
     try {
       const d = await (await fetch("/api/pending", { cache: "no-store" })).json();
