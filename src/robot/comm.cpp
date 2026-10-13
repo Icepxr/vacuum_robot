@@ -15,7 +15,7 @@
 #include "manual.h"
 #include "servo_x.h"
 #include "tft.h"
-void robotEmergencyStop(const char*);
+void robotEmergencyStop(const char*); void robotSetMastFold(int us); int robotMastFold();
 int servoCurrentUs(); bool servoSetTarget(int us); void servoStop(const char*);
 bool blowerOnNow(); bool brushOnNow(); uint32_t brushOnSinceMsNow(); bool missionRunning(); bool servoAttachedNow();
 
@@ -134,6 +134,15 @@ void handleLine(char* line, size_t len) {
       if (us == 0) { servoStop("Pi สั่ง $M,0"); ack(rseq); return; }
       if (us < MAST_US_MIN || us > MAST_US_MAX) { nack(rseq, "OUT_OF_RANGE"); return; }   // C47/C48: ต่ำสุด 300 (เดิม 500)
       if (!servoSetTarget(us)) { nack(rseq, "SERVO_FAIL"); return; }
+      ack(rseq);
+      return;
+    }
+    case 'F': {                                   // $F,<seq>,<us> — ตำแหน่งพับของเสา ให้ E-STOP พับลงเอง (C66) · 0 = ลืมค่า (E-STOP ค้างเสาไว้)
+      if (n < 2) { nack(rseq, "BAD_ARGS"); return; }
+      const int us = (int)f[1];
+      if (us != 0 && (us < MAST_US_MIN || us > MAST_US_MAX)) { nack(rseq, "OUT_OF_RANGE"); return; }
+      if (us != robotMastFold()) Serial.printf("[comm] $F ตำแหน่งพับเสา = %d us\n", us);
+      robotSetMastFold(us);
       ack(rseq);
       return;
     }

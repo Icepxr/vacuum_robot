@@ -24,9 +24,14 @@ git config core.precomposeunicode true
 | `05_CAD/` | ไฟล์ Fusion 360 (`.f3d`) |
 | `06_Scissor_Lift/` | **ดีไซน์เก่า — ห้ามใช้ตัดสินใจ** เหลือเฉพาะสคริปต์ `.py` (ไฟล์ `08` อ้างเป็นที่มาของมวลหุ่น) · README/BOM/stl/png ย้ายไป `99_เก็บของเก่า/` แล้ว 7 ก.ย. 2026 |
 | `08_การคำนวณ/` | **สมุดคำนวณกลาง — เริ่มที่นี่เสมอ** |
-| `src/` + `platformio.ini` + `test/` | **เฟิร์มแวร์ ESP32-S3 ตัวจริง** (env `robot` = เฟิร์มแวร์รวม M1+M2+M3 + UART ไป Pi) · `10_firmware_esp32/` เป็นโฟลเดอร์เก่า |
+| `src/` + `platformio.ini` + `test/` | **เฟิร์มแวร์ ESP32-S3 ตัวจริง** (env `robot` = เฟิร์มแวร์รวม M1+M2+M3 + UART ไป Pi · `robot_st7735` = จอสี่เหลี่ยม) · `test/host_*.cpp` + `test/display/` = เทสต์บน host (คำสั่งอยู่บรรทัดแรกของแต่ละไฟล์) · `10_firmware_esp32/` เป็นโฟลเดอร์เก่า |
 | `11_pi5_vision/` | **โค้ดบน Pi 5**: เว็บขับ (`/drive`) · กล้อง · OCR 7-segment · UART daemon · systemd — ดู README ในโฟลเดอร์ |
 | `datasheet_component/` | datasheet จริงของ DRV8871 / HC-SR04 / MG996R |
+| `aria/` | **ARIA** — เว็บหลังบ้านหอพัก (`aria/web` บน Netlify) + Supabase `aria-mrc` (`aria/supabase/migrations` · `functions`) |
+| `motion-simulator/` | เว็บจำลองการขับ/ทางลม/พลังงาน/เสายก (`node --test motion-simulator/test/*.test.mjs`) |
+| `design/` | ต้นแบบดีไซน์ UI (จอ ST7735 · ARIA · หน้าขับ) |
+| `docs/` · `archive/` | คู่มือ agent · โค้ดเลิกใช้ที่ยังเก็บใน git (wifi_test · oled) |
+| `media/` | **ผลเรนเดอร์ วิดีโอ สไลด์ proposal** (~740 MB) — ไม่เข้า git · ย้ายมารวม 13 ต.ค. 2026 · ดู `media/README.md` |
 | `99_เก็บของเก่า/` | **ของที่เลิกใช้ ย้ายมารวมที่เดียว** (ไม่เข้า repo) — scissor ดีไซน์เก่า · เว็บทูล · docx รุ่นเก่า · BOM เก่า + notebook 2.47 kg · ดู README ในโฟลเดอร์ |
 
 ## เริ่มใช้หุ่น / หาว่าโค้ดไหนทำอะไร

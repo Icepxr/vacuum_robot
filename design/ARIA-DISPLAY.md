@@ -39,13 +39,13 @@ Open `aria-round-display-preview.html`; category buttons filter its 21 scenes. T
 Run from the repository root with an existing host compiler:
 
 ```powershell
-g++ -std=c++17 -Wall -Wextra -Werror -I tests/display tests/display/test_round_display.cpp -o .pio/aria-display-test.exe
+g++ -std=c++17 -Wall -Wextra -Werror -I test/display test/display/test_round_display.cpp -o .pio/aria-display-test.exe
 ./.pio/aria-display-test.exe
 ./.pio/aria-display-test.exe --preview | Out-File -Encoding utf8 design/aria-round-display-preview.html
 ```
 
 144 host checks cover the scenes, approximate circular text bounds, text budgets (five drawn strings on air pages; three on other pages), outer-edge frame geometry, removal of wordmark/mode text, page priority, stale telemetry, independent sentinels, conservative icon health, legacy frames, deadman, long meter readings, unknown event/warning fallbacks and 200ms cadence. They also verify that missing/baseline gas data does not fabricate fill, high values fill more, capture frames are uniform and emergency frames are continuous. Browser verification checks rendering and category filtering.
 
-The tests do not validate physical I/O, actual LovyanGFX glyph metrics, memory use or the full ESP32 build. Keep fake headers isolated in `tests/display`; never add their include path to PlatformIO.
+The tests do not validate physical I/O, actual LovyanGFX glyph metrics, memory use or the full ESP32 build. Keep fake headers isolated in `test/display`; never add their include path to PlatformIO.
 
 The full target build command is `pio run -e robot` (no upload). It was tried again for this accepted-design implementation and remains blocked by Windows Application Control for `pio.exe`. Security settings were not altered or bypassed. This display refresh has not been flashed or deployed; its commit and remote publication status are recorded in Git.

@@ -20,7 +20,7 @@ namespace {
 #endif
 constexpr int PIN_SCK = TFT_PIN_SCK, PIN_MOSI = TFT_PIN_MOSI, PIN_DC = PIN_TFT_DC, PIN_CS = PIN_TFT_CS;
 
-// จอที่ใช้: ค่าเริ่ม = GC9A01 กลม 240×240 (C32) · -D TFT_ST7735 = 1.8" ST7735S 128×160 บอร์ดแดง V1.1 (C64 · 12 ต.ค. จอกลมเสีย)
+// จอที่ใช้: ค่าเริ่ม = GC9A01 กลม 240×240 (C32) · -D TFT_ST7735 = 1.8" ST7735S 128×160 บอร์ดแดง V1.1 (C65 · 12 ต.ค. จอกลมเสีย)
 #ifdef TFT_ST7735
 constexpr int PANEL_W = 128, PANEL_H = 160;   // ขนาดชิป (แนวตั้ง)
 constexpr int SCR_W = 160, SCR_H = 128;       // ใช้งานแนวนอน — แบบ B "Signal split" (design/aria-st7735-landscape-prototype)

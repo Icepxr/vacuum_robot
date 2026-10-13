@@ -1,6 +1,6 @@
 import glob,cv2,time
 from ultralytics import YOLO
-M='/Users/daiyazwaehama/Documents/vacuum_project/meter_model/'
+M='/Users/daiyazwaehama/Documents/vacuum_project/99_เก็บของเก่า/meter_model/'
 cnt=YOLO(M+'counter.pt'); dig=YOLO(M+'digit.pt')
 print('counter names',cnt.names,'| digit names',dig.names)
 fs=sorted(glob.glob('pi/images/*.jpg'))

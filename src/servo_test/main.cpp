@@ -52,6 +52,7 @@ static int  currentUs = US_CENTER;
 // ถ้าผูกกลับด้วยค่าเก่า เซอร์โวจะวิ่งกลับด้วยความเร็วเต็ม = สิ่งที่ทั้งไฟล์นี้พยายามเลี่ยง
 static bool positionUnknown = false;
 static int  tickTargetUs = -1;  // เป้าของโหมดไม่บล็อก ($M จาก Pi) · -1 = ไม่มีเป้า — ดู servoSetTarget/servoTick ด้านล่าง
+static bool releaseOnArrive = false;   // C66: E-STOP สั่งพับ → ถึงตำแหน่งพับแล้วค่อยปล่อย PWM (กลไกล็อกตัวเองตอนพับ)
 
 // ── ตัวช่วย ───────────────────────────────────────────────────
 
@@ -68,6 +69,7 @@ static void servoDetach(const char* why) {
     attached = false;
     positionUnknown = true;
     tickTargetUs = -1;
+    releaseOnArrive = false;
     Serial.printf("[ปล่อย] %s — เซอร์โวไม่มีสัญญาณแล้ว หมุนด้วยมือได้\n", why);
     Serial.println("        คำสั่งถัดไปต้องระบุตำแหน่งเอง (us <ค่า>) เพราะโค้ดไม่รู้ว่าฮอร์นอยู่ตรงไหนแล้ว");
   } else {
@@ -307,6 +309,7 @@ static uint32_t tickLastMs = 0;
 
 bool servoSetTarget(int us) {
   us = constrain(us, MAST_US_MIN, MAST_US_MAX);   // C47 ทางขับจาก Pi ($M) · ชุดทดสอบคอนโซลยังใช้ 500–2500
+  releaseOnArrive = false;                        // คนสั่งเสาเอง = ยกเลิกการพับอัตโนมัติของ E-STOP
   if (!attached || positionUnknown) {
     // ไม่รู้ตำแหน่งฮอร์น (เพิ่งบูต/เพิ่งปล่อย) → ผูกที่ค่าที่ขอทันที ไม่หยุดรอ Enter แบบ servoAttachAt
     // (คอนโซลไม่มีคนนั่งอยู่ตอนขับจากมือถือ · ถ้ารอ Serial ใน loop() = WDT รีบูต) · เซอร์โวจะกระโดดครั้งเดียว
@@ -327,7 +330,11 @@ bool servoTickMoving() { return attached && tickTargetUs >= 0 && tickTargetUs !=
 
 void servoTick() {
   if (!attached || tickTargetUs < 0) return;
-  if (tickTargetUs == currentUs) { tickTargetUs = -1; return; }
+  if (tickTargetUs == currentUs) {
+    tickTargetUs = -1;
+    if (releaseOnArrive) servoDetach("E-STOP: พับเสาถึงตำแหน่งพับแล้ว ปล่อย PWM (C66)");
+    return;
+  }
   const uint32_t now = millis();
   if (now - tickLastMs < SLEW_STEP_MS) return;
   tickLastMs = now;
@@ -352,6 +359,23 @@ void servoCommand(const String& cmd) { handleCommand(cmd); }
 void servoStop(const char* why)      { servoDetach(why); }
 void servoHelp()                     { printHelp(); }
 bool servoAttachedNow()              { return attached; }
+
+// C66 (13 ต.ค. 2026 ผู้ใช้: "E-STOP ให้เรียกฟังก์ชันพาเสาลงอัตโนมัติ"): เดิม E-STOP ปล่อย PWM ทันที → เสาที่ยกอยู่อาจร่วงพร้อมกล้อง
+//   (mission_core.h abort เองก็เขียนว่า "ปล่อยกลางทางเสาจะร่วง") · ตอนนี้ E-STOP เรียกฟังก์ชันนี้แทน
+//   foldUs ≥ MAST_US_MIN → เดินช้าไปตำแหน่งพับ (10 us/24 ms เท่า $M) แล้วปล่อยเมื่อถึง · foldUs < 0 = ยังไม่รู้ตำแหน่งพับ → ค้างที่เดิม (ไม่ปล่อย)
+//   ไม่ได้ผูกสัญญาณอยู่ = เสาไม่ได้ถูกยกด้วยเซอร์โวอยู่แล้ว → ไม่ทำอะไร (ห้ามผูกใหม่ เพราะไม่รู้ตำแหน่งฮอร์น จะกระโดด)
+void servoSafeStop(int foldUs, const char* why) {
+  if (!attached) return;
+  if (foldUs < MAST_US_MIN || foldUs > MAST_US_MAX) {
+    tickTargetUs = -1; releaseOnArrive = false;
+    Serial.printf("[เสา] %s — ยังไม่รู้ตำแหน่งพับ ($F) → ค้างไว้ที่ %d us ไม่ปล่อย PWM\n", why, currentUs);
+    return;
+  }
+  tickTargetUs = foldUs; releaseOnArrive = true;
+  Serial.printf("[เสา] %s — พับไป %d us (ตอนนี้ %d us · ~%d ms) แล้วปล่อย PWM\n", why, foldUs, currentUs,
+                abs(foldUs - currentUs) / SLEW_US_PER_STEP * SLEW_STEP_MS);
+}
+bool servoFolding() { return attached && releaseOnArrive; }
 
 // ── API สำหรับภารกิจ (ขั้น D · src/robot/mission.cpp) ──
 // ต่างจาก `us <ค่า>` ตรงที่ **ไม่หยุดรอกด Enter** หลัง detach: ภารกิจปล่อย PWM ที่ตำแหน่งพับทุกครั้ง

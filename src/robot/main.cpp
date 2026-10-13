@@ -12,7 +12,7 @@
 // สองระบบพร้อมกันได้ทางกายภาพ พอรวมไฟล์ เกราะนั้นหายไป
 // ที่มาของกติกาและตัวเลขทั้งหมด: 08_การคำนวณ/18_interlock_เฟิร์มแวร์รวม.md
 //
-// 🔴 ยังไม่ได้บิลด์ทดสอบ — เครื่อง Mac ที่เขียนไฟล์นี้ไม่มี PlatformIO ติดตั้ง
+// บิลด์ได้ทั้งบน Mac (~/.platformio) และบน Pi (~/mrc/.venv/bin/pio) · แฟลชจาก Pi ผ่าน /dev/ttyACM0
 // ─────────────────────────────────────────────────────────────
 #include <Arduino.h>
 #include "comm.h"      // ลิงก์ Pi 5 บน UART0 — ขั้น C: cap / cs
@@ -34,6 +34,7 @@ uint32_t commRxAgeMs();
 
 void servoSetup();  void servoTick();  void servoCommand(const String&);
 void servoStop(const char*);  void servoHelp();  bool servoAttachedNow();
+void servoSafeStop(int foldUs, const char* why);
 
 // ── ขาที่ต้องกดลง LOW ให้เร็วที่สุดตอนบูต ────────────────────
 // ต้องตรงกับ §3.2 และ config ของแต่ละโมดูล — ที่นี่ประกาศซ้ำโดยตั้งใจ
@@ -82,13 +83,20 @@ static bool isWheelMove(const String& c) {
          w == "t2" || w == "t2l" || w == "t2r" || w == "t3" || w == "t5";
 }
 
+// C66: ตำแหน่งพับของเสา (µs) — Pi ส่งมาด้วย $F (ค่าจากปุ่ม "ลง" ในหน้าขับ) · -1 = ยังไม่รู้ → E-STOP ค้างเสาไว้ ไม่ปล่อย
+//   อยู่ใน RAM: ESP32 รีบูต = หาย → Pi ส่งซ้ำตอนได้ #E BOOT เหมือน $L
+static int mastFoldUs = -1;
+void robotSetMastFold(int us) { mastFoldUs = (us >= MAST_US_MIN && us <= MAST_US_MAX) ? us : -1; }
+int  robotMastFold() { return mastFoldUs; }
+
 static void stopAllSystems(const char* why) {
   Serial.printf("\n>>> หยุดทุกระบบ: %s\n", why);
   missionAbort(why);   // ก่อนโมดูล ไม่งั้น mission จะสั่งเปิดกลับใน tick ถัดไป
   manualHalt(why);     // เช่นกัน — ไม่งั้น manual จะเขียน duty ทับใน tick ถัดไป
   motorStop(why);
   blowerStop(why);
-  servoStop(why);
+  // C66: เดิม servoStop(why) = ปล่อย PWM ทันที → เสาที่ยกอยู่อาจร่วงพร้อมกล้อง · ตอนนี้พับลงช้าๆ แล้วค่อยปล่อย (servoTick ทำต่อใน loop)
+  servoSafeStop(mastFoldUs, why);
   servoXRelease(why);
 }
 
@@ -160,7 +168,7 @@ static void printInterlock() {
   Serial.println("  R1 แปรง ↔ เซอร์โว : ยกออกแล้ว (C50 · 29 ก.ย.) · ราง 6 V/5 A พีคพร้อมกัน 8 A (ไฟล์ 23)");
   Serial.println("  R2 blower ↔ ล้อ   : ห้ามออกตัวซ้อนกัน · เว้น 1000 ms  [ราง 12 V/8 A · เหลือ 7.5%]");
   Serial.println("  R4 วัด M1         : ห้ามเปิด blower/แปรงระหว่างวัด rpm  (ข้ามได้ด้วย force)");
-  Serial.println("  R5 stop           : หยุดทุกระบบเสมอ");
+  Serial.println("  R5 stop           : หยุดทุกระบบเสมอ · เสาพับลงช้าๆ แล้วปล่อย (ไม่รู้ตำแหน่งพับ = ค้างไว้) C66");
   Serial.println("  R6 dead-man       : ของเดิมแต่ละชุดยังทำงานอยู่ (ล้อ 25 s · blower 60 s)");
   Serial.println("  C57 ดูด/แปรง      : ต่อเวลาเองตราบที่ลิงก์ Pi อยู่ · ลิงก์เงียบ > 5 s → ปิด");
   Serial.printf ("สถานะตอนนี้: ล้อ %s · blower %s · แปรง %s · เซอร์โว %s\n",

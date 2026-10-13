@@ -8,13 +8,14 @@
 #include <vector>
 #define SPI2_HOST 2
 #define SPI_DMA_CH_AUTO 0
-namespace textdatum_t { constexpr int middle_center = 0; }
+namespace textdatum_t { constexpr int middle_center = 0, top_left = 1; }
 namespace fonts {
 struct TestFont { int height, advance; bool bold; };
 inline TestFont Font0{8,6,false}, Font2{16,8,false}, FreeSansBold9pt7b{18,10,true};
 inline TestFont FreeSansBold12pt7b{24,13,true}, FreeSansBold18pt7b{36,20,true}, FreeSansBold24pt7b{48,27,true};
 }
 namespace lgfx {
+using IFont = fonts::TestFont;   // tft.cpp Layout เก็บฟอนต์เป็น const lgfx::IFont* (ST7735 แบบ B · 12 ต.ค.)
 struct BusConfig { int spi_host,spi_mode,freq_write,freq_read,dma_channel,pin_sclk,pin_mosi,pin_miso,pin_dc; bool spi_3wire,use_lock; };
 struct PanelConfig { int pin_cs,pin_rst,pin_busy,panel_width,panel_height,offset_x,offset_y; bool readable,invert,rgb_order,dlen_16bit,bus_shared; };
 struct Bus_SPI { BusConfig config() { return {}; } void config(BusConfig) {} };
@@ -47,6 +48,7 @@ class LovyanGFX {
   void fillCircle(int x,int y,int r,uint16_t c) {
     std::ostringstream s; s<<"<circle cx='"<<x<<"' cy='"<<y<<"' r='"<<r<<"' fill='"<<color(c)<<"'/>"; ops.push_back(s.str());
   }
+  void drawFastVLine(int x,int y,int h,uint16_t c) { drawLine(x,y,x,y+h-1,c); }
   void drawLine(int x,int y,int x2,int y2,uint16_t c) {
     std::ostringstream s; s<<"<path d='M"<<x<<','<<y<<" L"<<x2<<','<<y2<<"' stroke='"<<color(c)<<"'/>"; ops.push_back(s.str());
   }

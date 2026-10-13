@@ -1,6 +1,6 @@
 import cv2,json,numpy as np
 from ultralytics import YOLO
-M='/Users/daiyazwaehama/Documents/vacuum_project/meter_model/'
+M='/Users/daiyazwaehama/Documents/vacuum_project/99_เก็บของเก่า/meter_model/'
 cnt=YOLO(M+'counter.pt'); dig=YOLO(M+'digit.pt')
 B=json.load(open('boxes.json')); G=json.load(open('synth_gt.json'))
 def rd(c):

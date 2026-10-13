@@ -41,6 +41,7 @@ test('emergency latch gates motion, cleaning, camera and queued commands', () =>
   const latch = new EmergencyLatch(); latch.trip();
   for (const command of ['drive', 'release', 'clean', 'capture', 'cam', 'm', 'x', 'limits']) assert.equal(latch.allowsCommand(command), false);
   assert.equal(latch.allowsCommand('estop'), true); assert.equal(latch.allowsCommand('status'), true);
+  assert.equal(latch.allowsCommand('mast_fold'), true);   // C66 ตำแหน่งพับเสาส่งได้แม้ล็อก E-STOP (ไม่ขยับอะไร แค่บอกค่า)
   assert.equal(latch.observeInput(0, 0, .12), false); assert.equal(latch.state, 'active');
 });
 test('acknowledgement does not resume a held gamepad; neutral then fresh input required', () => {
@@ -117,6 +118,7 @@ test('actual script restores emergency screen and retries only E-stop when webso
   const h = browserHarness('active'); assert.equal(h.nodes.get('emergency-screen').hidden, false);
   assert.equal(h.nodes.get('cockpit').inert, true); assert.equal(h.sent.at(-1).t, 'estop'); h.key('w'); h.pump();
   assert.ok(!h.sent.some(c => c.t === 'drive'));
+  assert.ok(h.sent.findIndex(c => c.t === 'mast_fold') < h.sent.findIndex(c => c.t === 'estop'));   // C66 ตำแหน่งพับไปถึงก่อน E-STOP
 });
 test('actual sys event updates all air HUD metrics; disconnect removes stale values', () => {
   const h = browserHarness(); h.socket.onmessage({ data: JSON.stringify({ t: 'sys', air: sample, cam_ok: false, link: null, cleaning: {}, drive: {} }) });

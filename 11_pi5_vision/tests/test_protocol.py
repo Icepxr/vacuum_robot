@@ -52,6 +52,11 @@ def test_field_with_star_or_newline_rejected():
         P.encode("$", "K", "1\n")
 
 
+def test_cmd_mast_fold_frame():
+    fr = P.decode(P.cmd_mast_fold(9, 2300))
+    assert fr.kind == "$" and fr.type == "F" and fr.fields == ["F", "9", "2300"]
+
+
 def test_cmd_limits_frame():
     fr = P.decode(P.cmd_limits(7, 300, 2000))
     assert fr.kind == "$" and fr.type == "L" and fr.fields == ["L", "7", "300", "2000"]

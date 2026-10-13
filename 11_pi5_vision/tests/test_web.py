@@ -44,6 +44,8 @@ def web(tmp_path, monkeypatch):
     d = W.start_daemon(os.ttyname(slave), backend)
     first = P.decode(read_line(master))               # เพดานที่บันทึกไว้ถูกส่งทันทีตอน daemon เริ่ม (C28)
     assert first is not None and first.type == "L"
+    fold = P.decode(read_line(master))                # + ตำแหน่งพับเสา (C66) · 0 = ยังไม่รู้
+    assert fold.type == "F" and fold.fields[2] == "0"
     with TestClient(W.app) as c:
         yield c, master, backend, hub
     d.stop()
@@ -186,6 +188,26 @@ def test_user_limits_raise_cap_and_send_L_clamped_at_hw(web):
         assert json.loads(W.LIMITS_PATH.read_text())["v_max"] == 810          # บันทึกไว้ที่ Pi
 
 
+def test_mast_fold_forwarded_persisted_and_limits_reloaded(web):
+    """C66: หน้าขับส่งตำแหน่งพับเสา → $F + บันทึก · Pi รีสตาร์ต (Hub ใหม่) ต้องได้ทั้งเพดานและตำแหน่งพับเดิม (เดิม limits.json ไม่เคยถูกอ่านกลับ)"""
+    c, master, backend, hub = web
+    with c.websocket_connect("/ws") as ws:
+        ws.receive_json(); ws.receive_json()
+        ws.send_json({"t": "mast_fold", "us": 2300})
+        fr = P.decode(read_line(master))
+        assert fr.type == "F" and fr.fields[2] == "2300"
+        ws.send_json({"t": "mast_fold", "us": 9999})                  # นอกช่วง 300–2500 → 0 (ไม่รู้ = ESP32 ค้างเสาไว้)
+        assert P.decode(read_line(master)).fields[2] == "0"
+        ws.send_json({"t": "mast_fold", "us": 2300})
+        read_line(master)
+        ws.send_json({"t": "limits", "v_max": 400, "w_max": 3000})
+        read_line(master)
+        _drain_until(ws, "limits")
+    assert "$F" in c.get("/api/status").json()["esp32_supports"]
+    h2 = W.Hub()
+    assert h2.limits["v_max"] == 400 and h2.limits["w_max"] == 3000 and h2.limits["mast_fold_us"] == 2300
+
+
 def test_estop_and_clean_frames(web):
     c, master, backend, hub = web
     with c.websocket_connect("/ws") as ws:
@@ -241,6 +263,7 @@ def test_boot_event_resends_limits(web):
         os.write(master, P.encode("#", "E", 1234, "BOOT", "TASK_WDT"))
         fr = P.decode(read_line(master))
         assert fr.type == "L" and fr.fields[2:] == ["300", "2000"]
+        assert P.decode(read_line(master)).type == "F"             # C66 ตำแหน่งพับเสาก็อยู่ใน RAM ของ ESP32 เหมือนกัน
         ev = _drain_until(ws, "log")
         assert "watchdog" in ev["msg"] and ev["level"] == "warn"
 

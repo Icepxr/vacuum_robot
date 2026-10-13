@@ -28,7 +28,7 @@
     trip() { this.active = true; this.needsNeutral = true; }
     acknowledge() { this.active = false; }
     allowsCommand(type) {
-      if (this.active) return ["estop", "status", "ping"].includes(type);
+      if (this.active) return ["estop", "status", "ping", "mast_fold"].includes(type);
       return !(this.needsNeutral && type === "drive");
     }
     observeInput(x, y, deadzone) {

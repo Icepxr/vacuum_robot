@@ -1,5 +1,7 @@
 # 26 — ทดสอบโมเดล YOLO อ่านเลขมิเตอร์ (`meter_model/`) · 7 ต.ค. 2026
 
+> **13 ต.ค. 2026:** โฟลเดอร์ `meter_model/` และ `model archive/` ย้ายไป `99_เก็บของเก่า/` แล้ว (ไม่ได้ใช้ · ไม่อยู่ใน git) — สคริปต์ใน `scripts_26/` ชี้ path ใหม่แล้ว
+
 **สิ่งที่ทดสอบ:** `meter_model/` ที่ผู้ใช้นำมาให้ — 2 ขั้น `counter` (หาหน้าปัด · 1 คลาส) → `digit` (หาเลข 0–9 · 10 คลาส) · ทั้งสองเป็น **YOLO11n** 640×640 จาก Ultralytics 8.4.155 · metadata บอกว่าเทรนจาก `/home/tiwakorn_mat/elec-meter-yolo/data/ds_counter` และ `ds_digit` (ชุดข้อมูล**มิเตอร์ไฟฟ้าจริง**) · มีทั้ง `.pt` และ NCNN · `yolo26n.pt` = ไฟล์ pretrained ตั้งต้น (ไม่ได้ทดสอบ) · `easyocr/` = น้ำหนัก EasyOCR (CRAFT + english_g2 · ไม่ได้ทดสอบรอบนี้)
 **สคริปต์:** `scripts_26/` (run_neg · findbox · synth · evalp · sanity · zoom · bench_ncnn) · รันบน Mac M2 (venv ใน scratchpad) และ Pi 5 (`~/mm-test/venv` แยกจาก `~/mrc/.venv`)
 **ยังไม่ได้ตัดสินใจว่าจะใช้หรือไม่** — ผู้ใช้จะตัดสินเอง

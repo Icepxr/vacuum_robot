@@ -2,7 +2,7 @@ import cv2,json,numpy as np,sys,collections
 sys.path.insert(0,'/Users/daiyazwaehama/Documents/vacuum_project/11_pi5_vision/src')
 from ultralytics import YOLO
 import sevenseg
-M='/Users/daiyazwaehama/Documents/vacuum_project/meter_model/'
+M='/Users/daiyazwaehama/Documents/vacuum_project/99_เก็บของเก่า/meter_model/'
 cnt=YOLO(M+'counter.pt'); dig=YOLO(M+'digit.pt')
 B=json.load(open('boxes.json')); G=json.load(open('synth_gt.json'))
 def quads_for(k):

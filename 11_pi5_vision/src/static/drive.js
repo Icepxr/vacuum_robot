@@ -47,6 +47,11 @@
   let stopSent = false;
   function saveStop() { try { if (stopLatch.state) sessionStorage.setItem("aria.drive.stop", stopLatch.state); else sessionStorage.removeItem("aria.drive.stop"); } catch (_) {} }
   let limitsT;
+  // C66: ตำแหน่งพับเสา = มุมต่ำสุดที่ตั้งไว้ (ปุ่ม "ลง") → Pi → $F · E-STOP บน ESP32 พับเสาไปที่นี่แล้วค่อยปล่อย PWM
+  //   ส่งตอน ws ต่อ และตอนค่าเปลี่ยนเท่านั้น (ไม่ไล่ทับทุก sys — สองเครื่องที่ตั้งต่างกันจะไม่แย่งกันส่ง)
+  const mastFoldUs = () => Math.max(MAST_US[0], Math.min(MAST_US[1], Math.round(liftZeroUs() + liftSign() * (+cfg.liftMinDeg || 0) * US_PER_DEG)));
+  let foldSent = null;
+  function pushFold(force) { const us = mastFoldUs(); if ((force || us !== foldSent) && send({ t: "mast_fold", us })) foldSent = us; }
   function pushLimits() {                              // ส่งเพดานให้ Pi (debounce ตอนลากสไลเดอร์) — ส่งซ้ำตอน ws ต่อใหม่ด้วย
     clearTimeout(limitsT); limitsT = setTimeout(() => send({ t: "limits", v_max: cfg.vMax, w_max: cfg.wMax }), 250);
   }
@@ -56,7 +61,7 @@
     V_MAX = cfg.vMax;
     for (const k of ["tilt", "lift"]) { const L = degLo(k), H = degHi(k), lo = k + "MinDeg", hi = k + "MaxDeg"; cfg[lo] = Math.max(L, Math.min(H, +cfg[lo] || 0)); cfg[hi] = Math.max(L, Math.min(H, +cfg[hi] || 0)); if (cfg[lo] >= cfg[hi]) cfg[hi] = Math.min(H, cfg[lo] + 1);
       document.querySelectorAll(`[data-cfg="${lo}"], [data-cfg="${hi}"]`).forEach((el) => { el.min = L; el.max = H; }); }
-    root.dataset.campad = cfg.camPad ? 1 : 0; camApplyLimits();
+    root.dataset.campad = cfg.camPad ? 1 : 0; camApplyLimits(); pushFold(false);
     root.dataset.accent = cfg.accent; root.dataset.density = cfg.density; root.dataset.big = cfg.bigButtons ? 1 : 0;
     root.dataset.joyside = cfg.joySide; root.dataset.driveui = cfg.driveUi; root.dataset.mirror = cfg.mirror ? 1 : 0;
     $("joy").hidden = cfg.driveUi !== "joy"; $("pad").hidden = cfg.driveUi !== "pad";
@@ -196,7 +201,7 @@
   let ws, wsOk = false;
   function connect() {
     ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
-    ws.onopen = () => { wsOk = true; chip("link", "ลิงก์ ต่ออยู่"); if (stopLatch.active) requestEmergencyStop(); };   // เพดานความเร็วเป็นของหุ่น (Pi ส่งมาใน sys/limits) ไม่ใช่ของเครื่องนี้
+    ws.onopen = () => { wsOk = true; chip("link", "ลิงก์ ต่ออยู่"); pushFold(true); if (stopLatch.active) requestEmergencyStop(); };   // ตำแหน่งพับก่อน E-STOP — ESP32 ต้องรู้ว่าพับไปไหน   // เพดานความเร็วเป็นของหุ่น (Pi ส่งมาใน sys/limits) ไม่ใช่ของเครื่องนี้
     ws.onclose = () => { wsOk = false; setMode("ขาดการเชื่อมต่อ", "lost"); chip("link", "ลิงก์ หลุด — ต่อใหม่…", "bad"); airChip(null, { disconnected: true }); stopSent = false; if (stopLatch.active) paintEmergencyStatus(); beep("bad"); setTimeout(connect, 1000); };
     ws.onmessage = (m) => handle(JSON.parse(m.data));
   }

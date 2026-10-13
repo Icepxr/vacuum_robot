@@ -53,6 +53,7 @@ V_MAX_MM_S = 810                    # C61 4 ต.ค.: = V_HW (ล้อ Ø87) ·
 W_MAX_MRAD_S = 6231                 # C61: = W_HW (track 260) · duty ล้อเท่าเดิม · เดิม 7950 · C43: หมุนอยู่กับที่เต็ม = duty 100 % ต่อล้อ (ผู้ใช้วัดตอนหมุนได้แค่ 4/6 V → ไม่เลี้ยว) · เดิม 3000 (C31) = 378 ‰
 V_HW_MAX_MM_S = 810                 # C61 เพดานฮาร์ดแวร์: 178 rpm [สเปก 12 V] × π × Ø87 mm (ไฟล์ 01 §1.16) — ต้องตรงกับ manual_core.h
 W_HW_MAX_MRAD_S = 6231              # C61: 810 / (260/2) mm = 6.23 rad/s ปัดขึ้น [คำนวณ] ต้องตรงกับ manual_core.h
+MAST_US_MIN, MAST_US_MAX = 300, 2500 # ต้องตรงกับ src/pins.h (C47/C48)
 
 
 CAM_PATH = DATA_DIR / "camera.json"
@@ -94,7 +95,9 @@ class Hub:
         self.cam_args = None                     # args ของกล้อง (index/engine/run_id) ให้ camera_hotplug ลองเปิดใหม่
         self.cam_res = load_cam_res()            # C46 ความละเอียดกล้อง 1080p/1440p/4k — ของหุ่น จำใน data/camera.json
         self.air = None                          # AirSensor (ENS160/AHT21 บน I2C ของ Pi) — None ถ้าปิดด้วย --no-air
-        self.limits = {"v_max": V_MAX_MM_S, "w_max": W_MAX_MRAD_S, "v_hw_max": V_HW_MAX_MM_S, "w_hw_max": W_HW_MAX_MRAD_S}
+        self.limits = {"v_max": V_MAX_MM_S, "w_max": W_MAX_MRAD_S, "v_hw_max": V_HW_MAX_MM_S, "w_hw_max": W_HW_MAX_MRAD_S,
+                       "mast_fold_us": 0}        # C66 ตำแหน่งพับเสา (ปุ่ม "ลง" ในหน้าขับ) → $F · 0 = ยังไม่รู้ → E-STOP ค้างเสาไว้
+        self.load_limits()
         # C35 จอบนหุ่นเป็นแบบ "โชว์เมื่อมีเหตุ": Pi ถือเหตุการณ์ล่าสุดไว้จนหมดเวลา แล้วใส่ไปกับ $D ทุกเฟรม (จอไม่มี timer เอง — เฟรมหายก็หายแค่ 1 s)
         self.disp_evt = None                     # (code, arg, until_mono) · None = ไม่มีเหตุการณ์ค้าง
 
@@ -168,17 +171,52 @@ class Hub:
         self.drive_w = max(-wm, min(wm, int(w)))
         self.drive_last_mono = time.monotonic()
 
+    def load_limits(self):
+        """13 ต.ค.: เดิมบันทึก limits.json แต่ไม่เคยอ่านกลับ → Pi รีสตาร์ต = เพดานกลับเป็นค่าเริ่ม (กำลังเต็ม) แล้วเว็บรับค่านั้นทับของผู้ใช้"""
+        try:
+            d = json.loads(LIMITS_PATH.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return
+        try:
+            if "v_max" in d: self.limits["v_max"] = max(0, min(V_HW_MAX_MM_S, int(d["v_max"])))
+            if "w_max" in d: self.limits["w_max"] = max(0, min(W_HW_MAX_MRAD_S, int(d["w_max"])))
+            if "mast_fold_us" in d: self.limits["mast_fold_us"] = self._fold_ok(d["mast_fold_us"])
+        except (TypeError, ValueError):
+            pass
+
+    @staticmethod
+    def _fold_ok(us):
+        try: us = int(us)
+        except (TypeError, ValueError): return 0
+        return us if MAST_US_MIN <= us <= MAST_US_MAX else 0
+
+    def _save_limits(self):
+        try:
+            LIMITS_PATH.parent.mkdir(parents=True, exist_ok=True)
+            LIMITS_PATH.write_text(json.dumps({k: self.limits[k] for k in ("v_max", "w_max", "mast_fold_us")}), encoding="utf-8")
+        except OSError as e:
+            self.on_event({"t": "log", "level": "warn", "msg": f"บันทึกเพดานไม่ได้: {e}"})
+
+    def push_robot_cfg(self):
+        """ค่าที่ ESP32 เก็บใน RAM (หายตอนรีบูต) — ส่งตอน daemon เริ่ม และตอนได้ #E BOOT"""
+        if not self.daemon: return
+        self.daemon.send_limits(self.limits["v_max"], self.limits["w_max"])
+        self.daemon.send_mast_fold(self.limits["mast_fold_us"])
+
     def set_limits(self, v_max, w_max):
         """เพดานที่ผู้ใช้ตั้ง — clamp ที่ฮาร์ดแวร์ (810 mm/s [คำนวณจาก 178 rpm × Ø87] · ไฟล์ 01 §1.16) แล้วส่ง $L"""
         self.limits["v_max"] = max(0, min(V_HW_MAX_MM_S, int(v_max)))
         self.limits["w_max"] = max(0, min(W_HW_MAX_MRAD_S, int(w_max)))
         if self.daemon: self.daemon.send_limits(self.limits["v_max"], self.limits["w_max"])
-        try:
-            LIMITS_PATH.parent.mkdir(parents=True, exist_ok=True)
-            LIMITS_PATH.write_text(json.dumps({"v_max": self.limits["v_max"], "w_max": self.limits["w_max"]}), encoding="utf-8")
-        except OSError as e:
-            self.on_event({"t": "log", "level": "warn", "msg": f"บันทึกเพดานไม่ได้: {e}"})
+        self._save_limits()
         return self.limits
+
+    def set_mast_fold(self, us):
+        """C66 ตำแหน่งพับเสาจากปุ่ม "ลง" ของหน้าขับ → $F · E-STOP บน ESP32 พับเสาไปที่นี่แล้วค่อยปล่อย PWM (เดิมปล่อยทันที เสาอาจร่วง)"""
+        self.limits["mast_fold_us"] = self._fold_ok(us)
+        if self.daemon: self.daemon.send_mast_fold(self.limits["mast_fold_us"])
+        self._save_limits()
+        return self.limits["mast_fold_us"]
 
     def drive_release(self):
         """ผู้ใช้ปล่อยจอย/กด stop: ส่ง $S แล้วหยุดส่งซ้ำ"""
@@ -225,7 +263,7 @@ class Hub:
         if ev.get("t") == "event" and ev.get("code") == "BOOT":
             # ESP32 เพิ่งบูต (เปิดเครื่อง / WDT / brownout) — ค่าเพดาน $L หายไปกับ RAM → ส่งซ้ำ · บอกคนขับถ้าไม่ใช่เปิดเครื่อง
             reason = ev.get("detail", "")
-            if self.daemon: self.daemon.send_limits(self.limits["v_max"], self.limits["w_max"])
+            self.push_robot_cfg()                    # $L + $F (C66)
             # C41: POWERON หลังเว็บรันมาแล้ว = ESP32 "ไฟดับแล้วติดใหม่" ไม่ใช่เปิดเครื่อง — เจอจริง 24 ก.ย. 5 ครั้งใน 90 s
             #      (ESP32 เลี้ยงจาก USB ของ Pi ซึ่งจำกัดรวม 600 mA เมื่อ PSU ไม่ใช่ 5 A PD · เซอร์โวดึงจากขา 5V เดียวกัน → พอร์ตตัด)
             power_loss = reason == "POWERON" and time.time() - self.started > 30
@@ -265,7 +303,7 @@ class Hub:
                 "cam_ok": cam_ok, "cam_fallback": self.cam_fallback, "cpu_temp_c": temp, "disk_free_mb": du.free // 2**20,
                 "pending_sync": sc["pending_rows"], "pending_crops": sc["pending_crops"], "sync_errors": sc["sync_errors"],
                 "pending_decisions": sc["pending_decisions"], "warn": self.display_warn(), "link": link, "last_capture": self.last_capture, "last_reading": self.last_reading,
-                "esp32_supports": ["CAPTURE_REQ", "$K", "$V", "$S", "$E", "$C", "$P", "$L", "$X", "$M", "$D", "#T"],
+                "esp32_supports": ["CAPTURE_REQ", "$K", "$V", "$S", "$E", "$C", "$P", "$L", "$X", "$M", "$F", "$D", "#T"],
                 "tele": (self.daemon.tele if self.daemon else None),
                 "drive": {"v": self.drive_v, "w": self.drive_w, "active": self.drive_last_mono is not None,
                           "tripped": self.drive_tripped, "deadman_ms": int(DRIVE_DEADMAN_S * 1000)},
@@ -516,6 +554,8 @@ async def ws_endpoint(ws: WebSocket):
             elif t == "limits":                      # {"t":"limits","v_max":mm/s,"w_max":mrad/s} — C28 ผู้ใช้ตั้งเพดานเอง
                 lim = hub.set_limits(cmd.get("v_max", hub.limits["v_max"]), cmd.get("w_max", hub.limits["w_max"]))
                 hub.on_event({"t": "limits", **lim})
+            elif t == "mast_fold":                   # {"t":"mast_fold","us":300-2500|0} C66 ตำแหน่งพับเสาให้ E-STOP
+                hub.set_mast_fold(cmd.get("us", 0))
             elif t == "m" and d is not None:         # {"t":"m","us":500-2500|0} เสา scissor ไม่บล็อก (C30) · ESP32 ตรวจช่วง/R1/mission เอง
                 d.send_mast(int(cmd.get("us", 0)))
             else:
@@ -620,7 +660,7 @@ def start_daemon(port, backend, baud=115200):
     hub.daemon, hub.backend = d, backend
     th = threading.Thread(target=d.run, name="capture-daemon", daemon=True)
     th.start()
-    d.send_limits(hub.limits["v_max"], hub.limits["w_max"])     # เพดานที่บันทึกไว้ → ESP32 ทันที (ไม่รอ browser)
+    hub.push_robot_cfg()                                         # เพดาน + ตำแหน่งพับเสาที่บันทึกไว้ → ESP32 ทันที (ไม่รอ browser)
     return d
 
 
