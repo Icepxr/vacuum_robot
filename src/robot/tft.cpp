@@ -30,7 +30,11 @@ constexpr int SCR_W = 160, SCR_H = 128;       // ใช้งานแนวน�
 #else
 constexpr int PANEL_W = 240, PANEL_H = 240;
 constexpr int SCR_W = 240, SCR_H = 240;
-#define TFT_ROTATION 0
+#ifndef TFT_ROTATION
+// 14 ต.ค. 2026: จอกลมตัวใหม่ติดในแผงหน้า — ผู้ใช้ดูรูปที่ rotation 0 แล้วบอกว่า "ต้องหัน 180 จากรูปนี้" → 2
+//   (0 = ค่าเดิมก่อนเปลี่ยนจอ · แต่ละขั้นหมุน 90°) · ตั้งค่าเองได้ด้วย -D TFT_ROTATION=<0..3>
+#define TFT_ROTATION 2
+#endif
 #endif
 
 class LGFX : public lgfx::LGFX_Device {
