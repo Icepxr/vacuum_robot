@@ -210,6 +210,9 @@ class UsbCameraBackend:
             err = f"{type(e).__name__}: {e}"
         # F10: ยังไม่ลง readings.jsonl — รอคนขับกด "เก็บ"/"ไม่เอา" ในป๊อปอัพบน /drive (aria_store)
         rec = MR.build_record(ts, rid, img_name, raw, value, conf, self.run_id, self.meter_type, "usb", self.engine)
+        if self.engine == "yolo" and not err:       # ทดลอง (ไฟล์ 38): ชนิดที่โมเดลบอก = คำใบ้ในป๊อปอัพ ไม่เขียนทับ meter_type
+            import yolo_meter
+            rec["model_hint"] = {k: yolo_meter.last.get(k) for k in ("kind", "kind_conf", "box", "digit_conf", "ms_counter", "ms_digit")}
         rec = aria_store.save_pending(rec, crop)
         if err:
             rec["error"] = err
@@ -477,7 +480,7 @@ def main():
     ap.add_argument("--baud", type=int, default=CFG.SERIAL_BAUD)
     ap.add_argument("--camera", type=int, default=CFG.CAMERA_INDEX, help="index ของกล้อง USB · -1 = หาเองจาก /dev/v4l/by-id")
     ap.add_argument("--image", help="ใช้รูปนี้แทนกล้อง (ทดสอบลิงก์)")
-    ap.add_argument("--engine", choices=["sevenseg", "cells", "tesseract", "ssocr"], default="cells")
+    ap.add_argument("--engine", choices=["sevenseg", "cells", "tesseract", "ssocr", "yolo"], default="cells")
     ap.add_argument("--meter-type", default="water")
     ap.add_argument("--run-id", default=time.strftime("run_%Y%m%d_%H%M%S"))
     ap.add_argument("--selftest", action="store_true", help="ทดสอบกล้อง→SD→OCR โดยไม่แตะ serial")

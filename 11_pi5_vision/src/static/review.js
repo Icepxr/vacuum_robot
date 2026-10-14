@@ -58,7 +58,9 @@
     else { img.removeAttribute("src"); img.hidden = true; $("review-noimg").hidden = false; }
     $("review-value").textContent = item.value == null ? "อ่านไม่ออก" : String(item.value);
     $("review-value").classList.toggle("none", item.value == null);
-    $("review-conf").textContent = item.confidence != null && item.value != null ? `ความมั่นใจ ${Math.round(item.confidence * 100)} %` : "";
+    const hint = item.model_hint && item.model_hint.kind   // engine yolo (ทดลอง · ไฟล์ 38): ชนิดที่โมเดลบอก — คำใบ้เท่านั้น ไม่เลือกให้ (ทดสอบแล้วกลับด้าน 4/4)
+      ? ` · โมเดลว่า${item.model_hint.kind === "water" ? "น้ำ" : "ไฟ"} ${Math.round(item.model_hint.kind_conf * 100)} %` : "";
+    $("review-conf").textContent = (item.confidence != null && item.value != null ? `ความมั่นใจ ${Math.round(item.confidence * 100)} %` : "") + hint;
     setRoom(last.room || "");
     typeInputs().forEach((r) => { r.checked = r.value === last.type; });
     clearTimeout(hideT); closing = false;
@@ -161,7 +163,7 @@
     if (ev.t === "hello") { replaying = true; setTimeout(() => { replaying = false; }, 0); refresh(); }
     else if (ev.t === "reading" && ev.pending && ev.local_id && !replaying) {
       drop(ev.local_id);
-      const item = { local_id: ev.local_id, captured_at: ev.captured_at, value: ev.value, confidence: ev.confidence, crop_url: ev.crop_url };
+      const item = { local_id: ev.local_id, captured_at: ev.captured_at, value: ev.value, confidence: ev.confidence, crop_url: ev.crop_url, model_hint: ev.model_hint };
       queue.unshift(item);
       if (closing) { waiting = item; paintBadge(); }                             // การ์ดเก่ากำลังออก → เปิดต่อทันทีที่ออกเสร็จ
       else if (!cur) open(item); else paintBadge();                              // กำลังตัดสินรูปก่อนหน้าอยู่ → ไม่แย่งจอ ต่อคิวไว้

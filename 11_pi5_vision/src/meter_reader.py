@@ -260,7 +260,17 @@ def ocr_cells(cropped_bgr, cfg=None):
 ocr_cells.needs_color = True
 
 
-OCR_ENGINES = {"sevenseg": ocr_sevenseg, "cells": ocr_cells, "tesseract": ocr_tesseract, "ssocr": ocr_ssocr}
+def ocr_yolo(cropped_bgr, cfg=None):
+    """ทดลอง (branch yolo-live-test · ไฟล์ 38): โมเดลผู้ใช้ counter → digit ผ่าน ncnn · ชนิดน้ำ/ไฟอยู่ใน yolo_meter.last (คำใบ้เท่านั้น)"""
+    import yolo_meter
+    r = yolo_meter.read(cropped_bgr)
+    return r["text"], r["conf"]
+
+
+ocr_yolo.needs_color = True
+
+
+OCR_ENGINES = {"sevenseg": ocr_sevenseg, "cells": ocr_cells, "tesseract": ocr_tesseract, "ssocr": ocr_ssocr, "yolo": ocr_yolo}
 
 
 def warmup(engine):
@@ -268,6 +278,9 @@ def warmup(engine):
     if engine == "cells":
         import cellread
         cellread.warmup()
+    elif engine == "yolo":
+        import yolo_meter
+        yolo_meter.warmup()
 
 
 def run_engine(engine, binimg, cropped_bgr, cfg):

@@ -718,7 +718,7 @@ def main():
     ap.add_argument("--no-serial", action="store_true", help="ไม่มี ESP32 — ภาพสด/ถ่ายจากเว็บอย่างเดียว")
     ap.add_argument("--camera", type=int, default=CFG.CAMERA_INDEX)
     ap.add_argument("--image", help="ใช้รูปนี้แทนกล้อง")
-    ap.add_argument("--engine", choices=["sevenseg", "cells", "tesseract", "ssocr"], default="cells")   # 7 ต.ค.: cells แทน sevenseg (C30 เดิม 18 ก.ย.) — ไฟล์ 26 §26.5–26.9
+    ap.add_argument("--engine", choices=["sevenseg", "cells", "tesseract", "ssocr", "yolo"], default="cells")   # 7 ต.ค.: cells แทน sevenseg (C30 เดิม 18 ก.ย.) — ไฟล์ 26 §26.5–26.9
     ap.add_argument("--run-id", default=time.strftime("run_%Y%m%d_%H%M%S"))
     ap.add_argument("--no-air", action="store_true", help="ไม่อ่าน ENS160/AHT21")
     args = ap.parse_args()
