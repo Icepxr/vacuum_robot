@@ -20,6 +20,7 @@ capture_daemon.py — ขั้น C ของแกนหลัก: ฟัง U
 ทดสอบบนโน้ตบุ๊กโดยไม่มี Pi/กล้อง/cv2: tests/test_capture_daemon.py (pty ปลอม + backend ปลอม)
 """
 import argparse
+import os
 import re
 import subprocess
 import sys
@@ -206,13 +207,23 @@ class UsbCameraBackend:
             crop = MR.crop_jpeg(cropped)                 # crop หน้าปัดสำหรับป๊อปอัพ + คลาวด์ (ภาพต้นฉบับอยู่ใน images/ แล้ว)
             raw, conf = MR.run_engine(self.engine, binimg, cropped, self.cfg)
             value = MR.parse_value(raw, self.cfg.get("expected_digits"), self.cfg.get("decimal_places"))
+            if self.engine == "tr":                  # ป๊อปอัพโชว์แถบที่ดัดตรงแล้ว (ไฟล์ 39) — ภาพเต็มยังอยู่ใน images/
+                import tr_meter
+                sp = tr_meter.last.get("strip_path")
+                strip = self.cv2.imread(sp) if sp else None
+                if strip is not None:
+                    crop = MR.crop_jpeg(strip)
+                if sp:
+                    try: os.unlink(sp)
+                    except OSError: pass
         except Exception as e:                       # noqa: BLE001 — OCR พังต้องไม่ล้ม daemon
             err = f"{type(e).__name__}: {e}"
         # F10: ยังไม่ลง readings.jsonl — รอคนขับกด "เก็บ"/"ไม่เอา" ในป๊อปอัพบน /drive (aria_store)
         rec = MR.build_record(ts, rid, img_name, raw, value, conf, self.run_id, self.meter_type, "usb", self.engine)
-        if self.engine == "yolo" and not err:       # ทดลอง (ไฟล์ 38): ชนิดที่โมเดลบอก = คำใบ้ในป๊อปอัพ ไม่เขียนทับ meter_type
-            import yolo_meter
-            rec["model_hint"] = {k: yolo_meter.last.get(k) for k in ("kind", "kind_conf", "box", "digit_conf", "ms_counter", "ms_digit")}
+        if self.engine in ("yolo", "tr") and not err:   # ทดลอง (ไฟล์ 38/39): ชนิดที่โมเดลบอก = คำใบ้ในป๊อปอัพ ไม่เขียนทับ meter_type
+            import tr_meter, yolo_meter
+            last = (yolo_meter if self.engine == "yolo" else tr_meter).last
+            rec["model_hint"] = {k: last.get(k) for k in ("kind", "kind_conf", "box", "quad", "digit_conf", "why", "ms", "ms_counter", "ms_digit") if k in last}
         rec = aria_store.save_pending(rec, crop)
         if err:
             rec["error"] = err
@@ -480,7 +491,7 @@ def main():
     ap.add_argument("--baud", type=int, default=CFG.SERIAL_BAUD)
     ap.add_argument("--camera", type=int, default=CFG.CAMERA_INDEX, help="index ของกล้อง USB · -1 = หาเองจาก /dev/v4l/by-id")
     ap.add_argument("--image", help="ใช้รูปนี้แทนกล้อง (ทดสอบลิงก์)")
-    ap.add_argument("--engine", choices=["sevenseg", "cells", "tesseract", "ssocr", "yolo"], default="cells")
+    ap.add_argument("--engine", choices=["sevenseg", "cells", "tesseract", "ssocr", "yolo", "tr"], default="cells")
     ap.add_argument("--meter-type", default="water")
     ap.add_argument("--run-id", default=time.strftime("run_%Y%m%d_%H%M%S"))
     ap.add_argument("--selftest", action="store_true", help="ทดสอบกล้อง→SD→OCR โดยไม่แตะ serial")

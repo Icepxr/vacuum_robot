@@ -58,8 +58,10 @@
     else { img.removeAttribute("src"); img.hidden = true; $("review-noimg").hidden = false; }
     $("review-value").textContent = item.value == null ? "อ่านไม่ออก" : String(item.value);
     $("review-value").classList.toggle("none", item.value == null);
-    const hint = item.model_hint && item.model_hint.kind   // engine yolo (ทดลอง · ไฟล์ 38): ชนิดที่โมเดลบอก — คำใบ้เท่านั้น ไม่เลือกให้ (ทดสอบแล้วกลับด้าน 4/4)
-      ? ` · โมเดลว่า${item.model_hint.kind === "water" ? "น้ำ" : "ไฟ"} ${Math.round(item.model_hint.kind_conf * 100)} %` : "";
+    const mh = item.model_hint || {};                     // engine yolo/tr (ทดลอง · ไฟล์ 38/39): ชนิดที่โมเดลบอก — คำใบ้เท่านั้น ไม่เลือกให้
+    const WHY = { no_meter: "ไม่เจอกล่องน้ำเงิน", no_strip: "เจอกล่องแต่ไม่เจอแถบเลข", no_digits: "อ่านได้ไม่ครบ 4 หลัก" };
+    const hint = (mh.kind ? ` · โมเดลว่า${mh.kind === "water" ? "น้ำ" : "ไฟ"} ${Math.round((mh.kind_conf || 0) * 100)} %` : "")
+      + (item.value == null && WHY[mh.why] ? ` · ${WHY[mh.why]}` : "");
     $("review-conf").textContent = (item.confidence != null && item.value != null ? `ความมั่นใจ ${Math.round(item.confidence * 100)} %` : "") + hint;
     setRoom(last.room || "");
     typeInputs().forEach((r) => { r.checked = r.value === last.type; });

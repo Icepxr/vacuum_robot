@@ -1,0 +1,128 @@
+{
+ "_note": "เฉลยตาดู 14–15 ต.ค. 2026 (ซูมแถบเล็กแล้ว) · type: elec = กล่องสี่เหลี่ยม · water = ทรงกระบอก · digits \"\" = ไม่มีเลข · key ขึ้นต้น Meter_picture/ = path ใน repo · อื่นๆ = ชื่อไฟล์ใน ~/mrc/data/images ของ Pi",
+ "Meter_picture/water/image copy 10.png": {
+  "type": "water",
+  "digits": "2045"
+ },
+ "Meter_picture/water/image copy 2.png": {
+  "type": "water",
+  "digits": "2045"
+ },
+ "Meter_picture/water/image copy 3.png": {
+  "type": "water",
+  "digits": "2045"
+ },
+ "Meter_picture/water/image copy 4.png": {
+  "type": "water",
+  "digits": "2045"
+ },
+ "Meter_picture/water/image copy 5.png": {
+  "type": "water",
+  "digits": "2045"
+ },
+ "Meter_picture/water/image copy 6.png": {
+  "type": "water",
+  "digits": "2045"
+ },
+ "Meter_picture/water/image copy.png": {
+  "type": "water",
+  "digits": "2045"
+ },
+ "Meter_picture/water/image.png": {
+  "type": "water",
+  "digits": "2045"
+ },
+ "Meter_picture/water/image copy 7.png": {
+  "type": "water",
+  "digits": "8785"
+ },
+ "Meter_picture/water/image copy 8.png": {
+  "type": "water",
+  "digits": "8785"
+ },
+ "Meter_picture/water/image copy 9.png": {
+  "type": "water",
+  "digits": "8785"
+ },
+ "Meter_picture/elec/image copy 2.png": {
+  "type": "elec",
+  "digits": "6201"
+ },
+ "Meter_picture/elec/image copy 3.png": {
+  "type": "elec",
+  "digits": "6201"
+ },
+ "Meter_picture/elec/image copy 5.png": {
+  "type": "elec",
+  "digits": "6201"
+ },
+ "Meter_picture/elec/image copy 7.png": {
+  "type": "elec",
+  "digits": "6201"
+ },
+ "Meter_picture/elec/image.png": {
+  "type": "elec",
+  "digits": "6201"
+ },
+ "Meter_picture/elec/image copy 4.png": {
+  "type": "elec",
+  "digits": "5977"
+ },
+ "Meter_picture/elec/image copy 6.png": {
+  "type": "elec",
+  "digits": "5977"
+ },
+ "Meter_picture/elec/image copy 8.png": {
+  "type": "elec",
+  "digits": "5977"
+ },
+ "Meter_picture/elec/image copy.png": {
+  "type": "elec",
+  "digits": "2664"
+ },
+ "20261007_105509_f2fac5f5b006.jpg": {
+  "type": "water",
+  "digits": "1234",
+  "what": "การ์ดกลมถือด้วยมือ ไม่มีกรอบ REAI"
+ },
+ "20261007_131522_54d5eb9b0561.jpg": {
+  "type": "water",
+  "digits": "",
+  "what": "REAI ทรงกลม ช่องว่าง"
+ },
+ "20261012_120422_9bd97858ef3b.jpg": {
+  "type": "elec",
+  "digits": "6201",
+  "what": "REAI สี่เหลี่ยม"
+ },
+ "20261012_120807_0dabeb1c277a.jpg": {
+  "type": "water",
+  "digits": "8785",
+  "what": "REAI ทรงกลม ใกล้"
+ },
+ "20261012_120837_1e4dbca8f02c.jpg": {
+  "type": "water",
+  "digits": "7527",
+  "what": "REAI ทรงกลม เอียง"
+ },
+ "20261012_120901_4daff1cffdbf.jpg": {
+  "type": "water",
+  "digits": "7527",
+  "what": "REAI ทรงกลม ใกล้มาก"
+ },
+ "20261014_123732_d20fd19d6c7a.jpg": {
+  "type": "elec",
+  "digits": "2664",
+  "what": "REAI สี่เหลี่ยม"
+ },
+ "20261014_123743_ee35aa618aaa.jpg": {
+  "type": "elec",
+  "digits": "6201",
+  "what": "REAI สี่เหลี่ยม"
+ },
+ "20261014_123821_79f670d86ce3.jpg": {
+  "type": "elec",
+  "digits": "5977",
+  "what": "REAI สี่เหลี่ยม"
+ }
+}

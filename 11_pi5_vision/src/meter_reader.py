@@ -270,7 +270,18 @@ def ocr_yolo(cropped_bgr, cfg=None):
 ocr_yolo.needs_color = True
 
 
-OCR_ENGINES = {"sevenseg": ocr_sevenseg, "cells": ocr_cells, "tesseract": ocr_tesseract, "ssocr": ocr_ssocr, "yolo": ocr_yolo}
+def ocr_tr(cropped_bgr, cfg=None):
+    """ทดลอง (ไฟล์ 39): วิธี text reader — กล่องน้ำเงิน → รูปทรง → แถบ → ดัด 4 มุม → YOLO digit · รายละเอียดอยู่ใน tr_meter.last"""
+    import tr_meter
+    r = tr_meter.read(cropped_bgr)
+    return r["text"], r["conf"]
+
+
+ocr_tr.needs_color = True
+
+
+OCR_ENGINES = {"sevenseg": ocr_sevenseg, "cells": ocr_cells, "tesseract": ocr_tesseract, "ssocr": ocr_ssocr,
+               "yolo": ocr_yolo, "tr": ocr_tr}
 
 
 def warmup(engine):
@@ -281,6 +292,9 @@ def warmup(engine):
     elif engine == "yolo":
         import yolo_meter
         yolo_meter.warmup()
+    elif engine == "tr":
+        import tr_meter
+        tr_meter.warmup()
 
 
 def run_engine(engine, binimg, cropped_bgr, cfg):
