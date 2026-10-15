@@ -1,5 +1,5 @@
 {
- "_note": "เฉลยตาดู 14–15 ต.ค. 2026 (ซูมแถบเล็กแล้ว) · type: elec = กล่องสี่เหลี่ยม · water = ทรงกระบอก · digits \"\" = ไม่มีเลข · key ขึ้นต้น Meter_picture/ = path ใน repo · อื่นๆ = ชื่อไฟล์ใน ~/mrc/data/images ของ Pi",
+ "_note": "เฉลยตาดู 14–15 ต.ค. 2026 (ซูมแถบเล็กแล้ว) · type: elec = กล่องสี่เหลี่ยม · water = ทรงกระบอก · digits \"\" = ไม่มีเลข · key ขึ้นต้น Meter_picture/ = path ใน repo · อื่นๆ = ชื่อไฟล์ใน ~/mrc/data/images ของ Pi · 15 ต.ค.: เพิ่มรูปที่ผู้ใช้ถ่ายบนหุ่นเช้า 15 ต.ค. 14 รูป",
  "Meter_picture/water/image copy 10.png": {
   "type": "water",
   "digits": "2045"
@@ -124,5 +124,75 @@
   "type": "elec",
   "digits": "5977",
   "what": "REAI สี่เหลี่ยม"
+ },
+ "20261015_023839_326fc1245aaf.jpg": {
+  "type": "elec",
+  "digits": "5977",
+  "what": "ถ่ายบนหุ่น 15 ต.ค. เช้า (engine yolo)"
+ },
+ "20261015_024047_cbc30d22f15b.jpg": {
+  "type": "elec",
+  "digits": "2664",
+  "what": "ถ่ายบนหุ่น 15 ต.ค. เช้า (engine yolo)"
+ },
+ "20261015_024119_709d53f33fba.jpg": {
+  "type": "elec",
+  "digits": "6201",
+  "what": "ถ่ายบนหุ่น 15 ต.ค. เช้า (engine yolo)"
+ },
+ "20261015_024150_beed17c38565.jpg": {
+  "type": "elec",
+  "digits": "6201",
+  "what": "ถ่ายบนหุ่น 15 ต.ค. เช้า (engine yolo)"
+ },
+ "20261015_024328_225b7a3276f5.jpg": {
+  "type": "elec",
+  "digits": "5977",
+  "what": "ถ่ายบนหุ่น 15 ต.ค. เช้า (engine yolo)"
+ },
+ "20261015_024352_1bb48c28bb5c.jpg": {
+  "type": "elec",
+  "digits": "5977",
+  "what": "ถ่ายบนหุ่น 15 ต.ค. เช้า (engine yolo)"
+ },
+ "20261015_024412_6c1c9639c81b.jpg": {
+  "type": "elec",
+  "digits": "5977",
+  "what": "ถ่ายบนหุ่น 15 ต.ค. เช้า (engine yolo)"
+ },
+ "20261015_024436_8c619d073b80.jpg": {
+  "type": "elec",
+  "digits": "5977",
+  "what": "ถ่ายบนหุ่น 15 ต.ค. เช้า (engine yolo)"
+ },
+ "20261015_024458_584f7a75d627.jpg": {
+  "type": "elec",
+  "digits": "6201",
+  "what": "ถ่ายบนหุ่น 15 ต.ค. เช้า (engine yolo)"
+ },
+ "20261015_024720_003b8d6cf3a3.jpg": {
+  "type": "water",
+  "digits": "2045",
+  "what": "ถ่ายบนหุ่น 15 ต.ค. เช้า (engine yolo)"
+ },
+ "20261015_024753_8122dec124d8.jpg": {
+  "type": "water",
+  "digits": "2045",
+  "what": "ถ่ายบนหุ่น 15 ต.ค. เช้า (engine yolo)"
+ },
+ "20261015_024845_e53c6b384efe.jpg": {
+  "type": "water",
+  "digits": "2045",
+  "what": "ถ่ายบนหุ่น 15 ต.ค. เช้า (engine yolo)"
+ },
+ "20261015_025536_2771ea8f741f.jpg": {
+  "type": "water",
+  "digits": "7527",
+  "what": "ถ่ายบนหุ่น 15 ต.ค. เช้า (engine yolo)"
+ },
+ "20261015_025627_ab9bc43514ff.jpg": {
+  "type": "water",
+  "digits": "7527",
+  "what": "ถ่ายบนหุ่น 15 ต.ค. เช้า (engine yolo)"
  }
 }
