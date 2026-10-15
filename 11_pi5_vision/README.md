@@ -122,6 +122,25 @@ C28 (16 ก.ย.): โหมดแมนวล "คนขับตัดสิ�
 ปุ่มยกเสาจาก Pi ยังไม่มี (`$M` ยังไม่ทำ) · แบตยังไม่แสดงเพราะเฟิร์มแวร์รวมยังไม่มี ADC (C27) · เซนเซอร์อากาศ ENS160/AHT21 ยังไม่ต่อ (ไฟล์ 21)
 **schema กลาง (C23):** ทุกแถวใน `readings.jsonl` มี `meter_id` · `status` (`ocr`→`confirmed`/`rejected`) · `confirmed_value` แยกจาก `value` ตั้งแต่แถวแรก — ARIA ใช้ร่วมได้โดยไม่ต้อง migrate
 
+## ตัวอ่านเลขมิเตอร์ — ค่าเริ่มต้น `tr` (15 ต.ค. 2026 · C67 · ไฟล์ 08_การคำนวณ/39)
+
+`--engine tr` = วิธี "text reader" ของผู้ใช้: หากล่อง REAI สีน้ำเงิน → แยกน้ำ (ทรงกระบอก) / ไฟ (สี่เหลี่ยม) จากรูปทรง → หาแถบ → ดัดภาพจาก 4 มุม (แก้มุมเอียง) → YOLO digit
+ทดสอบ 46/48 · ผิดแต่มั่นใจ 0 · Pi ~0.6 s/รูป · ป๊อปอัพเลือกปุ่มน้ำ/ไฟให้ตามรูปทรง · `cells` / `yolo` ยังเลือกได้ด้วย `--engine`
+
+ncnn ต้องการ numpy 2 ซึ่งชนกับ venv หลัก (ปัก numpy 1.26) → ตัวอ่านรันเป็น **โปรเซสแยกใน venv ของตัวเอง** (`src/tr_worker.py` ผ่าน `src/worker_client.py`)
+โมเดลไม่อยู่ใน git — ตั้งบน Pi ครั้งเดียว (อยู่นอก `~/mrc` เพราะ deploy ใช้ `rsync --delete`):
+
+```bash
+# บน Pi: venv ของ worker (ห้ามลง ncnn ใน ~/mrc/.venv — มันอัปเกรด numpy/opencv ทับของที่ปักไว้)
+python3 -m venv ~/mrc-models/venv && ~/mrc-models/venv/bin/pip install "ncnn==1.0.20260526"
+# บน Mac: แปลง digit.pt ของ text reader เป็น ncnn (ต้องมี ultralytics) แล้วส่งขึ้น Pi
+yolo export model="text reader/weights/digit.pt" format=ncnn imgsz=640
+rsync -az --exclude '*.py' "text reader/weights/digit_ncnn_model" uchida@uchida-pi5.local:~/mrc-models/tr/
+```
+
+ตั้งค่าอื่น (env ของ service): `MRC_YOLO_PY` (python ของ worker · ค่าเริ่ม `~/mrc-models/venv/bin/python`) · `MRC_TR_DIR` (ค่าเริ่ม `~/mrc-models/tr`)
+**ถ้า worker เริ่มไม่ได้** (ไม่มี venv/โมเดล) → อ่านด้วย `cells` แทนเองในรูปนั้น ป๊อปอัพบอก "ใช้ตัวอ่านสำรอง" — การถ่ายไม่ล้ม
+
 ## ส่งขึ้นฐานข้อมูล (ARIA · เปลี่ยน 29 ก.ย. 2026)
 
 ถ่ายแล้วรูปไปรอใน `data/pending/` → คนขับกด "เก็บ" ในป๊อปอัพบน `/drive` (เลือกห้อง + ชนิด) → แถวลง `readings.jsonl` → `mrc-sync.timer` ส่งขึ้นทุก 5 นาทีเมื่อมีเน็ต

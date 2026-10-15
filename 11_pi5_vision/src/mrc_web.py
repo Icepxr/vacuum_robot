@@ -383,7 +383,7 @@ def api_pending():
     """F10 รูปที่ยังไม่ได้ตัดสิน (รวมที่ค้างจากเน็ตหลุด/ปิดแอป) + ห้องจากทะเบียนสำหรับตัวเลือกในป๊อปอัพ"""
     reg = S.load_registry()
     rooms = S.room_ids(reg)                     # 8 ต.ค.: รวมห้องที่ยังไม่มีมิเตอร์ (ทะเบียนดึงจาก ARIA เอง)
-    items = [{k: r.get(k) for k in ("local_id", "captured_at", "value", "raw_text", "confidence", "pending_since")}
+    items = [{k: r.get(k) for k in ("local_id", "captured_at", "value", "raw_text", "confidence", "pending_since", "ocr_engine", "model_hint")}
              | {"crop_url": f"/crops/{r['local_id']}.jpg" if r.get("crop_path") else None} for r in S.list_pending()]
     return JSONResponse({"items": items, "rooms": rooms, "registry_version": reg["registry_version"],
                          "registry_pulled_at": reg["pulled_at"],
@@ -718,7 +718,7 @@ def main():
     ap.add_argument("--no-serial", action="store_true", help="ไม่มี ESP32 — ภาพสด/ถ่ายจากเว็บอย่างเดียว")
     ap.add_argument("--camera", type=int, default=CFG.CAMERA_INDEX)
     ap.add_argument("--image", help="ใช้รูปนี้แทนกล้อง")
-    ap.add_argument("--engine", choices=["sevenseg", "cells", "tesseract", "ssocr", "yolo", "tr"], default="cells")   # 7 ต.ค.: cells แทน sevenseg (C30 เดิม 18 ก.ย.) — ไฟล์ 26 §26.5–26.9
+    ap.add_argument("--engine", choices=["sevenseg", "cells", "tesseract", "ssocr", "yolo", "tr"], default="tr")   # 15 ต.ค. (C67): tr แทน cells — ไฟล์ 39 (46/48 vs 8/48) · ถอยไป cells เองถ้า worker ใช้ไม่ได้ · 7 ต.ค.: cells แทน sevenseg (C30 เดิม 18 ก.ย.) — ไฟล์ 26 §26.5–26.9
     ap.add_argument("--run-id", default=time.strftime("run_%Y%m%d_%H%M%S"))
     ap.add_argument("--no-air", action="store_true", help="ไม่อ่าน ENS160/AHT21")
     args = ap.parse_args()

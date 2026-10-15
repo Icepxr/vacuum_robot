@@ -58,13 +58,18 @@
     else { img.removeAttribute("src"); img.hidden = true; $("review-noimg").hidden = false; }
     $("review-value").textContent = item.value == null ? "อ่านไม่ออก" : String(item.value);
     $("review-value").classList.toggle("none", item.value == null);
-    const mh = item.model_hint || {};                     // engine yolo/tr (ทดลอง · ไฟล์ 38/39): ชนิดที่โมเดลบอก — คำใบ้เท่านั้น ไม่เลือกให้
+    // ชนิดจากโมเดล (ไฟล์ 38/39): engine tr แยกน้ำ/ไฟจากรูปทรงกล่อง (ทดสอบถูก 48/49) → เลือกปุ่มให้ (C67 · ผู้ใช้สั่ง 15 ต.ค.) · คนขับเปลี่ยนได้
+    //   engine yolo (ชุด 13 ต.ค.) ชนิดกลับด้าน 4/4 → คำใบ้เท่านั้น · ถอยไป cells (worker ใช้ไม่ได้) → ไม่มีชนิด ใช้ค่าที่เลือกครั้งก่อน
+    const mh = item.model_hint || {};
+    const auto = item.ocr_engine === "tr" && !mh.fallback && (mh.kind === "water" || mh.kind === "elec") ? (mh.kind === "elec" ? "electric" : "water") : null;
     const WHY = { no_meter: "ไม่เจอกล่องน้ำเงิน", no_strip: "เจอกล่องแต่ไม่เจอแถบเลข", no_digits: "อ่านได้ไม่ครบ 4 หลัก" };
-    const hint = (mh.kind ? ` · โมเดลว่า${mh.kind === "water" ? "น้ำ" : "ไฟ"} ${Math.round((mh.kind_conf || 0) * 100)} %` : "")
-      + (item.value == null && WHY[mh.why] ? ` · ${WHY[mh.why]}` : "");
+    const hint = (auto ? ` · รูปทรง${auto === "electric" ? "ไฟ" : "น้ำ"} (เลือกให้แล้ว)`
+                  : mh.kind ? ` · โมเดลว่า${mh.kind === "water" ? "น้ำ" : "ไฟ"} ${Math.round((mh.kind_conf || 0) * 100)} %` : "")
+      + (item.value == null && WHY[mh.why] ? ` · ${WHY[mh.why]}` : "")
+      + (mh.fallback ? " · ใช้ตัวอ่านสำรอง" : "");
     $("review-conf").textContent = (item.confidence != null && item.value != null ? `ความมั่นใจ ${Math.round(item.confidence * 100)} %` : "") + hint;
     setRoom(last.room || "");
-    typeInputs().forEach((r) => { r.checked = r.value === last.type; });
+    typeInputs().forEach((r) => { r.checked = r.value === (auto || last.type); });
     clearTimeout(hideT); closing = false;
     box.classList.remove("out", "out-keep", "out-discard", "out-later", "in");
     box.hidden = false;
@@ -165,7 +170,7 @@
     if (ev.t === "hello") { replaying = true; setTimeout(() => { replaying = false; }, 0); refresh(); }
     else if (ev.t === "reading" && ev.pending && ev.local_id && !replaying) {
       drop(ev.local_id);
-      const item = { local_id: ev.local_id, captured_at: ev.captured_at, value: ev.value, confidence: ev.confidence, crop_url: ev.crop_url, model_hint: ev.model_hint };
+      const item = { local_id: ev.local_id, captured_at: ev.captured_at, value: ev.value, confidence: ev.confidence, crop_url: ev.crop_url, model_hint: ev.model_hint, ocr_engine: ev.ocr_engine };
       queue.unshift(item);
       if (closing) { waiting = item; paintBadge(); }                             // การ์ดเก่ากำลังออก → เปิดต่อทันทีที่ออกเสร็จ
       else if (!cur) open(item); else paintBadge();                              // กำลังตัดสินรูปก่อนหน้าอยู่ → ไม่แย่งจอ ต่อคิวไว้

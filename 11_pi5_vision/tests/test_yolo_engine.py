@@ -54,3 +54,19 @@ def test_blank_frame_reads_nothing(monkeypatch, name, mod, env):
     if name == "tr":
         assert r["why"] == "no_meter"
     mod.client.kill()
+
+
+def test_tr_falls_back_to_cells_when_worker_unavailable(monkeypatch):
+    """C67: tr เป็นค่าเริ่มต้น — venv/โมเดลหายบน Pi ต้องยังอ่านได้ด้วย cells ไม่ใช่ถ่ายแล้วได้ค่าว่าง"""
+    from test_cells import scene
+    monkeypatch.setattr(tr_meter.client, "py", "/nonexistent/python")
+    tr_meter.client.kill()
+    assert MR.ocr_tr(scene("2749")) == MR.ocr_cells(scene("2749"))
+    assert MR.ocr_tr(scene("2749"))[0] == "2749" and tr_meter.last["fallback"] == "cells"
+    MR.warmup("tr")                                        # ต้องไม่ raise แม้ worker เริ่มไม่ได้
+
+
+def test_default_engine_is_tr():
+    import capture_daemon as D
+    import inspect
+    assert inspect.signature(D.UsbCameraBackend.__init__).parameters["engine"].default == "tr"

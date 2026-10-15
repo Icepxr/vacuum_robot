@@ -271,10 +271,16 @@ ocr_yolo.needs_color = True
 
 
 def ocr_tr(cropped_bgr, cfg=None):
-    """ทดลอง (ไฟล์ 39): วิธี text reader — กล่องน้ำเงิน → รูปทรง → แถบ → ดัด 4 มุม → YOLO digit · รายละเอียดอยู่ใน tr_meter.last"""
+    """ค่าเริ่มต้นตั้งแต่ 15 ต.ค. 2026 (C67 · ไฟล์ 39): วิธี text reader ของผู้ใช้ — กล่องน้ำเงิน → รูปทรง (น้ำ/ไฟ) → แถบ → ดัด 4 มุม
+    → YOLO digit (ncnn ใน worker แยกโปรเซส) · ทดสอบ 46/48 · ผิดแต่มั่นใจ 0 · Pi ~0.6 s · รายละเอียด (ชนิด/แถบ/เหตุผล) อยู่ใน tr_meter.last
+    worker เริ่มไม่ได้/ค้าง (venv หรือโมเดลหาย) → ถอยไปใช้ cells ในรูปนั้น · last["fallback"] = "cells" ให้ป๊อปอัพ/แถวรู้"""
     import tr_meter
-    r = tr_meter.read(cropped_bgr)
-    return r["text"], r["conf"]
+    try:
+        r = tr_meter.read(cropped_bgr)
+        return r["text"], r["conf"]
+    except (OSError, RuntimeError) as e:
+        tr_meter.last.clear(); tr_meter.last.update(fallback="cells", error=f"{type(e).__name__}: {e}")
+        return ocr_cells(cropped_bgr, cfg)
 
 
 ocr_tr.needs_color = True
@@ -294,7 +300,12 @@ def warmup(engine):
         yolo_meter.warmup()
     elif engine == "tr":
         import tr_meter
-        tr_meter.warmup()
+        import cellread
+        cellread.warmup()                            # ทางถอยของ tr (ถูกใช้เมื่อ worker เริ่มไม่ได้)
+        try:
+            tr_meter.warmup()
+        except (OSError, RuntimeError) as e:         # ไม่มี venv/โมเดล → ถ่ายแล้วถอยไป cells เอง ไม่ต้องล้มตอนเปิดกล้อง
+            print(f"[ocr] tr worker เริ่มไม่ได้ — จะใช้ cells แทน: {e}", flush=True)
 
 
 def run_engine(engine, binimg, cropped_bgr, cfg):
@@ -441,7 +452,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--source", choices=["picamera2", "usb", "folder"], default="folder")
     ap.add_argument("--path", help="โฟลเดอร์รูป เมื่อ --source folder")
-    ap.add_argument("--engine", choices=list(OCR_ENGINES), default="cells")
+    ap.add_argument("--engine", choices=list(OCR_ENGINES), default="tr")
     ap.add_argument("--meter-type", default="water", help="water | electric")
     ap.add_argument("--run-id", default=datetime.now().strftime("run_%Y%m%d_%H%M%S"))
     ap.add_argument("--debug-dir", help="เซฟภาพหลัง threshold ไว้ดูตอนปรับจูน")

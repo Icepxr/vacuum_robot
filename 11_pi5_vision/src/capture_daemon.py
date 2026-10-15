@@ -89,7 +89,7 @@ class UsbCameraBackend:
     ตัวเลข: cap.read() ≈ 61 ms · imwrite 14 ms · resize 6 ms [วัดจริง 11 ก.ย. — ไฟล์ 19 §19.4.1]
     C36: ซูม/แพน/ทิลต์/โฟกัสผ่าน UVC ถ้ากล้องมี (BRIO) · ไม่มีก็ซูมแบบซอฟต์แวร์ (ครอปเฟรม 1080p — ใช้กับภาพสด/ถ่าย/OCR เหมือนกันหมด)"""
 
-    def __init__(self, index=CFG.CAMERA_INDEX, size=CFG.CAMERA_SIZE, engine="cells",
+    def __init__(self, index=CFG.CAMERA_INDEX, size=CFG.CAMERA_SIZE, engine="tr",
                  run_id=None, meter_type="water"):
         import cv2                                   # นำเข้าตรงนี้ให้ import โมดูลได้บนเครื่องที่ไม่มี cv2
         import meter_reader as MR
@@ -220,10 +220,10 @@ class UsbCameraBackend:
             err = f"{type(e).__name__}: {e}"
         # F10: ยังไม่ลง readings.jsonl — รอคนขับกด "เก็บ"/"ไม่เอา" ในป๊อปอัพบน /drive (aria_store)
         rec = MR.build_record(ts, rid, img_name, raw, value, conf, self.run_id, self.meter_type, "usb", self.engine)
-        if self.engine in ("yolo", "tr") and not err:   # ทดลอง (ไฟล์ 38/39): ชนิดที่โมเดลบอก = คำใบ้ในป๊อปอัพ ไม่เขียนทับ meter_type
+        if self.engine in ("yolo", "tr") and not err:   # ไฟล์ 38/39: ชนิดที่โมเดลบอก → ป๊อปอัพ (tr เลือกปุ่มให้ · yolo คำใบ้) · ไม่เขียนทับ meter_type
             import tr_meter, yolo_meter
             last = (yolo_meter if self.engine == "yolo" else tr_meter).last
-            rec["model_hint"] = {k: last.get(k) for k in ("kind", "kind_conf", "box", "quad", "digit_conf", "why", "ms", "ms_counter", "ms_digit") if k in last}
+            rec["model_hint"] = {k: last.get(k) for k in ("kind", "kind_conf", "box", "quad", "digit_conf", "why", "ms", "ms_counter", "ms_digit", "fallback", "error") if k in last}
         rec = aria_store.save_pending(rec, crop)
         if err:
             rec["error"] = err
@@ -491,7 +491,7 @@ def main():
     ap.add_argument("--baud", type=int, default=CFG.SERIAL_BAUD)
     ap.add_argument("--camera", type=int, default=CFG.CAMERA_INDEX, help="index ของกล้อง USB · -1 = หาเองจาก /dev/v4l/by-id")
     ap.add_argument("--image", help="ใช้รูปนี้แทนกล้อง (ทดสอบลิงก์)")
-    ap.add_argument("--engine", choices=["sevenseg", "cells", "tesseract", "ssocr", "yolo", "tr"], default="cells")
+    ap.add_argument("--engine", choices=["sevenseg", "cells", "tesseract", "ssocr", "yolo", "tr"], default="tr")
     ap.add_argument("--meter-type", default="water")
     ap.add_argument("--run-id", default=time.strftime("run_%Y%m%d_%H%M%S"))
     ap.add_argument("--selftest", action="store_true", help="ทดสอบกล้อง→SD→OCR โดยไม่แตะ serial")
