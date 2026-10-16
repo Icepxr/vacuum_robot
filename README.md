@@ -42,17 +42,22 @@
 ## ระบบทำงานอย่างไร
 
 ```mermaid
-flowchart LR
+flowchart TB
+    PHONE["📱 คนขับ<br/>มือถือ / โน้ตบุ๊ก"]
     subgraph ROBOT["🤖 ARIA-001"]
-        ESP["ESP32-S3<br/>ล้อ · ดูด/แปรง · เซอร์โว 2 ตัว<br/>จอกลม · E-STOP"]
-        PI["Raspberry Pi 5<br/>เว็บขับ /drive · กล้อง BRIO<br/>ตัวอ่านเลข tr · อากาศ"]
-        ESP <-- "UART 115200<br/>$V $C $M $F … / #T 10 Hz" --> PI
+        direction LR
+        PI["Raspberry Pi 5<br/>เว็บขับ /drive · กล้อง<br/>ตัวอ่านเลข tr · อากาศ"]
+        ESP["ESP32-S3<br/>ล้อ · ดูด/แปรง<br/>เสายก · จอ · E-STOP"]
+        PI <-- "UART" --> ESP
     end
-    PHONE["📱 มือถือ/โน้ตบุ๊ก<br/>คนขับ"] -- "WebSocket" --> PI
-    PI -- "ค่าที่กดเก็บ + รูปแถบเลข<br/>(Edge Function ingest)" --> SB[("☁️ Supabase<br/>aria-mrc")]
+    SB[("☁️ Supabase<br/>aria-mrc")]
+    WEB["🏢 เว็บหลังบ้าน ARIA<br/>aria-th.netlify.app"]
+    TENANT["👤 ผู้เช่า"]
+    PHONE -- "WebSocket" --> PI
+    PI -- "ค่าที่เก็บ + รูปแถบเลข" --> SB
     SB -- "ทะเบียนห้อง/มิเตอร์" --> PI
-    SB <--> WEB["🏢 เว็บหลังบ้าน ARIA<br/>aria-th.netlify.app"]
-    WEB -- "บิลทางอีเมล" --> TENANT["👤 ผู้เช่า"]
+    SB <--> WEB
+    WEB -- "บิลทางอีเมล" --> TENANT
 ```
 
 **จากกดถ่ายถึงบิล**
