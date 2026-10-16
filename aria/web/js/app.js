@@ -1,6 +1,6 @@
 // ARIA หลังบ้าน · vanilla JS (ต่อจาก design/aria-prototype) + Supabase
 // ขอบเขต: ขั้น 3 ของแบบ v1 §7 (บัญชีเจ้าของ + 5 หน้า + reading_events) · บิลเป็นพรีวิว (ขั้น 4 ยังไม่มีตาราง invoices) · ยังไม่ส่งอีเมล (ขั้น 5)
-import * as L from './logic.js?v=w15';
+import * as L from './logic.js?v=w16';
 import { createBackdrop, accentNow } from './liquid.js?v=w48';
 
 let gateBg = null, appBg = null;   // วอลเปเปอร์สองโทน (อินสแตนซ์แยก · ตอนเปลี่ยนหน้าทำงานพร้อมกัน)
@@ -52,12 +52,16 @@ const setRow = (label, ctl, hint = '', view = '') => `<label class="set-row"><sp
 const icon = name => `<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${iconPaths[name] || iconPaths.review}</svg>`;
 const status = (text, tone = '') => `<span class="status ${tone}">${esc(text)}</span>`;
 
+// ชื่อตัวอ่านบนหุ่น (ocr_engine) → คำที่เจ้าของหออ่านเข้าใจ · 15 ต.ค. 2026 ค่าเริ่มต้น = tr (C67 · 08_การคำนวณ/39)
+const ENGINE_TH = { tr: 'ตัวอ่านหลัก', cells: 'ตัวอ่านสำรอง', yolo: 'โมเดลทดลอง', sevenseg: 'ตัวอ่านรุ่นแรก', tesseract: 'Tesseract', ssocr: 'ssocr' };
+const engineTh = e => (e ? ENGINE_TH[e] || e : '—');
+
 const FLAG_TEXT = {
   unassigned: ['ยังไม่ผูกมิเตอร์', 'bad'],
   duplicate: ['ถ่ายซ้ำ', 'warn'],
   below_prev: ['ต่ำกว่าค่าก่อน', 'bad'],
-  unreadable: ['OCR อ่านไม่ออก', 'warn'],
-  low_conf: ['OCR ไม่มั่นใจ', 'warn'],
+  unreadable: ['หุ่นอ่านไม่ออก', 'warn'],
+  low_conf: ['หุ่นอ่านไม่มั่นใจ', 'warn'],
   clock: ['เวลา Pi ยังไม่ยืนยัน', 'warn'],
 };
 const EVENT_TEXT = { confirmed: 'ยืนยัน', corrected: 'แก้ค่าแล้วยืนยัน', rejected: 'ปฏิเสธ', assigned: 'ผูกมิเตอร์', reopened: 'ยกเลิกการยืนยัน' };
@@ -319,11 +323,11 @@ function attentionItems(c) {
   const firstAttr = q => `data-page="review" data-reading="${q.r.id}"`;
   const un = by('unassigned');
   if (un.length) push('red', 'link', `ยังไม่ผูกมิเตอร์ ${un.length} ค่า`, 'คนขับไม่ได้เลือกห้อง หรือรหัสไม่อยู่ในทะเบียน', firstAttr(un[0]), 'ผูกมิเตอร์');
-  for (const q of by('below_prev')) push('red', 'down', `${esc(meterLabel(q.meterId))} ต่ำกว่าค่าก่อน`, `OCR ${num(q.value)} · ค่าก่อน ${num(q.prev.value)}`, firstAttr(q), 'ดูรูป');
+  for (const q of by('below_prev')) push('red', 'down', `${esc(meterLabel(q.meterId))} ต่ำกว่าค่าก่อน`, `หุ่นอ่าน ${num(q.value)} · ค่าก่อน ${num(q.prev.value)}`, firstAttr(q), 'ดูรูป');
   const ur = by('unreadable');
-  if (ur.length) push('amber', 'scan', `OCR อ่านไม่ออก ${ur.length} ค่า`, 'ต้องกรอกค่าเองจากรูป', firstAttr(ur[0]), 'กรอกค่า');
+  if (ur.length) push('amber', 'scan', `หุ่นอ่านไม่ออก ${ur.length} ค่า`, 'ต้องกรอกค่าเองจากรูป', firstAttr(ur[0]), 'กรอกค่า');
   const lc = by('low_conf');
-  if (lc.length) push('amber', 'scan', `OCR ไม่มั่นใจ ${lc.length} ค่า`, `ความมั่นใจต่ำกว่า ${pct(L.LOW_CONFIDENCE)}`, firstAttr(lc[0]), 'ดูรูป');
+  if (lc.length) push('amber', 'scan', `หุ่นอ่านไม่มั่นใจ ${lc.length} ค่า`, `ความมั่นใจต่ำกว่า ${pct(L.LOW_CONFIDENCE)}`, firstAttr(lc[0]), 'ดูรูป');
   const ck = by('clock');
   if (ck.length) push('amber', 'clock', `เวลาจาก Pi ยังไม่ยืนยัน ${ck.length} ค่า`, 'ตรวจว่าเข้ารอบบิลถูกเดือน', firstAttr(ck[0]), 'ตรวจ');
   if (!c.rooms.length) push('red', 'rooms', 'ยังไม่มีห้องในทะเบียน', 'เพิ่มห้อง ผู้เช่า และมิเตอร์ก่อน หุ่นถึงผูกค่าได้', 'data-page="rooms"', 'เพิ่มห้อง');
@@ -530,7 +534,7 @@ function renderReview(c) {
   const queueHtml = q.map(x => {
     const f = x.flags[0];
     const cyc = L.cycleOfDate(L.bkkDate(x.r.captured_at), d.cycles, d.settings);
-    return `<button class="queue-item ${x.r.id === state.selectedReading ? 'active' : ''}" data-reading="${x.r.id}"><span class="queue-type">${icon(x.r.meter_type || 'review')}</span><span class="queue-copy"><strong>${x.meterId ? esc(meterLabel(x.meterId)) : `${x.r.room_id ? `ห้อง ${esc(x.r.room_id)}` : 'ไม่ระบุห้อง'} · ${L.TYPE_TH[x.r.meter_type] ?? '?'}`}</strong><small>OCR ${num(x.value)} · มั่นใจ ${pct(x.r.confidence)}${cyc !== state.cycle ? ` · รอบ${L.cycleLabel(cyc)}` : ''}</small></span>${f ? status(FLAG_TEXT[f][0], FLAG_TEXT[f][1]) : ''}</button>`;
+    return `<button class="queue-item ${x.r.id === state.selectedReading ? 'active' : ''}" data-reading="${x.r.id}"><span class="queue-type">${icon(x.r.meter_type || 'review')}</span><span class="queue-copy"><strong>${x.meterId ? esc(meterLabel(x.meterId)) : `${x.r.room_id ? `ห้อง ${esc(x.r.room_id)}` : 'ไม่ระบุห้อง'} · ${L.TYPE_TH[x.r.meter_type] ?? '?'}`}</strong><small>หุ่นอ่าน ${num(x.value)} · มั่นใจ ${pct(x.r.confidence)}${cyc !== state.cycle ? ` · รอบ${L.cycleLabel(cyc)}` : ''}</small></span>${f ? status(FLAG_TEXT[f][0], FLAG_TEXT[f][1]) : ''}</button>`;
   }).join('');
   if (!sel) return `<section class="page">${head}<div class="card card-pad"><div class="empty">ไม่มีค่าที่ต้องตรวจ · ค่าที่ยืนยันแล้วเปิดดู/แก้ได้จากหน้า “ห้องและมิเตอร์”</div></div></section>`;
   return `<section class="page">${head}<div class="review-layout">
@@ -548,7 +552,7 @@ function reviewDetail(r, c) {
   const units = value != null && prev ? value - prev.value : null;
   const needReason = flags.some(f => ['below_prev', 'low_conf', 'unreadable', 'clock'].includes(f));
   const cropHtml = r.crop_path
-    ? `<img id="crop-img" class="crop-img" alt="รูป crop หน้าปัดมิเตอร์" data-path="${esc(r.crop_path)}"><p class="image-caption" id="crop-cap">กำลังโหลดรูป…</p>`
+    ? `<img id="crop-img" class="crop-img" alt="รูปแถบตัวเลขที่หุ่นถ่าย" data-path="${esc(r.crop_path)}"><p class="image-caption" id="crop-cap">กำลังโหลดรูป…</p>`
     : `<div class="crop-missing">${manual ? 'กรอกเองโดยเจ้าของหอ · ไม่มีรูป' : r.crop_expired_at ? `ลบรูปแล้ว ${L.dateTh(L.bkkDate(r.crop_expired_at))} · ตัวเลขยังอยู่ครบ (ลบเมื่อรับเงินครบ 30 วัน หรือรูปอายุ 12 เดือน)` : r.is_demo ? 'ข้อมูลตัวอย่าง — ไม่มีรูป' : 'รูปกำลังซิงก์จาก Pi · ยังยืนยันไม่ได้จนกว่ารูปจะขึ้น'}</div>`;
   const cropBlocks = !r.crop_path && !r.crop_expired_at && !r.is_demo && !manual; // แบบ v1 §4.2 พักการยืนยันที่ต้องอาศัยรูป
   const candidates = c.d.meters.filter(m => (!r.meter_type || m.type === r.meter_type) && L.meterActiveOn(m, L.bkkDate(r.captured_at)))
@@ -560,8 +564,8 @@ function reviewDetail(r, c) {
     <div class="image-stage">${cropHtml}</div>
     <div class="reading-comparison">
       <div class="comparison-box"><small>ค่ายืนยันก่อนหน้า</small><strong>${prev ? num(prev.value) : '—'}</strong><small>${prev ? (prev.source === 'start' ? 'ค่าเริ่มตอนติดตั้ง' : L.dateTh(L.bkkDate(prev.at))) : 'ผูกมิเตอร์ก่อน'}</small></div>
-      ${manual ? `<div class="comparison-box"><small>กรอกเอง</small><strong>${num(value)}</strong><small>ไม่มีรูป · เหตุผลอยู่ในประวัติ</small></div>` : `<div class="comparison-box"><small>OCR (${esc(r.ocr_engine || '—')})</small><strong>${num(value)}</strong><small>ข้อความดิบ “${esc(r.raw_text ?? '')}” · มั่นใจ ${pct(r.confidence)}</small></div>`}
-      <div class="comparison-box"><small>${manual ? 'หน่วยจากค่าที่กรอก' : 'หน่วยถ้ารับ OCR'}</small><strong class="${units != null && units < 0 ? 'neg' : ''}">${num(units)}</strong><small>${meter ? `${meter.digits} หลัก · ทศนิยม ${meter.decimals}` : ''}</small></div>
+      ${manual ? `<div class="comparison-box"><small>กรอกเอง</small><strong>${num(value)}</strong><small>ไม่มีรูป · เหตุผลอยู่ในประวัติ</small></div>` : `<div class="comparison-box"><small>หุ่นอ่าน · ${esc(engineTh(r.ocr_engine))}</small><strong>${num(value)}</strong><small>ข้อความดิบ “${esc(r.raw_text ?? '')}” · มั่นใจ ${pct(r.confidence)}</small></div>`}
+      <div class="comparison-box"><small>${manual ? 'หน่วยจากค่าที่กรอก' : 'หน่วยถ้ารับค่าที่หุ่นอ่าน'}</small><strong class="${units != null && units < 0 ? 'neg' : ''}">${num(units)}</strong><small>${meter ? `${meter.digits} หลัก · ทศนิยม ${meter.decimals}` : ''}</small></div>
     </div>
     ${flags.length ? `<div class="alert ${flags.some(f => FLAG_TEXT[f][1] === 'bad') ? 'bad' : 'warn'}">${flags.map(f => `<strong>${FLAG_TEXT[f][0]}</strong>`).join(' · ')}${flags.includes('clock') ? ' — นาฬิกา Pi ยังไม่ซิงก์ตอนถ่าย ตรวจว่ารูปนี้เป็นของรอบนี้จริง' : ''}${flags.includes('duplicate') ? ` — มีรูปของ${meterId ? 'มิเตอร์' : 'ห้อง+ชนิด'}เดียวกันในรอบนี้อีก ${dups.length} รูป เลือกด้านล่างว่าจะใช้รูปไหน` : ''}${flags.includes('below_prev') ? ' — ถ้ามิเตอร์ถูกเปลี่ยนตัว ให้ปลดตัวเก่าและเพิ่มตัวใหม่ที่หน้า “ห้องและมิเตอร์” แล้วผูกค่านี้กับตัวใหม่' : ''}</div>` : ''}
     ${dups.length ? dupPanel(r, dups) : ''}
@@ -575,13 +579,13 @@ function reviewDetail(r, c) {
       <span class="cv-acts"><button class="btn small" type="button" data-action="edit" data-form="confirm-form" ${!meterId || cropBlocks ? 'disabled' : ''}>${icon('edit')}แก้ค่า</button><button class="btn small" type="button" data-action="reopen" ${state.busy ? 'disabled' : ''} title="กลับเป็นรอยืนยัน · ประวัติเดิมยังอยู่">ยกเลิกการยืนยัน</button></span></div>` : `
     <form id="confirm-form" class="confirm-form${decided ? ' editing-in' : ''}" data-ocr="${value ?? ''}" data-need-reason="${needReason ? 1 : 0}" data-decided="${decided ? 1 : 0}">
       <label>${decided ? 'แก้เป็นค่า' : 'ค่าที่จะยืนยัน'}<input name="value" type="number" inputmode="decimal" step="any" min="0" value="${esc(decided ? r.confirmed_value : value ?? '')}" required ${!meterId || cropBlocks ? 'disabled' : ''}></label>
-      <label>เหตุผล ${decided || needReason ? '(จำเป็น)' : '(จำเป็นเมื่อแก้จาก OCR)'}<input name="reason" type="text" maxlength="200" placeholder="เช่น ดูรูปแล้วหลักสุดท้ายเป็น 7" ${!meterId || cropBlocks ? 'disabled' : ''}></label>
+      <label>เหตุผล ${decided || needReason ? '(จำเป็น)' : '(จำเป็นเมื่อแก้ค่าที่หุ่นอ่าน)'}<input name="reason" type="text" maxlength="200" placeholder="เช่น ดูรูปแล้วหลักสุดท้ายเป็น 7" ${!meterId || cropBlocks ? 'disabled' : ''}></label>
       ${decided ? `<button class="btn" type="button" data-action="edit-cancel">ยกเลิก</button><button class="btn primary" type="submit">บันทึกค่าที่แก้</button>` : `<button class="btn primary" type="submit" ${!meterId || cropBlocks ? 'disabled' : ''}>ยืนยันค่า</button><button class="btn danger" type="button" data-action="reject" ${state.busy ? 'disabled' : ''}>ปฏิเสธ</button>`}
     </form>`}
     ${!meterId ? '<p class="fine">ต้องผูกมิเตอร์ก่อน ถึงจะยืนยันได้ (ฐานข้อมูลบังคับ)</p>' : ''}`}
 
     ${manual ? '' : `<details class="more"><summary>ค่าอากาศตอนถ่าย</summary>${air}</details>`}
-    <div class="history"><strong>ประวัติ</strong><br>${manual ? `กรอกเอง ${num(value)} · เวลาที่อ่าน` : `หุ่นอ่าน OCR ${num(value)} ·`} ${L.dateTimeTh(r.captured_at)}${r.decided_at && !manual ? ` · คนขับกด “เก็บ” ${L.dateTimeTh(r.decided_at)}` : ''}
+    <div class="history"><strong>ประวัติ</strong><br>${manual ? `กรอกเอง ${num(value)} · เวลาที่อ่าน` : `หุ่นอ่าน ${num(value)} ·`} ${L.dateTimeTh(r.captured_at)}${r.decided_at && !manual ? ` · คนขับกด “เก็บ” ${L.dateTimeTh(r.decided_at)}` : ''}
       ${hist.map(e => `<br>${EVENT_TEXT[e.event]}${e.confirmed_value != null ? ` ${num(Number(e.confirmed_value))}` : ''}${e.meter_id ? ` → ${esc(e.meter_id)}` : ''}${e.reason ? ` · “${esc(e.reason)}”` : ''} · ${actorText(e.actor)} · ${L.dateTimeTh(e.at)}`).join('')}</div>
   </div>`;
 }
@@ -596,7 +600,7 @@ async function loadCrop() {
     const url = await api.cropUrl(path);
     if ($('#crop-img')?.dataset.path !== path) return; // ผู้ใช้เปลี่ยนรายการไปแล้ว
     img.src = url;
-    $('#crop-cap').textContent = 'รูป crop จาก Pi · ลิงก์ใช้ได้ 5 นาที';
+    $('#crop-cap').textContent = 'รูปจากหุ่น (แถบตัวเลขที่ดัดตรงแล้ว) · ลิงก์ใช้ได้ 5 นาที';
   } catch (e) {
     $('#crop-cap').textContent = `โหลดรูปไม่ได้: ${e.message}`;
   }
@@ -613,7 +617,7 @@ async function submitConfirm(form) {
   const decided = form.dataset.decided === '1';
   const changed = decided || ocr == null || v !== ocr;
   if (decided && v === Number(r.confirmed_value)) { toast('ค่าเดิม · ไม่มีอะไรเปลี่ยน'); stopEdit(); return; }   // กันแถว corrected ซ้ำ (เจอบนเว็บจริง 3 ต.ค.: reading 39 สองแถวห่าง 3 วินาที)
-  if ((changed || form.dataset.needReason === '1') && !reason) return toast('ต้องใส่เหตุผลเมื่อแก้ค่าจาก OCR หรือค่ามีธงเตือน', true);
+  if ((changed || form.dataset.needReason === '1') && !reason) return toast('ต้องใส่เหตุผลเมื่อแก้ค่าที่หุ่นอ่าน หรือค่ามีธงเตือน', true);
   const ev = { reading_id: r.id, event: changed ? 'corrected' : 'confirmed', confirmed_value: v, reason: reason || null };
   const next = L.reviewQueue(state.data.readings, mIdx, cycCtx(state.data)).map(x => x.r.id).find(id => id !== r.id);
   if (await write(() => api.addEvent(ev), `${changed ? 'แก้และยืนยัน' : 'ยืนยัน'} ${num(v)} แล้ว`) && !decided && next) { state.selectedReading = next; render(); }
@@ -1001,7 +1005,7 @@ function roomDetail(roomId, c) {
     return `<div class="mt ${m.type} ${active ? '' : 'retired'}">
       <div class="mt-head"><span class="bl-ic">${icon(m.type)}</span><span class="mt-id"><b>${esc(m.meter_id)}</b><small>${L.TYPE_TH[m.type]} · ${m.digits} หลัก${m.decimals ? ` ทศนิยม ${m.decimals}` : ''}</small></span>
         ${active ? `<button class="mt-retire mt-manual" data-action="manual-read" data-meter="${esc(m.meter_id)}" title="กรอกเลขเองเมื่อหุ่นถ่ายไม่ได้">กรอกเอง</button><button class="mt-retire" data-action="retire" data-meter="${esc(m.meter_id)}" title="ปลด/เปลี่ยนมิเตอร์">ปลด</button>` : status('ปลดแล้ว', '')}</div>
-      <div class="mt-val ${!lastConf && pend ? 'pending' : ''}"><b>${lastConf ? num(Number(lastConf.confirmed_value)) : pend ? num(pend.value) : '—'}</b><small>${lastConf ? `ยืนยัน ${L.dateTh(L.bkkDate(lastConf.captured_at))}` : pend ? `OCR ${L.dateTh(L.bkkDate(pend.captured_at))} · รอยืนยัน` : 'ยังไม่มีค่า'}</small></div>
+      <div class="mt-val ${!lastConf && pend ? 'pending' : ''}"><b>${lastConf ? num(Number(lastConf.confirmed_value)) : pend ? num(pend.value) : '—'}</b><small>${lastConf ? `ยืนยัน ${L.dateTh(L.bkkDate(lastConf.captured_at))}` : pend ? `หุ่นอ่าน ${L.dateTh(L.bkkDate(pend.captured_at))} · รอยืนยัน` : 'ยังไม่มีค่า'}</small></div>
       ${rs.length ? `<div class="mt-hist">${rs.slice(0, 4).map(r => `<button class="mt-chip ${r.status}${r.source === 'manual' ? ' manual' : ''}" data-page="review" data-reading="${r.id}" title="${CHIP[r.status] || r.status}${r.source === 'manual' ? ' · กรอกเอง' : ''}"><i></i>${num(r.confirmed_value ?? r.value)}<small>${L.dateTh(L.bkkDate(r.captured_at)).replace(/ \d{4}$/, '')}</small></button>`).join('')}</div>` : ''}
       <small class="mt-meta">ติดตั้ง ${L.dateTh(m.installed_at)} · เริ่ม ${num(Number(m.start_value))}${active ? ` <button class="text-link mt-fix" data-action="fix-start" data-meter="${esc(m.meter_id)}">แก้ค่าเริ่ม</button>` : ''}${m.retired_at ? ` · ปลด ${L.dateTh(m.retired_at)} · สุดท้าย ${num(m.end_value == null ? null : Number(m.end_value))}` : ''}</small></div>`;
   };
@@ -1161,7 +1165,7 @@ function renderSettings(c) {
     `<button class="btn small" data-action="sign-out">ออกจากระบบ</button><button class="btn small ghost" data-action="sign-out-all" title="ใช้เมื่อลืมออกจากเครื่องอื่น">ทุกอุปกรณ์</button>`);
 
   const adv = sec('settings', 'ขั้นสูง', `<div class="set-rows">
-      <div class="set-row static"><span class="set-label">OCR “ไม่มั่นใจ” ต่ำกว่า<small>ค่าจากต้นแบบ · รอข้อมูลถ่ายจริง</small></span><span class="set-ctl"><b>${pct(L.LOW_CONFIDENCE)}</b></span></div>
+      <div class="set-row static"><span class="set-label">หุ่นอ่าน “ไม่มั่นใจ” ต่ำกว่า<small>ตัวอ่าน tr: อ่านถูก 0.65–0.94 · ค่าต่ำกว่านี้ติดป้ายให้ดูรูป</small></span><span class="set-ctl"><b>${pct(L.LOW_CONFIDENCE)}</b></span></div>
       <div class="set-row static"><span class="set-label">ข้อมูลตัวอย่าง<small>${demoCount ? 'ลบด้วย SQL ใน Supabase · ตั้งใจไม่มีปุ่ม' : 'ลบแล้ว'}</small></span><span class="set-ctl">${demoCount ? status(`${demoCount} แถว`, 'warn') : status('ไม่มี', 'good')}</span></div>
       ${demoCount ? `<code class="set-code">select public.delete_demo_data();</code>` : ''}
       <div class="set-row static"><span class="set-label">โซนเวลา</span><span class="set-ctl"><b>${esc(s.timezone || 'Asia/Bangkok')}</b></span></div></div>`);
@@ -1453,7 +1457,7 @@ async function boot() {
   document.querySelectorAll('[data-icon]').forEach(n => { n.innerHTML = icon(n.dataset.icon); });
   const local = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
   if (local && new URLSearchParams(location.search).has('mock')) {
-    api = (await import('./mock.js?v=w49')).createMockApi();
+    api = (await import('./mock.js?v=w50')).createMockApi();
   } else {
     if (!window.supabase) return showGate('Failed to load', '', '<button class="gate-google plain" data-action="reload"><span>Reload</span></button>');
     api = (await import('./api.js?v=w45')).createApi();

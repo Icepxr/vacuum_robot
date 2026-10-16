@@ -1,6 +1,6 @@
 // ข้อมูลจำลองในหน่วยความจำ · เปิดได้เฉพาะ localhost ด้วย ?mock (ดู app.js) · ไม่แตะเครือข่าย
 // ชุดเดียวกับ migrations 0300_demo_seed + 20260929000100_demo_readings เพื่อให้พรีวิวหน้าตาตรงกับของจริง
-import { readingMeterId, meterIndex, shiftCycle } from './logic.js?v=w15';
+import { readingMeterId, meterIndex, shiftCycle } from './logic.js?v=w16';
 
 export function createMockApi() {
   const prev = { '101': [1231, 3502], '102': [987, 2140], '103': [1518, 2901], '104': [1192, 3271], '105': [1402, 5012], '106': [802, 1320], '107': [1105, 4521], '108': [1351, 3204], '109': [890, 2750], '110': [1120, 2876] };
@@ -14,7 +14,7 @@ export function createMockApi() {
   }
   const ocr = [[1, '101', 'water', 1244, .97], [2, '101', 'electric', 3611, .96], [3, '102', 'water', 998, .98], [4, '102', 'electric', 2233, .95], [5, '103', 'water', 1532, .95], [6, '103', 'electric', 2977, .94], [7, '104', 'water', 1205, .91], [8, '104', 'electric', 3340, .89], [9, '105', 'water', 1477, .41], [10, '105', 'electric', 5096, .96], [11, '106', 'water', 811, .93], [12, '106', 'electric', 1352, .94], [13, '107', 'water', 1117, .96], [14, '107', 'electric', 4602, .97], [15, '108', 'water', 1362, .94], [16, '108', 'electric', 3184, .83], [19, '110', 'water', 1133, .95], [20, '110', 'electric', 2950, .97]];
   const at = n => new Date(Date.UTC(2026, 8, 20, 3, 0) + n * 180000).toISOString();
-  const mk = (n, room, type, value, conf, meter) => ({ id: ++rid, local_id: rid.toString(16).padStart(12, '0'), device_id: 'DEMO-01', captured_at: at(n), decided_at: at(n), received_at: at(n + 60), clock_synced: room !== '107', run_id: null, room_id: room, meter_type: type, meter_id: meter, registry_version: null, raw_text: String(value), value, confidence: conf, ocr_engine: 'sevenseg', source: 'demo', image_path: null, air: n % 3 ? null : { eco2_ppm: 620 + n * 10, tvoc_ppb: 80 + n, aqi: 2, temp_c: 29.5, rh_pct: 58, validity: 0 }, crop_path: null, crop_expired_at: null, status: 'ocr', confirmed_value: null, assigned_meter_id: null, is_demo: true });
+  const mk = (n, room, type, value, conf, meter) => ({ id: ++rid, local_id: rid.toString(16).padStart(12, '0'), device_id: 'DEMO-01', captured_at: at(n), decided_at: at(n), received_at: at(n + 60), clock_synced: room !== '107', run_id: null, room_id: room, meter_type: type, meter_id: meter, registry_version: null, raw_text: String(value), value, confidence: conf, ocr_engine: 'tr', source: 'demo', image_path: null, air: n % 3 ? null : { eco2_ppm: 620 + n * 10, tvoc_ppb: 80 + n, aqi: 2, temp_c: 29.5, rh_pct: 58, validity: 0 }, crop_path: null, crop_expired_at: null, status: 'ocr', confirmed_value: null, assigned_meter_id: null, is_demo: true });
   for (const [n, room, type, v, c] of ocr) d.readings.push(mk(n, room, type, v, c, `${type === 'water' ? 'W' : 'E'}-${room}-01`));
   d.readings.push(mk(19, null, 'water', 1188, .88, null));
   // ถ่ายซ้ำ (6 ต.ค.): 104 น้ำ ถ่ายสองรอบ (ยังไม่ยืนยันทั้งคู่) · 101 น้ำ ยืนยันไปแล้วแต่ถ่ายซ้ำอีกใบ → หน้ายืนยันให้เลือกใช้รูปไหน
