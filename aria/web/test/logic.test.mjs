@@ -199,3 +199,11 @@ test('ถ่ายซ้ำ: มิเตอร์/ห้องเดียว�
   assert.deepEqual(q.slice(1, 3), [a.id, b.id]);
   assert.equal(q[3], other.id);
 });
+
+test('อ่านไม่ออก (ค่า null · conf 0) ติดแค่ "อ่านไม่ออก" ไม่ติด "ไม่มั่นใจ" ซ้ำ (16 ต.ค.)', () => {
+  const idx = L.meterIndex([meter('W-101-01', '101', 'water')]);
+  const [x] = L.reviewQueue([reading('W-101-01', '2026-09-20T03:00:00Z', null, { confidence: 0 })], idx);
+  assert.deepEqual(x.flags, ['unreadable']);
+  const [y] = L.reviewQueue([reading('W-101-01', '2026-09-20T03:00:00Z', 150, { confidence: 0.65 })], idx);
+  assert.ok(y.flags.includes('low_conf'));
+});

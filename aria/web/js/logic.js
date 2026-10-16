@@ -115,7 +115,7 @@ export function readingFlags(r, readings, mIdx, cyc = null) {
   if (dups.length) flags.push('duplicate');
   if (value == null) flags.push('unreadable');
   else if (prev && value < prev.value) flags.push('below_prev');
-  if (r.confidence != null && r.confidence < LOW_CONFIDENCE) flags.push('low_conf');
+  if (value != null && r.confidence != null && r.confidence < LOW_CONFIDENCE) flags.push('low_conf');   // อ่านไม่ออกแล้ว ไม่ต้องติด "ไม่มั่นใจ" ซ้ำ
   if (r.clock_synced === false) flags.push('clock');
   return { meterId, prev, value, flags, dups };
 }

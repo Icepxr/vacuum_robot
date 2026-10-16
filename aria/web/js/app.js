@@ -1,6 +1,6 @@
 // ARIA หลังบ้าน · vanilla JS (ต่อจาก design/aria-prototype) + Supabase
 // ขอบเขต: ขั้น 3 ของแบบ v1 §7 (บัญชีเจ้าของ + 5 หน้า + reading_events) · บิลเป็นพรีวิว (ขั้น 4 ยังไม่มีตาราง invoices) · ยังไม่ส่งอีเมล (ขั้น 5)
-import * as L from './logic.js?v=w16';
+import * as L from './logic.js?v=w17';
 import { createBackdrop, accentNow } from './liquid.js?v=w48';
 
 let gateBg = null, appBg = null;   // วอลเปเปอร์สองโทน (อินสแตนซ์แยก · ตอนเปลี่ยนหน้าทำงานพร้อมกัน)
@@ -564,7 +564,7 @@ function reviewDetail(r, c) {
     <div class="image-stage">${cropHtml}</div>
     <div class="reading-comparison">
       <div class="comparison-box"><small>ค่ายืนยันก่อนหน้า</small><strong>${prev ? num(prev.value) : '—'}</strong><small>${prev ? (prev.source === 'start' ? 'ค่าเริ่มตอนติดตั้ง' : L.dateTh(L.bkkDate(prev.at))) : 'ผูกมิเตอร์ก่อน'}</small></div>
-      ${manual ? `<div class="comparison-box"><small>กรอกเอง</small><strong>${num(value)}</strong><small>ไม่มีรูป · เหตุผลอยู่ในประวัติ</small></div>` : `<div class="comparison-box"><small>หุ่นอ่าน · ${esc(engineTh(r.ocr_engine))}</small><strong>${num(value)}</strong><small>ข้อความดิบ “${esc(r.raw_text ?? '')}” · มั่นใจ ${pct(r.confidence)}</small></div>`}
+      ${manual ? `<div class="comparison-box"><small>กรอกเอง</small><strong>${num(value)}</strong><small>ไม่มีรูป · เหตุผลอยู่ในประวัติ</small></div>` : `<div class="comparison-box"><small>หุ่นอ่าน · ${esc(engineTh(r.ocr_engine))}</small><strong>${num(value)}</strong><small>${value == null ? 'อ่านไม่ออก · กรอกค่าเองจากรูป' : `ข้อความดิบ “${esc(r.raw_text ?? '')}” · มั่นใจ ${pct(r.confidence)}`}</small></div>`}
       <div class="comparison-box"><small>${manual ? 'หน่วยจากค่าที่กรอก' : 'หน่วยถ้ารับค่าที่หุ่นอ่าน'}</small><strong class="${units != null && units < 0 ? 'neg' : ''}">${num(units)}</strong><small>${meter ? `${meter.digits} หลัก · ทศนิยม ${meter.decimals}` : ''}</small></div>
     </div>
     ${flags.length ? `<div class="alert ${flags.some(f => FLAG_TEXT[f][1] === 'bad') ? 'bad' : 'warn'}">${flags.map(f => `<strong>${FLAG_TEXT[f][0]}</strong>`).join(' · ')}${flags.includes('clock') ? ' — นาฬิกา Pi ยังไม่ซิงก์ตอนถ่าย ตรวจว่ารูปนี้เป็นของรอบนี้จริง' : ''}${flags.includes('duplicate') ? ` — มีรูปของ${meterId ? 'มิเตอร์' : 'ห้อง+ชนิด'}เดียวกันในรอบนี้อีก ${dups.length} รูป เลือกด้านล่างว่าจะใช้รูปไหน` : ''}${flags.includes('below_prev') ? ' — ถ้ามิเตอร์ถูกเปลี่ยนตัว ให้ปลดตัวเก่าและเพิ่มตัวใหม่ที่หน้า “ห้องและมิเตอร์” แล้วผูกค่านี้กับตัวใหม่' : ''}</div>` : ''}
